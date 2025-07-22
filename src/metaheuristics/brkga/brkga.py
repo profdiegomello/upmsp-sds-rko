@@ -1,9 +1,6 @@
-
-import os
 import random
 import threading
 import time
-from pulp import value
 
 estado=0
 saida=0

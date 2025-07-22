@@ -9,6 +9,10 @@ import numpy as np
 #
 #################################################################################################
 
+def calcula_gap(lowerbound, objetivo):
+    gap=((objetivo-lowerbound)/lowerbound)*100
+    return gap
+
 def salvar_resultado(
     arquivo_saida: str,
     instancia: str,
@@ -32,9 +36,15 @@ def salvar_resultado(
     novo_arquivo = not os.path.exists(arquivo_saida)
 
     # Se lowerbound ou gap forem None, vamos definir uma string padrão '---'
-    if(lowerbound is not None):
-        gap_str=round(((lowerbound-objetivo)/objetivo)*100,4)
-        lowerbound_str=lowerbound
+    if lowerbound is not None:
+    
+        if gap is not None:
+           gap_str = gap
+        else:
+            gap_str = calcula_gap(lowerbound, objetivo)
+            
+        lowerbound_str = lowerbound
+    
     else:
         gap_str="---"
         lowerbound_str = "---"
@@ -68,7 +78,12 @@ def salvar_resultado(
                  f"{parameters}\n")
         f.write(linha)
 
+
+#
+# Gera grafico de Gantt com o resultado informado
+#
 def gantt_chart(M,N,N0,X,C,p,mostra,nome,instancia):
+
     # Criar a figura
     fig, ax = plt.subplots(figsize=(10, 5))
 
