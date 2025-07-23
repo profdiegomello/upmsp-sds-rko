@@ -2,6 +2,43 @@ from pulp import LpMinimize, LpProblem, LpVariable, lpSum, value, PULP_CBC_CMD, 
 import gurobipy
 from itertools import product
 
+#
+# Gera docionarios X e C a partir da solucao do modelo
+#
+def extrair_solucao_mip(solucao_variaveis, M, N, N0):
+    """
+    Converte as variáveis de solução do PuLP em dicionários Python genéricos.
+    """
+    X_vars = solucao_variaveis["X"]
+    C_vars = solucao_variaveis["C"]
+    
+    X_dict = {}
+    C_dict = {}
+
+    # Extrai os valores de X
+    for i in M:
+        for j in N0:
+            for k in N:
+                if j != k:
+                    var = X_vars.get((i, j, k))
+                    if var and var.varValue > 0.5: # Verifica se a variável existe e foi selecionada
+                        X_dict[(i, j, k)] = 1
+    
+    # Extrai os valores de C
+    for i in M:
+        for j in N:
+            var = C_vars.get((i, j))
+            if var: # Apenas para jobs reais, não o dummy
+                C_dict[(i, j)] = var.varValue
+
+    return X_dict, C_dict
+    
+    
+#
+# Gera modelo MIP a partir do artigo de Vallada e Ruiz (2011):
+# 'A genetic algorithm for the unrelated parallel machine scheduling problem
+# with sequence dependent setup times'
+#
 def modelSolving(M, N, N0, p, S, log, time_limit=None):
 
     # Constante grande:
@@ -81,12 +118,17 @@ def modelSolving(M, N, N0, p, S, log, time_limit=None):
 
     # Também extrair o valor do Cmax (que é contínuo, mas já está no dicionário cont_vars)
     Cmax_val = Cmax.varValue
+    
+    # Extrair dicionários a partir das variaveis de decisao
+    X_dict, C_dict = extrair_solucao_mip(solucao_gurobi, M, N, N0)
 
     return {
         "objetivo": value(model.objective), "runtime": model.solutionTime,
         "lowerbound": model.solverModel.ObjBound, "gap": model.solverModel.MIPGap,
         "status_code": model.solverModel.Status, "solucao": solucao_gurobi,
         "constraints": len(model.constraints), "variables": len(model.variables()),
-        "binarias": len(bin_vars), "inteiras": len(int_vars), "continuas": len(cont_vars)
+        "binarias": len(bin_vars), "inteiras": len(int_vars), "continuas": len(cont_vars),
+        "X_dict": X_dict,
+        "C_dict": C_dict
     }
 

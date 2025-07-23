@@ -49,6 +49,11 @@ def main():
                     resultado.get('constraints', 0), resultado.get('variables', 0), 
                     parametros, len(dados["N"]), len(dados["M"]), resultado["status_code"])
     
+    if "solucao" in resultado and resultado["solucao"]:
+        saida.gantt_chart(dados['M'], dados['N'], dados['N0'], dados['p'], dados['S'], 
+                          resultado['X_dict'], resultado['C_dict'], args.arq_gantt, 
+                          args.nome_instancia, resultado['objetivo'], 'SA')
+    
     #if "solucao" in resultado and resultado["solucao"]:
     #    gerar_gantt(resultado["solucao"], dados, args.arq_gantt, tipo_solucao=args.modelo.upper())
 

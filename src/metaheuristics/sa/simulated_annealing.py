@@ -276,6 +276,37 @@ def sa_gerar_vizinho(escalonamento: dict, dados_instancia: dict, p_bloco: float,
 
     return novo_escalonamento
 
+
+def calcular_C_e_X(solucao, dados_instancia):
+    """
+    Calcula os dicionários C (término) e X (sequência) a partir da
+    solução do Simulated Annealing.
+    """
+    C_dict = {}
+    X_dict = {}
+    p = dados_instancia["p"]
+    S = dados_instancia["S"]
+
+    for maquina, job_list in solucao.items():
+        tempo_maquina = 0
+        job_anterior = 0  # Job dummy inicial
+
+        for job_atual in job_list:
+            setup = S.get((maquina, job_anterior, job_atual), 0)
+            processamento = p.get((maquina, job_atual), 0)
+            
+            # Atualiza o tempo de conclusão do job atual
+            tempo_maquina += setup + processamento
+            C_dict[(maquina, job_atual)] = tempo_maquina
+            
+            # Define a precedência no dicionário X
+            X_dict[(maquina, job_anterior, job_atual)] = 1
+            
+            # Atualiza o job anterior para a próxima iteração
+            job_anterior = job_atual
+            
+    return X_dict, C_dict
+
 '''
 Função principal do Simulated Annealing.
 
@@ -325,9 +356,18 @@ def rodar_simulated_annealing(dados_instancia: dict, temp_inicial, temp_final, a
         # reduz a temperatura:
         temperatura *= alpha
 
+    # Calcula o tempo decorrido na execucao do SA
     runtime = time.time() - start_time
+    
+    # Gerar dicionários X e C a partir da melhor solução encontrada
+    X_dict, C_dict = calcular_C_e_X(melhor_solucao, dados_instancia)
 
     return {
-        "objetivo": melhor_custo, "runtime": runtime,
-        "status_code": 2 if runtime < time_limit else 9, "solucao": melhor_solucao
+        "objetivo": melhor_custo, 
+        "runtime": runtime,
+        "status_code": 2 if runtime < time_limit else 9, 
+        "solucao": melhor_solucao,
+        "X_dict": X_dict, # Adiciona o dicionário X
+        "C_dict": C_dict   # Adiciona o dicionário C
     }
+

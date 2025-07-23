@@ -260,10 +260,10 @@ def solve(dados, nome_instancia, tempo_limite, n_individuos, n_geracoes, percent
         status_str="TEMPO_LIMITE"
     else:
         status_str="ALL_GEN"
-      
+
     # Converte a solucao do BRKGA em 'variaveis' C e X  
-    C, X=calcular_C_e_X(populacao_m_f[0], dados)
+    C, X = calcular_C_e_X(populacao_m_f[0], dados) # populacao_m_f[0] é a melhor solução
                 
     # retorna a solucao
-    return results, tempo_f, status_str, C, X              
+    return results, tempo_f, status_str, C, X          
 

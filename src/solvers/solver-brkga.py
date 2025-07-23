@@ -56,10 +56,9 @@ if __name__ == "__main__":
 
     # Grava o arquivo de Gantt, se informado
     if(args.gantt is not None):
-        saida.gantt_chart(dados["M"], dados["N"], dados["N0"], X, C, dados["p"], args.mostra_gantt, args.gantt, args.nome_instancia)
-
-    exit(1)
-
+        saida.gantt_chart(dados['M'], dados['N'], dados['N0'], dados['p'], dados['S'], 
+                          X, C, args.gantt, 
+                          args.nome_instancia, solution[0], 'BRKGA')
 
 
     
