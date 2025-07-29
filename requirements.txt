@@ -3,3 +3,4 @@ matplotlib
 pulp
 gurobipy
 argparse
+kaggle
