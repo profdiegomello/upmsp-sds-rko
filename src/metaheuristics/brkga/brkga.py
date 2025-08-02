@@ -8,13 +8,20 @@ saida=0
 TEMPO_LIMITE=-1
 GERACAO_FINAL=1
 
-def encode(dados, n_individuos):
+def encode(dados, n_individuos, decoder):
     populacao=[]
-    for i in range(n_individuos):
-        individuo=[]
-        for j in dados["N"]:
-            individuo.append(random.random())
-        populacao.append(individuo)
+    if decoder == "n":
+        for i in range(n_individuos):
+            individuo=[]
+            for j in dados["N"]:
+                individuo.append(random.random())
+            populacao.append(individuo)
+    elif decoder == "2n":
+        for i in range(n_individuos):
+            individuo=[]
+            for j in range(0, 2*len(dados["N"]), 1):
+                individuo.append(random.random())
+            populacao.append(individuo)
     return populacao
 
 def verifica_tempo_expirado(inicio, limite):
@@ -31,34 +38,58 @@ def verifica_tempo_expirado(inicio, limite):
         estado+=1
         return True
     
-def decode_individuo(individuo, indice, n_populacao, dados):
+def decode_individuo(individuo, indice, n_populacao, dados, decoder):
     qtd_maquinas = len(dados["M"])
     copia = list(individuo)
     range_step = 1 / qtd_maquinas
+    n_jobs = len(dados["N"])
 
-    # Inicializa as máquinas com listas vazias
-    maquinas_jobs = {m: [] for m in range(1, qtd_maquinas + 1)}
+    if decoder == "n":
+        # Inicializa as máquinas com listas vazias
+        maquinas_jobs = {m: [] for m in range(1, qtd_maquinas + 1)}
 
-    # Atribui cada job (indexado de 1) a uma máquina com base no valor
-    for i, valor in enumerate(copia):
-        maquina = int(valor / range_step) + 1
-        if maquina > qtd_maquinas:
-            maquina = qtd_maquinas  # Proteção contra estouro
-        job_id = i + 1  # Corrigido para índice começando de 1
-        maquinas_jobs[maquina].append((valor, job_id))
+        # Atribui cada job (indexado de 1) a uma máquina com base no valor
+        for i, valor in enumerate(copia):
+            maquina = int(valor / range_step) + 1
+            if maquina > qtd_maquinas:
+                maquina = qtd_maquinas  # Proteção contra estouro
+            job_id = i + 1  # Corrigido para índice começando de 1
+            maquinas_jobs[maquina].append((valor, job_id))
 
-    # Ordena os jobs em cada máquina por prioridade (valor)
-    for m in maquinas_jobs:
-        maquinas_jobs[m].sort()  # Ordena por valor
-        maquinas_jobs[m] = [job for _, job in maquinas_jobs[m]]  # Retém apenas o ID do job
+        # Ordena os jobs em cada máquina por prioridade (valor)
+        for m in maquinas_jobs:
+            maquinas_jobs[m].sort()  # Ordena por valor
+            maquinas_jobs[m] = [job for _, job in maquinas_jobs[m]]  # Retém apenas o ID do job
 
+    elif decoder == "2n":
+        # Inicializa as máquinas com listas vazias
+        maquinas_jobs = {m: [] for m in range(1, qtd_maquinas + 1)}
+
+        # Parte 1: alocação de jobs para máquinas
+        alocacao = copia[:n_jobs]
+        ordem = copia[n_jobs:]  # Parte 2: ordem dos jobs
+
+        for i in range(n_jobs):
+            job_id = i + 1
+            valor_aloc = alocacao[i]
+            maquina = int(valor_aloc / range_step) + 1
+            if maquina > qtd_maquinas:
+                maquina = qtd_maquinas
+            maquinas_jobs[maquina].append((ordem[i], job_id))  # ordem define prioridade
+
+        # Parte 2: ordenar jobs dentro de cada máquina com base nos valores da segunda metade
+        for m in maquinas_jobs:
+            maquinas_jobs[m].sort()  # Ordena por valor da prioridade
+            maquinas_jobs[m] = [job for _, job in maquinas_jobs[m]]
+
+    # Armazena o resultado decodificado
     n_populacao[indice] = maquinas_jobs
     
-def decode(dados, populacao):
+def decode(dados, populacao, decoder):
     threads=[]
     n_populacao=[None] * len(populacao)
     for i, individuo in enumerate(populacao):
-        thread=threading.Thread(target=decode_individuo, args=(individuo, i, n_populacao, dados))
+        thread=threading.Thread(target=decode_individuo, args=(individuo, i, n_populacao, dados, decoder))
         threads.append(thread)
         thread.start()
     for thread in threads:
@@ -101,7 +132,7 @@ def fitness(dados, n_populacao, populacao):
     return list(populacao_ordenada), list(resultados_ordenados), list(n_populacao_ordenada)
 
 def crossover_individuo(dados, individuo, indice, populacao, i_elite, chance_cross):
-    tamanho_gene=int(len(dados["N"]))
+    tamanho_gene=int(len(individuo))
     indv=list(individuo)
     for i in range(0, tamanho_gene, 1):
         if random.random() < chance_cross:
@@ -109,9 +140,9 @@ def crossover_individuo(dados, individuo, indice, populacao, i_elite, chance_cro
     populacao[indice]=indv
     return
 
-def mutation_individuo(dados, indice, populacao):
+def mutation_individuo(dados, indice, populacao, indiv):
     individuo=[]
-    for i in range(0, len(dados["N"]),1):
+    for i in range(0, len(indiv),1):
         individuo.append(random.random())
     populacao[indice]=individuo
 
@@ -122,7 +153,7 @@ def gera_nova_populacao(dados, populacao_f, percentual_elite, percentual_mutados
     populacao=[None] * (len(populacao_f))
     for i in range(0, len(populacao_f), 1):
         if(i>p_mutados):
-            thread=threading.Thread(target=mutation_individuo, args=(dados, i, populacao))
+            thread=threading.Thread(target=mutation_individuo, args=(dados, i, populacao, populacao_f[i]))
             threads.append(thread)
             thread.start()
         elif(i>p_elite):
@@ -215,16 +246,18 @@ def calcular_C_e_X(individuo, dados):
 #
 # Executa o laco principal que faz o BRKGA evoluir uma populacao até cumprir as condicoes de saida
 #
-def solve(dados, nome_instancia, tempo_limite, n_individuos, n_geracoes, percentual_elite, percentual_mutados, chance_cross, parcial):
+def solve(dados, nome_instancia, tempo_limite, n_individuos, n_geracoes, percentual_elite, percentual_mutados, chance_cross, parcial, decoder):
 
     global estado
     global saida
+
+    print(decoder)
     
     # Marca o tempo de inicio
     t_inicio=time.time() 
 
     # Cria a populacao inicial
-    populacao = encode(dados, n_individuos) #Codifica dados lidos
+    populacao = encode(dados, n_individuos, decoder) #Codifica dados lidos
     
     if parcial==1:
         escrita_inicial(t_inicio, nome_instancia, tempo_limite, n_geracoes, n_individuos, parcial)
@@ -233,7 +266,7 @@ def solve(dados, nome_instancia, tempo_limite, n_individuos, n_geracoes, percent
     while(verifica_tempo_expirado(t_inicio, tempo_limite)):
     
         if estado==1:
-            n_populacao=decode(dados, populacao)
+            n_populacao=decode(dados, populacao, decoder)
         
         elif estado==2:
             populacao_f, results, populacao_m_f=fitness(dados, n_populacao, populacao)

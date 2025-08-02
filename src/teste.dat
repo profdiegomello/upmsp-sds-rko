@@ -1,0 +1,3 @@
+INSTANCE	JOBS	MACHINE	MODEL	STATUS	OBJECTIVE	LOWERBOUND	GAP	RUNTIME	CONSTRAINTS	VARIABLES	PARAMETERS
+../bench/rsdst/small/I_6_2_S_1-9_1.txt	6	2	BRKGA	ALL_GEN	74.0000	---	---	3.6860	---	---	i-500|g-50|pe-0.2|pm-0.2|c-0.7
+../bench/rsdst/small/I_6_2_S_1-9_1.txt	6	2	BRKGA	ALL_GEN	74.0000	---	---	3.8480	---	---	i-500|g-50|pe-0.2|pm-0.2|c-0.7

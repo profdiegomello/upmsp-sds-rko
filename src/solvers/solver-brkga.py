@@ -29,6 +29,7 @@ if __name__ == "__main__":
     parser.add_argument("--lowerbound", type=float, default=None, help="Número de lowerbound do Gurobi para calcular o gap")
     parser.add_argument("--mostra_gantt", type=int, default=0, help="Deseja ver o grafico de gantt (0-Não 1-Sim)")
     parser.add_argument("--parcial", action="store_const", const=1, default=0, help="Deseja resultado parcial (0-Não 1-Sim)")
+    parser.add_argument("--decoder", type=str, default="n", help="Modelo do decoder")
     
     # Processa os argumentos
     args = parser.parse_args()
@@ -45,7 +46,8 @@ if __name__ == "__main__":
                 args.percentual_elite,
                 args.percentual_mutados,
                 args.chance_cross,
-                args.parcial
+                args.parcial,
+                args.decoder
                 )
     
     # Escreve a string de parametros para depuracao 
