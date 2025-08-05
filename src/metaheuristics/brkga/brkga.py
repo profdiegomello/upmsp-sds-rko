@@ -22,6 +22,22 @@ def encode(dados, n_individuos, decoder):
             for j in range(0, 2*len(dados["N"]), 1):
                 individuo.append(random.random())
             populacao.append(individuo)
+    elif decoder == "ect":
+        for i in range(n_individuos):
+            individuo=[]
+            for j in range(0, len(dados["N"]), 1):
+                individuo.append(random.random())
+            populacao.append(individuo)
+    elif decoder == "incremental":
+        for i in range(n_individuos):
+            individuo=[]
+            for j in range(0, len(dados["N"]), 1):
+                individuo.append(random.random())
+            populacao.append(individuo)
+    else:
+        print('\n\nErro: decoder desconhecido: \'{decoder}\'\n\n')
+        exit(1)
+        
     return populacao
 
 def verifica_tempo_expirado(inicio, limite):
@@ -45,6 +61,7 @@ def decode_individuo(individuo, indice, n_populacao, dados, decoder):
     n_jobs = len(dados["N"])
 
     if decoder == "n":
+        # ... (código existente para decoder n) ...
         # Inicializa as máquinas com listas vazias
         maquinas_jobs = {m: [] for m in range(1, qtd_maquinas + 1)}
 
@@ -62,6 +79,7 @@ def decode_individuo(individuo, indice, n_populacao, dados, decoder):
             maquinas_jobs[m] = [job for _, job in maquinas_jobs[m]]  # Retém apenas o ID do job
 
     elif decoder == "2n":
+        # ... (código existente para decoder 2n) ...
         # Inicializa as máquinas com listas vazias
         maquinas_jobs = {m: [] for m in range(1, qtd_maquinas + 1)}
 
@@ -81,6 +99,90 @@ def decode_individuo(individuo, indice, n_populacao, dados, decoder):
         for m in maquinas_jobs:
             maquinas_jobs[m].sort()  # Ordena por valor da prioridade
             maquinas_jobs[m] = [job for _, job in maquinas_jobs[m]]
+
+    elif decoder == "ect":
+        
+        # Decoder 4: Ordenação por chave + Alocação por Earliest Completion Time
+        jobs_ordenados = sorted(range(1, n_jobs + 1), key=lambda j: copia[j - 1])
+
+        maquinas_jobs = {m: [] for m in dados["M"]}
+        tempo_termino_maquinas = {m: 0 for m in dados["M"]}
+        ultimo_job_maquina = {m: 0 for m in dados["M"]} # Dummy job 0
+
+        for job in jobs_ordenados:
+            melhor_maquina = None
+            menor_tempo_termino = float('inf')
+            
+            for maquina in dados["M"]:
+                setup_time = dados["S"].get((maquina, ultimo_job_maquina[maquina], job), 0)
+                
+                processing_time = dados["p"].get((maquina, job), float('inf')) 
+                
+                completion_time = tempo_termino_maquinas[maquina] + setup_time + processing_time
+
+                if completion_time < menor_tempo_termino:
+                    menor_tempo_termino = completion_time
+                    melhor_maquina = maquina
+            
+            # Garante que uma máquina foi encontrada (caso não haja jobs válidos)
+            if melhor_maquina is not None:
+                maquinas_jobs[melhor_maquina].append(job)
+                tempo_termino_maquinas[melhor_maquina] = menor_tempo_termino
+                ultimo_job_maquina[melhor_maquina] = job
+            
+    elif decoder == "incremental":
+        # Decoder 5: Ordenação por chave + Alocação por Custo Incremental no makespan
+
+        # 1. Ordena os jobs com base nas chaves aleatórias
+        jobs_ordenados = sorted(range(1, n_jobs + 1), key=lambda j: copia[j - 1])
+        
+        # 2. Inicializa o estado das máquinas
+        maquinas_jobs = {m: [] for m in dados["M"]}
+        
+        # 3. Aloca cada job ordenado para a máquina que causa o menor aumento no makespan
+        for job in jobs_ordenados:
+            melhor_maquina = None
+            menor_aumento_makespan = float('inf')
+            
+            # Avalia cada máquina para encontrar a melhor
+            for maquina in dados["M"]:
+                # Crie uma cópia temporária da máquina para o cálculo
+                temp_maquinas = {m: list(maquinas_jobs[m]) for m in dados["M"]}
+                temp_maquinas[maquina].append(job)
+                
+                # Calcule o makespan para essa configuração temporária
+                makespan_temp = 0
+                for m_temp in dados["M"]:
+                    tempo_maquina = 0
+                    anterior = 0
+                    for j_temp in temp_maquinas[m_temp]:
+                        tempo_maquina += dados["S"].get((m_temp, anterior, j_temp), 0)
+                        tempo_maquina += dados["p"][(m_temp, j_temp)]
+                        anterior = j_temp
+                    if tempo_maquina > makespan_temp:
+                        makespan_temp = tempo_maquina
+                
+                # Calcule o makespan da configuração atual (antes de alocar o job)
+                makespan_atual = 0
+                for m_atual in dados["M"]:
+                    tempo_maquina_atual = 0
+                    anterior = 0
+                    for j_atual in maquinas_jobs[m_atual]:
+                        tempo_maquina_atual += dados["S"].get((m_atual, anterior, j_atual), 0)
+                        tempo_maquina_atual += dados["p"][(m_atual, j_atual)]
+                        anterior = j_atual
+                    if tempo_maquina_atual > makespan_atual:
+                        makespan_atual = tempo_maquina_atual
+
+                # Custo incremental = novo makespan - makespan atual
+                aumento_makespan = makespan_temp - makespan_atual
+                
+                if aumento_makespan < menor_aumento_makespan:
+                    menor_aumento_makespan = aumento_makespan
+                    melhor_maquina = maquina
+
+            # Aloca o job na melhor máquina
+            maquinas_jobs[melhor_maquina].append(job)
 
     # Armazena o resultado decodificado
     n_populacao[indice] = maquinas_jobs
