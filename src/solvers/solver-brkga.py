@@ -51,7 +51,7 @@ if __name__ == "__main__":
                 )
     
     # Escreve a string de parametros para depuracao 
-    parametros=f"i-{args.n_individuos}|g-{args.n_geracoes}|pe-{args.percentual_elite}|pm-{args.percentual_mutados}|c-{args.chance_cross}"
+    parametros=f"i-{args.n_individuos}|g-{args.n_geracoes}|pe-{args.percentual_elite}|pm-{args.percentual_mutados}|c-{args.chance_cross}|d-{args.decoder}"
 
     # Salva saida em arquivo de relatorio
     saida.salvar_resultado(args.arq_saida, args.nome_instancia, "BRKGA", solution[0], args.lowerbound, None, runtime, 0, 0, parametros, len(dados["N"]), len(dados["M"]), status)
@@ -73,4 +73,3 @@ if __name__ == "__main__":
     #-Mudar separador do PARAMETERS FEITO!
     #Implementar Gantt
     #Corrigir LowerBound
-        

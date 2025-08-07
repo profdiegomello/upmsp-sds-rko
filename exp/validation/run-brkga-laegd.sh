@@ -1,0 +1,11 @@
+PYTHONPATH=../../src python3 -m solvers.solver-rkga \
+    --nome_instancia ../../bench/rsdst/small/I_6_2_S_1-9_1.txt \
+    --arq_saida teste.dat \
+    --gantt I_250_30_S_1-124_10-Dec2n \
+    --tempo_limite 45 \
+    --n_geracoes 100 \
+    --n_individuos 1000 \
+    --percentual_elite 0.3 \
+    --percentual_mutados 0.4 \
+    --chance_cross 0.6 \
+    --parcial
