@@ -2,6 +2,7 @@
 *.log
 *.tmp
 *.py[cod]
+gantt.png*
 
 # Ignorar diretórios
 __pycache__/
@@ -9,5 +10,7 @@ bench/
 .venv/
 
 # Ignorar arquivos específicos
+bench/rsdstruiz-upmsp-sds.zip
+.DS_Store
 token.txt
 .env

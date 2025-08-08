@@ -7,6 +7,12 @@
 
 import os
 
+import sys
+# Adicionando a pasta raiz do codigo fonte para que todos os demais imports sejam relativos
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+print(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import input_output.dataset_via_kaggle as dataset
+
 #
 # Le arquvo no formato informado.
 #
@@ -92,8 +98,14 @@ def le_formato_variavel(diretorio, formato):
 # Verifica se o arquivo informado existe. Caso exista, devolve 
 #
 def le_arquivo(args):
+
+    # Primeiro verifica se o arquivo do dataset precisa ser baixado do Kaggle
     if not(os.path.exists(args.nome_instancia)):
-        print(f"O arquivo <{args.nome_instancia}> não existe!")
+        dataset.download_file(args.nome_instancia)
+
+    # Depois confirma se o arquivo passou a existir
+    if not(os.path.exists(args.nome_instancia)):
+        print(f"O arquivo '{args.nome_instancia}' não existe!")
         exit()
     else:
         return le_formato_variavel(args.nome_instancia, "MNNO;V;p;S")
