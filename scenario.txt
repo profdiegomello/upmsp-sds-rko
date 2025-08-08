@@ -1,0 +1,8 @@
+algorithm = "SimulatedAnnealing"
+execDir = "exp/validation/"
+targetRunner = "run-sa-irace.sh"
+instances.dir = "bench/rsdst/small/"
+instances = "lista_de_instancias.txt"
+logFile = "irace.log"
+seed = 12345
+maxExperiments = 1000
