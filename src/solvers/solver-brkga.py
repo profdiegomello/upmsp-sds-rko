@@ -60,7 +60,7 @@ if __name__ == "__main__":
     if(args.gantt is not None):
         saida.gantt_chart(dados['M'], dados['N'], dados['N0'], dados['p'], dados['S'], 
                           X, C, args.gantt, 
-                          args.nome_instancia, solution[0], 'BRKGA')
+                          args.nome_instancia, solution[0], f'BRKGA-{args.decoder}')
 
 
     

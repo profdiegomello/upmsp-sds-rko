@@ -124,12 +124,12 @@ def gantt_chart(M, N, N0, p, s, X, C, arq_gantt, instancia, makespan, str_metodo
                     max_completion_time = completion_time
 
                 # Desenha a barra do job
-                ax.barh(y=f'Máquina {i}', width=processing_time, left=start_time, height=0.5, 
+                ax.barh(y=f'M{i}', width=processing_time, left=start_time, height=0.5, 
                         color=colors(j - 1), edgecolor='black')
                 
                 # Adiciona o nome do job no centro da barra
-                ax.text(start_time + processing_time / 2, f'Máquina {i}', f'J{j}', 
-                        ha='center', va='center', color='white', fontsize=9, fontweight='bold')
+                ax.text(start_time + processing_time / 2, f'M{i}', f'{j}', 
+                        ha='center', va='center', color='black', fontsize=7, fontweight='bold')
 
     # Configurações do gráfico
     ax.set_xlabel("Tempo")
