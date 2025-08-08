@@ -1,0 +1,13 @@
+# Ignorar arquivos temporários
+*.log
+*.tmp
+*.py[cod]
+
+# Ignorar diretórios
+__pycache__/
+bench/
+.venv/
+
+# Ignorar arquivos específicos
+token.txt
+.env
