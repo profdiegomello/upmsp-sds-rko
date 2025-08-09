@@ -30,7 +30,8 @@ CMD ["bash"]
 # docker build --tag upmsp-sds-rko --build-arg GIT_TOKEN=SUBSTITUIR_POR_SEU_TOKEN_DO_GIT --build-arg GIT_USER=SUBSTITUIR_POR_SEU_USER_NO_GIT .
 
 ## 3) crie o novo container a partir da imagem
-# docker run -it --volume $(pwd)/output:/app/output upmsp-sds-rko bash
+# docker run -dit --name rko --volume $(pwd)/output:/app/output upmsp-sds-rko bash
 
 ## 4) com o container já rodando, pode-se executar programas dentro do container
-# docker exec -it upmsp-sds-rko python3 solver.py
+# docker start rko
+# docker exec -it rko python3 solver.py
