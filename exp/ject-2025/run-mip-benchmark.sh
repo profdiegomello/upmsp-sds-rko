@@ -33,6 +33,14 @@ fi
 # Recuperando a pasta informada
 PASTA=$1
 
+# Nome do arquivo de controle
+FILE_CONTROL="mip-bench-control.dat"
+
+# Verifica se o arquivo existe; se não, cria-o vazio
+if [ ! -f "$FILE_CONTROL" ]; then
+    touch "$FILE_CONTROL"
+fi
+
 # Agora, lista todas as instancias da pasta e guarda em uma variavel
 BENCHMARK=$(ls $PASTA | grep ".txt")
 
@@ -43,13 +51,31 @@ do
     # Gera os nomes dos arquivos de saida
     relatorio="results/report.dat"
     gantt="results/cronograma-$instancia"
-
-    echo "Running instance '$instancia', recording at $relatorio, graphics in $gantt..."
     
-    PYTHONPATH=../../src python3 -m solvers.solver-mip \
-        --nome_instancia $PASTA$instancia \
-        --arq_saida  $relatorio \
-        --arq_gantt $gantt \
-        --time_limit $TIMELIMIT
+    # Verifica se a instância já está listada no arquivo de controle
+    if [ $(grep -Fx "$instancia" "$FILE_CONTROL" | wc -l) -gt 0 ]; then
+    
+        echo "Skipping instance $instancia..."
+        continue
+        
+    else
+    
+        echo "Running instance '$instancia', recording at $relatorio, graphics in $gantt..."
+        
+        PYTHONPATH=../../src python3 -m solvers.solver-mip \
+            --nome_instancia $PASTA$instancia \
+            --arq_saida  $relatorio \
+            --arq_gantt $gantt \
+            --time_limit $TIMELIMIT
+
+        # Verifica se o comando Python executou com sucesso. Se deu exit() != 0, não salva porque deu problema
+        if [ $? -eq 0 ]; then
+            # Concatena o nome da instancia no final do arquivo de controle
+            echo $instancia >> $FILE_CONTROL        
+        fi
+    fi
         
 done
+
+# Apaga o arquivo de controle
+rm $FILE_CONTROL
