@@ -10,7 +10,6 @@ import os
 import sys
 # Adicionando a pasta raiz do codigo fonte para que todos os demais imports sejam relativos
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-print(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 #
 # Le arquvo no formato informado.
