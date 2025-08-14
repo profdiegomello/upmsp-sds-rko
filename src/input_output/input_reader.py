@@ -10,8 +10,7 @@ import os
 import sys
 # Adicionando a pasta raiz do codigo fonte para que todos os demais imports sejam relativos
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-import input_output.dataset_via_kaggle as dataset
+print(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 #
 # Le arquvo no formato informado.
@@ -101,6 +100,8 @@ def le_arquivo(args):
 
     # Primeiro verifica se o arquivo do dataset precisa ser baixado do Kaggle
     if not(os.path.exists(args.nome_instancia)):
+        import input_output.dataset_via_kaggle as dataset
+        
         dataset.download_file(args.nome_instancia)
 
     # Depois confirma se o arquivo passou a existir
