@@ -5,8 +5,6 @@ import time
 # Adicionando a pasta raiz do codigo fonte para que todos os demais imports sejam relativos
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-print(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 import input_output.input_reader as entrada
 import input_output.output_writer as saida
 import metaheuristics.sa.simulated_annealing as sa
@@ -38,7 +36,7 @@ def main():
     
     # Executa o simulated annealing com os parametro dados
     # Inclui o argumento seed
-    resultado = sa.rodar_simulated_annealing(dados, args.temp_inicial, args.temp_final, args.alpha, args.iter_por_temp, args.p_block, args.block_size, args.p_shift, args.time_limit)
+    resultado = sa.rodar_simulated_annealing(dados, args.temp_inicial, args.temp_final, args.alpha, args.iter_por_temp, args.p_block, args.block_size, args.p_shift, args.time_limit, args.seed)
     
     # Constroi a string de parametros
     parametros = f"ti-{args.temp_inicial}|tf-{args.temp_final}|a-{args.alpha}|it-{args.iter_por_temp}|b-{args.p_block}|bs-{args.block_size}|ps-{args.p_shift}|tl-{args.time_limit}"
@@ -55,7 +53,8 @@ def main():
                             args.nome_instancia, resultado['objetivo'], 'SA')
 
     # Altera a linha para imprimir o custo e a semente
-    print(f"{resultado['objetivo']} {args.seed}")
+    print(resultado['objetivo'])
+
 
 if __name__ == "__main__":
     main()

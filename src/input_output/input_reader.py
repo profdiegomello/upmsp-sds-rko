@@ -10,7 +10,7 @@ import os
 import sys
 # Adicionando a pasta raiz do codigo fonte para que todos os demais imports sejam relativos
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-print(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import input_output.dataset_via_kaggle as dataset
 
 #

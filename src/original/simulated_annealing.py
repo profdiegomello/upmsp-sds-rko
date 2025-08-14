@@ -312,29 +312,34 @@ Returns:
         - "status_code": Código indicando o motivo da parada.
         - "solucao": O dicionário da melhor solução de escalonamento.
 '''
-def rodar_simulated_annealing(dados_instancia: dict, temp_inicial, temp_final, alpha, iter_por_temp, block, block_size, p_shift, time_limit):
+# A função deve ser modificada para aceitar o parâmetro 'seed'
+def rodar_simulated_annealing(dados_instancia: dict, temp_inicial, temp_final, alpha, iter_por_temp, block, block_size, p_shift, time_limit, seed):
+    # Usa o parâmetro seed para inicializar a aleatoriedade
+    if seed is not None:
+        random.seed(seed)
+
     # marca o tempo q a função começou:
     start_time = time.time()
 
     solucao_atual = sa_construir_solucao(dados_instancia)
     custo_atual = sa_calcular_custo(solucao_atual, dados_instancia)
-    # a melhor solucao ate entao é a atual, entao cria uma copia dela: 
+    # a melhor solucao ate entao é a atual, entao cria uma copia dela:
     melhor_solucao = pickle.loads(pickle.dumps(solucao_atual, protocol=pickle.HIGHEST_PROTOCOL))
     melhor_custo = custo_atual
     temperatura = temp_inicial
 
-    # enquanto a temperatura nao esfriar ate seu limite minimo e o tempo de execução estiver dentro do tempo limite: 
+    # enquanto a temperatura nao esfriar ate seu limite minimo e o tempo de execução estiver dentro do tempo limite:
     while temperatura > temp_final and (time.time() - start_time) < time_limit:
 
-        # pra cada nivel de temperatura: 
+        # pra cada nivel de temperatura:
         for _ in range(iter_por_temp):
 
-            # gera uma solução vizinha e calcula o custo dela: 
+            # gera uma solução vizinha e calcula o custo dela:
             vizinho = sa_gerar_vizinho(solucao_atual, dados_instancia, block, block_size, p_shift)
             custo_vizinho = sa_calcular_custo(vizinho, dados_instancia)
             delta = custo_vizinho - custo_atual
 
-            # se delta for menor que 0 ou a nova solução é pior, mas é aceita por Metropolis: 
+            # se delta for menor que 0 ou a nova solução é pior, mas é aceita por Metropolis:
             if delta < 0 or random.random() < math.exp(-delta / temperatura):
                 solucao_atual = vizinho
                 custo_atual = custo_vizinho
@@ -614,7 +619,6 @@ def gerar_gantt(solucao, dados, nome_arquivo, tipo_solucao='SA'):
     if max_tempo_final > 0: ax.set_xlim(0, max_tempo_final * 1.05)
     plt.tight_layout()
     plt.savefig(nome_arquivo, dpi=300)
-    print(f"Gráfico de Gantt salvo em: {nome_arquivo}")
 
 def calcula_gap(lowerbound, objetivo):
     gap=((objetivo-lowerbound)/lowerbound)*100
@@ -692,6 +696,7 @@ def main():
     parser.add_argument("--block_size", type=int, default=0)
     parser.add_argument("--p_shift", type=float, default=0)
     parser.add_argument("--lowerbound", type=float, default=None, help="Número de lowerbound do Gurobi para calcular o gap")
+    parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
 
     le_arquivo(args) 
@@ -702,12 +707,12 @@ def main():
 
     if args.modelo.upper() == "GUROBI":
         log_path = args.nome_instancia + ".log"
-        resultado = modelSolving(dados["M"], dados["N"], dados["N0"], dados["p"], dados["S"], log_path, args.time_limit)
+        resultado = modelSolving(dados["M"], dados["N"], dados["N0"], dados["p"], dados["S"], log_path, args.time_limit, args.seed)
         if resultado.get("lowerbound") is not None:
             print(f"Lowerbound: {resultado['lowerbound']}")
         parametros = f"M-{len(dados['M'])}|N-{len(dados['N'])}|N0-{len(dados['N0'])}|p-{len(dados['p'])}|S-{len(dados['S'])}|tl-{args.time_limit}"
     else: 
-        resultado = rodar_simulated_annealing(dados, args.temp_inicial, args.temp_final, args.alpha, args.iter_por_temp, args.block, args.block_size, args.p_shift, args.time_limit)
+        resultado = rodar_simulated_annealing(dados, args.temp_inicial, args.temp_final, args.alpha, args.iter_por_temp, args.block, args.block_size, args.p_shift, args.time_limit, args.seed)
         parametros = f"ti-{args.temp_inicial}|tf-{args.temp_final}|a-{args.alpha}|it-{args.iter_por_temp}|b-{args.block}|bs-{args.block_size}|ps-{args.p_shift}|tl-{args.time_limit}"
         
 
@@ -721,4 +726,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

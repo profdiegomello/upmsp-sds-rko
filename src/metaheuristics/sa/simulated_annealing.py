@@ -321,7 +321,7 @@ Returns:
         - "status_code": Código indicando o motivo da parada.
         - "solucao": O dicionário da melhor solução de escalonamento.
 '''
-def rodar_simulated_annealing(dados_instancia: dict, temp_inicial, temp_final, alpha, iter_por_temp, block, block_size, p_shift, time_limit):
+def rodar_simulated_annealing(dados_instancia: dict, temp_inicial, temp_final, alpha, iter_por_temp, block, block_size, p_shift, time_limit, seed):
     # marca o tempo q a função começou:
     start_time = time.time()
 
