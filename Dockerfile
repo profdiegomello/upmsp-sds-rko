@@ -10,7 +10,8 @@ ARG GIT_TOKEN
 ARG GIT_USER
 
 # Clona o repositório
-RUN git clone https://${GIT_USER}:${GIT_TOKEN}@github.com/profdiegomello/upmsp-sds-rko.git /app
+COPY ./ /app/
+#RUN git clone https://${GIT_USER}:${GIT_TOKEN}@github.com/profdiegomello/upmsp-sds-rko.git /app
 
 # Instala as dependências listadas no requirements.txt
 # DICA: dentro de um venv, exporte as dependências via: pip freeze > requirements.txt
@@ -27,11 +28,11 @@ CMD ["bash"]
 # firefox https://github.com/settings/tokens
 
 ## 2) construa a imagem do container
-# docker build --tag upmsp-sds-rko --build-arg GIT_TOKEN=SUBSTITUIR_POR_SEU_TOKEN_DO_GIT --build-arg GIT_USER=SUBSTITUIR_POR_SEU_USER_NO_GIT .
+# docker build --tag upmsp-sds-rko --build-arg GIT_TOKEN=SUBSTITUIR_POR_SEU_TOKEN_DO_GIT --build-arg GIT_USER=SUBSTITUIR_POR_SEU_USER_NO_GIT -f Dockerfile ./
 
-## 3) crie o novo container a partir da imagem
-# docker run -dit --name rko --volume $(pwd)/output:/app/output upmsp-sds-rko bash
+## 3) crie o novo container a partir da imagem e execute (ATENCAO: só escreva na pasta output, senão perderá os resultados)
+# docker run -dit --name rko --volume ./output:/app/output upmsp-sds-rko bash
 
 ## 4) com o container já rodando, pode-se executar programas dentro do container
 # docker start rko
-# docker exec -it rko python3 solver.py
+# docker exec -it rko bash
