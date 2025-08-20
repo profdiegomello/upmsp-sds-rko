@@ -1,0 +1,15 @@
+.git
+
+# Ignorar arquivos temporários
+*.tmp
+*.py[cod]
+gantt-*.png
+
+# Ignorar diretórios
+__pycache__/
+.venv/
+
+# Ignorar arquivos específicos
+.DS_Store
+token.txt
+.env

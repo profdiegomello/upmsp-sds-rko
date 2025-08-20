@@ -7,10 +7,13 @@ RUN apt-get update && apt-get install -y git
 # 3) Cria diretório de trabalho
 WORKDIR /app
 
-# 4) Instala as dependências (quando congelar o projeto, gere o requirements.txt)
+# 4.1) Instala as dependências (quando congelar o projeto, gere o requirements.txt)
 RUN pip install --no-cache-dir numpy matplotlib pulp gurobipy argparse kaggle
+# 4.2) Copia arquivo de dependências Python e as instala (caso haja alguma a mais no requirements.txt)
+COPY requirements.txt /app/
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
-# 5) Copia o repositório local (DICA: tudo que for mutável coloque mais abaixo no Dockerfile)
+# 5) Copia o repositório local (DICA: tudo que for mutável coloque abaixo dos comandos de install, isso evita [re]build demorado)
 COPY ./ /app/
 
 ## Quando o projeto estiver pronto, substituiremos os comandos (4) e (5) acima pelos abaixo: 
@@ -32,9 +35,11 @@ CMD ["bash"]
 # firefox https://github.com/settings/tokens
 
 ## 2) construa a imagem do container
-# docker build --tag upmsp-sds-rko --build-arg GIT_TOKEN=SUBSTITUIR_POR_SEU_TOKEN_DO_GIT --build-arg GIT_USER=SUBSTITUIR_POR_SEU_USER_NO_GIT -f Dockerfile ./
+# docker build --tag upmsp-sds-rko -f Dockerfile ./
+#        OBS.: se não for copiar da pasta local mas quiser baixar do github, inclua no comando acima: 
+#              --build-arg GIT_TOKEN=SEU_TOKEN_DO_GIT --build-arg GIT_USER=SEU_USER_NO_GIT
 
-## 3) crie o novo container a partir da imagem e execute (ATENCAO: só escreva na pasta output, senão perderá os resultados)
+## 3) crie o novo container a partir da imagem e execute (ATENÇÃO: só escreva na pasta output, senão perderá os resultados se acidentalmente apagar o container)
 # docker run -dit --name rko --volume ./output:/app/output upmsp-sds-rko bash
 
 ## 4) com o container já rodando, pode-se executar programas dentro do container

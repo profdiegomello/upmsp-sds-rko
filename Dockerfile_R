@@ -1,39 +1,56 @@
 ## OBS.: precisa ficar na raiz do projeto pois o comando COPY do Docker não permite usar ../
 
-# Imagem base
+# 1) Baixa a imagem base do Python
 FROM python:3.13-slim
 
-# Instala dependências do sistema e do R
+# 2) Instala git
+RUN apt-get update && apt-get install -y git
+
+# 3) Cria diretório de trabalho
+WORKDIR /app
+
+# 4.1) Instala as dependências (quando congelar o projeto, gere o requirements.txt)
+RUN pip install --no-cache-dir numpy matplotlib pulp gurobipy argparse kaggle
+# 4.2) Copia arquivo de dependências Python e as instala (caso haja alguma a mais no requirements.txt)
+COPY requirements.txt /app/
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+
+# 5.1) Instala dependências do sistema e do R
 RUN apt-get update && apt-get install -y \
     r-base \
     r-base-dev \
-    git \
     libxml2-dev \
     libcurl4-openssl-dev \
     libssl-dev
-
-# Define diretório de trabalho
-WORKDIR /app
-
-# Copia apenas arquivos de dependências primeiro
-COPY requirements.txt /app/
-# (Se tiver dependências R fixas, crie também um arquivo install_r_packages.R)
-
-# Instala dependências Python
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
-
-# Instala pacote IRACE no R
+# 5.2) Instala pacote IRACE no R
 RUN R -e "install.packages('irace', repos = 'https://cloud.r-project.org')"
 
-# Só agora copia o resto do projeto (evita rebuild desnecessário)
-COPY . /app
+# 6) Copia o repositório local (DICA: tudo que for mutável coloque abaixo dos comandos de install, isso evita [re]build demorado)
+COPY ./ /app/
 
-# Configura Kaggle
-RUN mkdir -p /root/.config/kaggle && \
-    mv /app/.config/kaggle/kaggle.json /root/.config/kaggle/kaggle.json
+# 7.1 Corrige permissão de execução para scripts criados no Windows
+RUN chmod +x ./src/irace/*.sh
+# 7.2) Configura Kaggle
+RUN mkdir -p /root/.config/kaggle && echo '{"username":"everthonvalado","key":"2eb29fb3d6d624834ac906b93bd70650"}' > /root/.config/kaggle/kaggle.json && chmod 600 /root/.config/kaggle/kaggle.json
+# RUN mkdir -p /root/.config/kaggle && cp /app/.config/kaggle/kaggle.json /root/.config/kaggle/kaggle.json
 
-# Permissão para script
-RUN chmod +x irace/irace-sa-run.sh
-
-# Comando padrão
+# 8) Comando padrão para rodar o código se nenhum outro executável for indicado
+# RUN cd /app/src/irace/
+# CMD ["Rscript", "./src/irace/irace-sa-scenario.R"]
 CMD ["bash"]
+
+########################################
+## 1) crie um token (classic) pra API do https://github.com/settings/tokens ()
+# firefox https://github.com/settings/tokens
+
+## 2) construa a imagem do container
+# docker build --tag irace -f Dockerfile_R ./
+#        OBS.: se não for copiar da pasta local mas quiser baixar do github, inclua no comando acima: 
+#              --build-arg GIT_TOKEN=SEU_TOKEN_DO_GIT --build-arg GIT_USER=SEU_USER_NO_GIT
+
+## 3) crie o novo container a partir da imagem e execute (ATENÇÃO: só escreva na pasta output, senão perderá os resultados se acidentalmente apagar o container)
+# docker run -dit --name irace --volume ./output:/app/output irace bash
+
+## 4) com o container já rodando, pode-se executar programas dentro do container
+# docker start irace
+# docker exec -it irace bash

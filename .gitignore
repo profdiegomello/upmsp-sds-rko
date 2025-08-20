@@ -9,6 +9,9 @@ __pycache__/
 bench/
 .venv/
 
+# Evita TOKENS pessoais vazem pelo github
+.config/kaggle 
+
 # Ignorar arquivos específicos
 bench/rsdstruiz-upmsp-sds.zip
 .DS_Store
