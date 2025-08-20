@@ -37,7 +37,8 @@ def download_files(arquivos_desejados=['large/I_50_10_S_1-9_1.txt' , 'small/I_10
     # Extrai apenas os arquivos que ainda não existem no destino
     with zipfile.ZipFile(zip_filename, 'r') as zip_ref:
         for caminho_arquivo in arquivos_desejados:
-            caminho_arquivo = caminho_arquivo.removeprefix("bench/rsdst/")
+            caminho_arquivo = caminho_arquivo.removeprefix("bench/rsdst/") #HACK caso o usuário passe o caminho completo desnecessariamente
+            caminho_arquivo = caminho_arquivo.removeprefix("/app/bench/rsdst/") #FIXED o irace incluía o nome da pasta raiz do Docker
             caminho_zip = prefixo_zip + caminho_arquivo
             destino = os.path.join(extract_folder, caminho_arquivo)
 

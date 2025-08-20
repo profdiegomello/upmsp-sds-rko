@@ -1,7 +1,7 @@
-I_6_2_S_1-9_1.txt
-I_8_2_S_1-9_1.txt
-I_10_2_S_1-9_1.txt
-I_12_2_S_1-9_1.txt
-I_50_10_S_1-9_1.txt
-I_50_15_S_1-9_1.txt
-I_50_20_S_1-9_1.txt
+small/I_6_2_S_1-9_1.txt
+small/I_8_2_S_1-9_1.txt
+small/I_10_2_S_1-9_1.txt
+small/I_12_2_S_1-9_1.txt
+large/I_50_10_S_1-9_1.txt
+large/I_50_15_S_1-9_1.txt
+large/I_50_20_S_1-9_1.txt

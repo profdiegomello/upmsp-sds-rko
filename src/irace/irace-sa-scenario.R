@@ -5,15 +5,15 @@
 library(irace)
 
 config_scenario <- list(
-  parameterFile = "irace-sa-parameters.txt",
+  parameterFile = "src/irace/irace-sa-parameters.txt",
   # Aponte para o script shell que executa o resolvedor Python
-  targetRunner = "./irace-sa-run.sh",
+  targetRunner = "./src/irace/irace-sa-run.sh",
   # O execDir deve ser o diretório raiz do projeto
   execDir = ".",
-  trainInstancesDir = "../../bench/rsdst/small/",
-  trainInstancesFile = "instances-list.txt",
+  trainInstancesDir = "bench/rsdst/",
+  trainInstancesFile = "src/irace/instances-list.txt",
   maxExperiments = 1500,
-  logFile = "irace-sa.log",
+  logFile = "output/irace-sa.log",
   seed = 12345
 )
 

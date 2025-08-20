@@ -5,15 +5,15 @@
 library(irace)
 
 config_scenario <- list(
-  parameterFile = "irace-brkga-parameters.txt",
+  parameterFile = "src/irace/irace-brkga-parameters.txt",
   # Aponte para o script shell que executa o resolvedor Python
-  targetRunner = "./run-brkga-irace.sh",
+  targetRunner = "./src/irace/run-brkga-irace.sh",
   # O execDir deve ser o diretório raiz do projeto
   execDir = ".",
-  trainInstancesDir = "../../bench/rsdst/small/",
-  trainInstancesFile = "instances-list.txt",
+  trainInstancesDir = "bench/rsdst/",
+  trainInstancesFile = "src/irace/instances-list.txt",
   maxExperiments = 1500,
-  logFile = "irace-brkga.log",
+  logFile = "output/irace-brkga.log",
   seed = 12345
 )
 
