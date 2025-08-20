@@ -1,5 +1,5 @@
 n_geracoes "" r ( 100 , 1000 )
 n_individuos "" r ( 50 , 10000 )
 percentual_elite "" r ( 0.1 , 0.3 )
-percentual_mutados= "" r ( 0.05 , 0.15 )
+percentual_mutados "" r ( 0.05 , 0.15 )
 chance_cross "" r ( 0.5 , 0.9 )

@@ -35,7 +35,6 @@ RUN mkdir -p /root/.config/kaggle && echo '{"username":"everthonvalado","key":"2
 # RUN mkdir -p /root/.config/kaggle && cp /app/.config/kaggle/kaggle.json /root/.config/kaggle/kaggle.json
 
 # 8) Comando padrão para rodar o código se nenhum outro executável for indicado
-# RUN cd /app/src/irace/
 # CMD ["Rscript", "./src/irace/irace-sa-scenario.R"]
 CMD ["bash"]
 
