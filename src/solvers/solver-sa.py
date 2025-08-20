@@ -53,7 +53,7 @@ def main():
                             args.nome_instancia, resultado['objetivo'], 'SA')
 
     # Altera a linha para imprimir o custo e a semente
-    print(resultado['objetivo'])
+    # print(resultado['objetivo']) # Mudamos esse print para o output_writer.py de forma que funcione para qualquer solver exibindo o makespan pro irace pegar
 
 
 if __name__ == "__main__":

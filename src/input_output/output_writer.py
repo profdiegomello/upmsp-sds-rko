@@ -29,6 +29,8 @@ def salvar_resultado(
     status: str
 ):
 
+    print(objetivo) # Necessário para o irace pegar o makespan do stdout
+
     # Registra os resultados no arquivo passado, usando tabulação como separador.
     # Caso lowerbound ou gap sejam None, registra como '---'.
 
