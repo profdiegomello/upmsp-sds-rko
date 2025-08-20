@@ -5,7 +5,7 @@
 library(irace)
 
 config_scenario <- list(
-  parameterFile = "parameters.txt",
+  parameterFile = "irace-brkga-parameters.txt",
   # Aponte para o script shell que executa o resolvedor Python
   targetRunner = "./run-brkga-irace.sh",
   # O execDir deve ser o diretório raiz do projeto
