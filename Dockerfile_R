@@ -1,3 +1,5 @@
+## OBS.: precisa ficar na raiz do projeto pois o comando COPY do Docker não permite usar ../
+
 # Imagem base
 FROM python:3.13-slim
 
@@ -31,7 +33,7 @@ RUN mkdir -p /root/.config/kaggle && \
     mv /app/.config/kaggle/kaggle.json /root/.config/kaggle/kaggle.json
 
 # Permissão para script
-RUN chmod +x exp/validation/run-sa-irace.sh
+RUN chmod +x irace/irace-sa-run.sh
 
 # Comando padrão
 CMD ["bash"]

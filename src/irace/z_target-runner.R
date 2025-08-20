@@ -1,3 +1,5 @@
+## DÚVIDA: Gabriel, isso era só um teste de script R ou isso realmente é usado no iRace? 
+
 # O irace passa os argumentos em pares: [instance] [ID] [seed] [param_name_1] [valor_1]...
 args <- commandArgs(trailingOnly = TRUE)
 
@@ -10,7 +12,7 @@ params_irace <- args[4:length(args)]
 # Usamos um loop para passar todos os parâmetros do irace de forma correta
 cmd_python <- c(
     "python3",
-    "../../src/solvers/solver-sa.py",
+    "../solvers/solver-sa.py",
     "--nome_instancia", instance_path,
     "--seed", seed,
     "--arq_saida", "temp_saida.txt",

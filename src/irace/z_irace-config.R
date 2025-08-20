@@ -1,3 +1,5 @@
+## DÚVIDA: Gabriel, o scenario.R usa o parameters.txt, esse arquivo aqui realmente é necessário?
+
 parameters <- list(
   temp_inicial = list(
     type = "real",

@@ -19,7 +19,10 @@ block_size="${10}"
 export PYTHONPATH=/app/src
 
 # Constrói a linha de comando para o resolvedor Python
-exec python3 /app/src/solvers/solver-sa.py \
+# Pro Docker execute como /app
+# exec python3 /app/src/solvers/solver-sa.py \
+# Pro Host execute como ./
+exec python3 ./src/solvers/solver-sa.py \
     --nome_instancia "$instance_path" \
     --seed "$seed" \
     --arq_saida "irace_output.dat" \
