@@ -3,6 +3,7 @@
 *.tmp
 *.py[cod]
 gantt-*.png
+gantt.png-*.png
 
 # Ignorar diretórios
 __pycache__/
