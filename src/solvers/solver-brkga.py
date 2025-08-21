@@ -6,8 +6,6 @@ import time
 # Para executar, usar 'python3 -m solvers.solver-brkga.py'
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-print(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 import input_output.input_reader as entrada
 import input_output.output_writer as saida
 import metaheuristics.brkga.brkga as brkga

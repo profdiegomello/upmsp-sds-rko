@@ -3,10 +3,8 @@ import argparse
 import time
 
 # Adicionando a pasta raiz do codigo fonte para que todos os demais imports sejam relativos
-# Para executar, usar 'python3 -m solvers.solver-brkga.py'
+# Para executar, usar 'python3 -m solvers.solver-rkga.py'
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-print(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import input_output.input_reader as entrada
 import input_output.output_writer as saida
