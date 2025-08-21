@@ -1,0 +1,6 @@
+INSTANCE	JOBS	MACHINE	MODEL	STATUS	OBJECTIVE	LOWERBOUND	GAP	RUNTIME	CONSTRAINTS	VARIABLES	PARAMETERS
+/app/bench/rsdst/large/I_50_15_S_1-9_1.txt	50	15	BRKGA	TEMPO_LIMITE	205.0000	---	---	30.5918	---	---	i-2801|g-156|pe-0.2416|pm-0.1133|c-0.6138|d-2n
+/app/bench/rsdst/large/I_50_15_S_1-9_1.txt	50	15	BRKGA	TEMPO_LIMITE	202.0000	---	---	30.9167	---	---	i-2801|g-156|pe-0.2416|pm-0.1133|c-0.6138|d-2n
+/app/bench/rsdst/large/I_50_15_S_1-9_1.txt	50	15	BRKGA	TEMPO_LIMITE	41.0000	---	---	40.0608	---	---	i-7777|g-607|pe-0.1416|pm-0.0633|c-0.8138|d-ect
+/app/bench/rsdst/large/I_50_15_S_1-9_1.txt	50	15	BRKGA	TEMPO_LIMITE	41.0000	---	---	30.9573	---	---	i-5289|g-382|pe-0.1916|pm-0.0883|c-0.5138|d-n
+/app/bench/rsdst/large/I_50_15_S_1-9_1.txt	50	15	BRKGA	TEMPO_LIMITE	111.0000	---	---	30.1324	---	---	i-313|g-832|pe-0.2916|pm-0.1383|c-0.7138|d-2n*
