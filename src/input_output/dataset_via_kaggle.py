@@ -25,7 +25,7 @@ def download_files(arquivos_desejados=['large/I_50_10_S_1-9_1.txt' , 'small/I_10
 
     # Baixar apenas se o zip ainda não existir
     if not os.path.exists(zip_filename):
-        print("Arquivo ZIP não encontrado. Baixando...")
+        #print("Arquivo ZIP não encontrado. Baixando...")
         kaggle.api.dataset_download_files("everthonvalado/rsdstruiz-upmsp-sds", path="bench/", unzip=False)
 
     # Cria o diretório de extração, se necessário
@@ -43,15 +43,15 @@ def download_files(arquivos_desejados=['large/I_50_10_S_1-9_1.txt' , 'small/I_10
             destino = os.path.join(extract_folder, caminho_arquivo)
 
             if os.path.exists(destino):
-                print(f"Arquivo já existe: {destino} — pulando.")
+                #print(f"Arquivo já existe: {destino} — pulando.")
                 continue
 
             if caminho_zip in zip_ref.namelist():
-                print(f"Extraindo: {caminho_zip} → {destino}")
+                #print(f"Extraindo: {caminho_zip} → {destino}")
                 with zip_ref.open(caminho_zip) as origem, open(destino, "wb") as destino_arquivo:
                     destino_arquivo.write(origem.read())
-            else:
-                print(f"Arquivo não encontrado no zip: {caminho_zip}")
+            # else:
+            #     print(f"Arquivo não encontrado no zip: {caminho_zip}")
 
 def download_file(arquivo_desejado='large/I_50_10_S_1-9_1.txt', extract_folder = 'bench/rsdst/'):
     """
