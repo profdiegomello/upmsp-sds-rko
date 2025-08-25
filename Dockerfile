@@ -25,7 +25,10 @@ COPY ./ /app/
 # # DICA: dentro de um venv, exporte as dependências via: pip freeze > requirements.txt
 # RUN cd /app && pip install --no-cache-dir -r requirements.txt
 
-# 6) Comando padrão para rodar o código se nenhum outro executável for indicado
+# 6) Configura o token da API do Kaggle
+RUN mkdir -p /root/.config/kaggle && echo '{"username":"everthonvalado","key":"2eb29fb3d6d624834ac906b93bd70650"}' > /root/.config/kaggle/kaggle.json && chmod 600 /root/.config/kaggle/kaggle.json
+
+# 7) Comando padrão para rodar o código se nenhum outro executável for indicado
 # CMD ["python", "solver.py"]
 CMD ["bash"]
 
