@@ -1,6 +1,7 @@
 import random
-import threading
 import time
+
+# O import de 'threading' foi removido, pois não é mais necessário.
 
 estado=0
 saida=0
@@ -211,16 +212,13 @@ def decode_individuo(individuo, indice, n_populacao, dados, decoder):
             
     # Armazena o resultado decodificado
     n_populacao[indice] = maquinas_jobs
-    
+
+# --- ALTERAÇÃO 1: Função 'decode' agora é sequencial ---
 def decode(dados, populacao, decoder):
-    threads=[]
-    n_populacao=[None] * len(populacao)
+    n_populacao = [None] * len(populacao)
+    # O laço agora chama a função diretamente, uma por uma.
     for i, individuo in enumerate(populacao):
-        thread=threading.Thread(target=decode_individuo, args=(individuo, i, n_populacao, dados, decoder))
-        threads.append(thread)
-        thread.start()
-    for thread in threads:
-        thread.join()
+        decode_individuo(individuo, i, n_populacao, dados, decoder)
     return n_populacao
 
 def fitness_individuo(dados, individuo, indice, results):
@@ -242,56 +240,56 @@ def fitness_individuo(dados, individuo, indice, results):
         tempo_maquinas[m] = tempo_total
 
     # O makespan é o tempo da máquina mais carregada
-    makespan = max(tempo_maquinas.values())
+    makespan = max(tempo_maquinas.values()) if tempo_maquinas else 0
     results[indice] = makespan
 
+# --- ALTERAÇÃO 2: Função 'fitness' agora é sequencial ---
 def fitness(dados, n_populacao, populacao):
-    threads=[]
-    results=[None] * len(n_populacao)
+    results = [None] * len(n_populacao)
+    # O laço agora chama a função diretamente, uma por uma.
     for i, individuo in enumerate(n_populacao):
-        thread=threading.Thread(target=fitness_individuo, args=(dados, individuo, i, results))
-        threads.append(thread)
-        thread.start()
-    for thread in threads:
-        thread.join()
+        fitness_individuo(dados, individuo, i, results)
+    
+    # A lógica de ordenação permanece a mesma
     combinados = sorted(zip(results, populacao, n_populacao), key=lambda par: par[0])
     resultados_ordenados, populacao_ordenada, n_populacao_ordenada = zip(*combinados)
     return list(populacao_ordenada), list(resultados_ordenados), list(n_populacao_ordenada)
 
 def crossover_individuo(dados, individuo, indice, populacao, i_elite, chance_cross):
-    tamanho_gene=int(len(individuo))
-    indv=list(individuo)
-    for i in range(0, tamanho_gene, 1):
+    tamanho_gene = int(len(individuo))
+    indv = list(individuo)
+    for i in range(tamanho_gene):
         if random.random() < chance_cross:
-            indv[i]=i_elite[i]
-    populacao[indice]=indv
+            indv[i] = i_elite[i]
+    populacao[indice] = indv
     return
 
 def mutation_individuo(dados, indice, populacao, indiv):
-    individuo=[]
-    for i in range(0, len(indiv),1):
+    individuo = []
+    for i in range(len(indiv)):
         individuo.append(random.random())
-    populacao[indice]=individuo
+    populacao[indice] = individuo
 
+# --- ALTERAÇÃO 3: Função 'gera_nova_populacao' agora é sequencial ---
 def gera_nova_populacao(dados, populacao_f, percentual_elite, percentual_mutados, chance_cross):
-    p_elite=int(len(populacao_f)*percentual_elite)
-    p_mutados=int(len(populacao_f))-int(len(populacao_f)*percentual_mutados)
-    threads=[]
-    populacao=[None] * (len(populacao_f))
-    for i in range(0, len(populacao_f), 1):
-        if(i>p_mutados):
-            thread=threading.Thread(target=mutation_individuo, args=(dados, i, populacao, populacao_f[i]))
-            threads.append(thread)
-            thread.start()
-        elif(i>p_elite):
-            sorteio=random.randint(0, p_elite)
-            thread=threading.Thread(target=crossover_individuo, args=(dados, populacao_f[i], i, populacao, populacao_f[sorteio], chance_cross))
-            threads.append(thread)
-            thread.start()
+    p_elite = int(len(populacao_f) * percentual_elite)
+    # Índice a partir do qual a mutação começa
+    p_inicio_mutacao = int(len(populacao_f) * (1 - percentual_mutados))
+    
+    populacao = [None] * len(populacao_f)
+
+    for i in range(len(populacao_f)):
+        # Elitismo: os melhores indivíduos são copiados diretamente
+        if i < p_elite:
+            populacao[i] = populacao_f[i]
+        # Mutação: os piores indivíduos são substituídos por novos aleatórios
+        elif i >= p_inicio_mutacao:
+            mutation_individuo(dados, i, populacao, populacao_f[i])
+        # Crossover: o restante da população cruza com a elite
         else:
-            populacao[i]=populacao_f[i]
-    for thread in threads:
-        thread.join()
+            sorteio = random.randint(0, p_elite - 1 if p_elite > 0 else 0)
+            crossover_individuo(dados, populacao_f[i], i, populacao, populacao_f[sorteio], chance_cross)
+            
     return populacao
 
 def escrita_inicial(t_inicio, nome_instancia, tempo_limite, n_geracoes, n_individuos, parcial):
@@ -316,7 +314,7 @@ def escreve_parcial(results, geracao, t_inicio, arq_saida):
         # Opcional: para depuração, pode-se incluir mais detalhes
         # f.write(f"# Melhor solução da geração {geracao}: {populacao_f[0]}\n")
 
-def escreve_final(populacao_f, populacao_m_f, results, t_inicio, arq_saida, saida, geracao):
+def escreve_final(populacao_f, populacao_m_f, results, t_inicio, arq_saida, saida, geracao, dados):
     tempo_total = time.time() - t_inicio
     melhor_makespan = results[0]
     melhor_individuo = populacao_f[0]
@@ -386,6 +384,9 @@ def solve(dados, nome_instancia, tempo_limite, n_individuos, n_geracoes, percent
     
     if parcial==1:
         escrita_inicial(t_inicio, nome_instancia, tempo_limite, n_geracoes, n_individuos, parcial)
+    
+    # Inicializa variáveis para guardar a melhor solução encontrada
+    populacao_f, results, populacao_m_f = [], [], []
 
     geracao=1
     while(verifica_tempo_expirado(t_inicio, tempo_limite)):
@@ -414,6 +415,12 @@ def solve(dados, nome_instancia, tempo_limite, n_individuos, n_geracoes, percent
     # Calcula o runtime     
     tempo_f = time.time() - t_inicio
     
+    # Se a última ação foi gerar uma nova população, precisamos avaliar
+    # e ordenar uma última vez para garantir que temos a melhor solução.
+    if populacao_f is None or not populacao_f:
+        n_populacao = decode(dados, populacao, decoder)
+        populacao_f, results, populacao_m_f = fitness(dados, n_populacao, populacao)
+
     if(saida==TEMPO_LIMITE):
         status_str="TEMPO_LIMITE"
     else:
@@ -422,5 +429,8 @@ def solve(dados, nome_instancia, tempo_limite, n_individuos, n_geracoes, percent
     # Converte a solucao do BRKGA em 'variaveis' C e X  
     C, X = calcular_C_e_X(populacao_m_f[0], dados) # populacao_m_f[0] é a melhor solução
                 
+    # Escreve o resultado final
+    escreve_final(populacao_f, populacao_m_f, results, t_inicio, "saidabrkga.txt", saida, geracao, dados)
+    
     # retorna a solucao
-    return results, tempo_f, status_str, C, X          
+    return results, tempo_f, status_str, C, X
