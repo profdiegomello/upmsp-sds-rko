@@ -1,5 +1,5 @@
 # Ignorar arquivos temporários
-*.log
+#*.log
 *.tmp
 *.py[cod]
 gantt-*.png
