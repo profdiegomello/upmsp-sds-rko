@@ -38,13 +38,13 @@ CMD ["bash"]
 # firefox https://github.com/settings/tokens
 
 ## 2) construa a imagem do container
-# docker build --tag upmsp-sds-rko -f Dockerfile ./
+# docker build --tag upmsp -f Dockerfile ./
 #        OBS.: se não for copiar da pasta local mas quiser baixar do github, inclua no comando acima: 
 #              --build-arg GIT_TOKEN=SEU_TOKEN_DO_GIT --build-arg GIT_USER=SEU_USER_NO_GIT
 
-## 3) crie o novo container a partir da imagem e execute (ATENÇÃO: só escreva na pasta output, senão perderá os resultados se acidentalmente apagar o container)
-# docker run -dit --name rko --volume ./output:/app/output upmsp-sds-rko bash
+## 3) crie o novo container a partir da imagem e execute-o
+# docker run -dit --name exp --volume ./:/app/ upmsp 
 
 ## 4) com o container já rodando, pode-se executar programas dentro do container
-# docker start rko
-# docker exec -it rko bash
+# docker start exp
+# docker exec -it exp bash
