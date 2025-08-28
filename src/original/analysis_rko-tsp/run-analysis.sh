@@ -2,7 +2,8 @@
 
 # listas de parâmetros
 # heuristicas=("vns" "ils" "lns" "ga" "brkga" "grasp" "pso" "sa")
-heuristicas=("vns" "ils" "lns" "ga" "brkga" "grasp" "brkga,ils,grasp" "brkga,lns" "grasp,ils,vns" "ga,grasp")
+## OBS.: agente pso está gerando resultados ruins ainda, agente sa não está respeitando o tempo limite
+heuristicas=("vns" "ils" "lns" "ga" "brkga" "grasp" "brkga,ils,grasp" "brkga,lns" "grasp,ils,vns" "ga,grasp" "ils,lns,vns" "brkga,ga,grasp,ils,lns,vns")
 
 # instancias=("eil51" "a280" "att48" "kroA200")
 instancias=("eil51" "a280")
