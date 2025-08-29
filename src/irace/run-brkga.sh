@@ -1,4 +1,5 @@
 #!/bin/bash
+# bash -c "Rscript src/irace/irace-brkga-scenario.R | tee -a output/irace-brkga_$(date +%Y-%m-%d)_stdout.txt"
 
 # O irace passa os argumentos na seguinte ordem:
 # [ID da config] [ID da instancia] [semente] [caminho da instancia] [param1 valor] [param2 valor] ...
