@@ -21,5 +21,5 @@ $SUDO docker build --tag irace -f Dockerfile_iRace ./ \
 
 ## DICA: para pausar a execução do container e fazer checkpoint (ex.: para desligar a máquina e depois retomar do ponto pausado): 
 ##       OBS.: não pode rodar o container com --rm senão não tem como fazer checkpoint
-# docker checkpoint create irace checkpoint1
-# docker start --checkpoint checkpoint1 irace
+# $SUDO docker checkpoint create irace checkpoint1
+# $SUDO docker start --checkpoint checkpoint1 irace
