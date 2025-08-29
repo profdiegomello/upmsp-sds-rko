@@ -5,6 +5,20 @@ if (!require(ggplot2)) {
 }
 
 # ---
+# Lendo as dimensões do gráfico da linha de comando
+# ---
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) == 2) {
+  plot_width <- as.numeric(args[1])
+  plot_height <- as.numeric(args[2])
+} else {
+  # Define valores padrão se as dimensões não forem fornecidas
+  plot_width <- 16
+  plot_height <- 16
+  cat("Dimensões não especificadas. Usando o padrão: 16x16\n")
+}
+
+# ---
 # Leitura dos dados
 # ---
 # Define o nome do arquivo
@@ -17,8 +31,8 @@ data <- read.table(file_path, header = TRUE, fill = TRUE, stringsAsFactors = FAL
 # Limpeza e preparação dos dados
 # ---
 # Remove linhas com valores ausentes ou não numéricos nas colunas OBJECTIVE e RUNTIME
-data <- data[complete.cases(data$OBJECTIVE, data$RUNTIME) & 
-             !is.na(as.numeric(data$OBJECTIVE)) & 
+data <- data[complete.cases(data$OBJECTIVE, data$RUNTIME) &
+             !is.na(as.numeric(data$OBJECTIVE)) &
              !is.na(as.numeric(data$RUNTIME)), ]
 data$OBJECTIVE <- as.numeric(data$OBJECTIVE)
 data$RUNTIME <- as.numeric(data$RUNTIME)
@@ -46,8 +60,8 @@ plot_objective <- ggplot(data, aes(x = MODEL, y = OBJECTIVE, fill = MODEL)) +
     plot.background = element_rect(fill = "white") # Define o fundo branco
   )
 
-# Salva o gráfico em um arquivo
-ggsave("boxplot-objective.png", plot = plot_objective, width = 10, height = 8)
+# Salva o gráfico em um arquivo com as dimensões especificadas
+ggsave("boxplot-objective.png", plot = plot_objective, width = plot_width, height = plot_height)
 
 # ---
 # Geração e salvamento do boxplot de RUNTIME
@@ -68,5 +82,5 @@ plot_runtime <- ggplot(data, aes(x = MODEL, y = RUNTIME, fill = MODEL)) +
     plot.background = element_rect(fill = "white") # Define o fundo branco
   )
 
-# Salva o gráfico em um arquivo
-ggsave("boxplot-runtime.png", plot = plot_runtime, width = 10, height = 8)
+# Salva o gráfico em um arquivo com as dimensões especificadas
+ggsave("boxplot-runtime.png", plot = plot_runtime, width = plot_width, height = plot_height)
