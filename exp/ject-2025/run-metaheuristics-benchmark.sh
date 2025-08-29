@@ -48,12 +48,19 @@ fi
 
 # Agora, lista todas as instancias da pasta e guarda em uma variavel
 BENCHMARK=$(ls $PASTA | grep ".txt" | sort -R)
+BENCH_SIZE=$(echo "$BENCHMARK" | wc -l)
 
 echo
 echo "Benchmark:"
 echo
 echo "$BENCHMARK"
 echo
+echo "Total: $BENCH_SIZE instancias"
+echo
+
+# Reseta os contadores
+SA_COUNT=0
+BRKGA_COUNT=0
 
 # Executa o solver MIP para cada instancia do benchmark informado
 for instancia in $BENCHMARK
@@ -63,7 +70,11 @@ do
     relatorio="results/report-mh.dat"
     gantt_sa="results/cronograma-$instancia"
     gantt_brkga="results/cronograma-$instancia"
-    
+
+    # Incrementa contadores            
+    SA_COUNT=$((SA_COUNT + 1))
+    BRKGA_COUNT=$((BRKGA_COUNT + 1))
+
     # Verifica se a instância já está listada no arquivo de controle
     if [ $(grep -Fx "$instancia" "$FILE_CONTROL_SA" | wc -l) -gt 0 ]; then
     
@@ -73,7 +84,7 @@ do
     else
     
         echo
-        echo "Running instance '$instancia', recording at $relatorio, graphics in $gantt_sa..."
+        echo "SA: Running instance '$instancia' ($SA_COUNT/$BENCH_SIZE), recording at $relatorio, graphics in $gantt_sa..."
 
         # Invoca o Simulated Annealing, usando os 'melhores parametros' investigados pelo irace            
         PYTHONPATH=../../src python3 -m solvers.solver-sa \
@@ -106,7 +117,7 @@ do
     else
     
         echo
-        echo "Running instance '$instancia', recording at $relatorio, graphics in $gantt_brkga..."
+        echo "BRKGA: Running instance '$instancia' ($BRKGA_COUNT/$BENCH_SIZE), recording at $relatorio, graphics in $gantt_brkga..."
 
         # Invoca o BRKGA, usando os 'melhores parametros' investigados pelo irace
         PYTHONPATH=../../src python3 -m solvers.solver-brkga \
