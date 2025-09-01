@@ -10,6 +10,8 @@ else
     SUDO=""
 fi
 
+$SUDO docker build --tag irace -f Dockerfile_iRace ./ 
+
 # $SUDO docker run --rm -it --volume ./:/app irace bash
 $SUDO docker run -it --volume ./:/app irace \
     bash 

@@ -10,9 +10,10 @@ else
     SUDO=""
 fi
 
-# $SUDO docker run --rm -it --volume ./:/app upmsp bash
-$SUDO docker run -it --volume ./:/app upmsp bash
-# $SUDO docker run -it --volume ./:/app upmsp bash -c "cd ./exp/ject-2025/ && ./run-sa-benchmark.sh ../../bench/rsdst/small 300"
+$SUDO docker build --tag upmsp -f Dockerfile ./ 
+
+# $SUDO docker run -it --volume ./:/app upmsp bash
+$SUDO docker run -it --volume ./:/app upmsp bash -c 'cd ./exp/ject-2025/ && ( ./run-metaheuristics-benchmark.sh ../../bench/benchmark/small/ 300 ; ./run-metaheuristics-benchmark.sh ../../bench/benchmark/medium/ 300 )'
 
 ## se precisar liberar espaço em disco, apague o cache do docker build: 
 # $SUDO docker buildx prune -f
