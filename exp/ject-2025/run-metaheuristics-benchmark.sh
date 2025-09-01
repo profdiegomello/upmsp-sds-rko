@@ -1,6 +1,16 @@
 #!/bin/bash
 
 #
+# SA: usa a configuração elite do irace em 22/Ago/2025
+#
+# 2025-08-22 16:33:27 UTC: Elite configurations (first number is the configuration ID; listed from best to worst according to the sum of ranks):
+#     temp_inicial  alpha iter_por_temp p_block p_shift block_size time_limit
+# 146     604.2301 0.9987           178  0.0597  0.4605         10       1800
+# 222     460.0284 0.9990           172  0.0576  0.4594         11       1800
+# 255     437.5871 0.9985           164  0.0587  0.4346         11       1800
+# 137     686.7358 0.9989           106  0.0793  0.5898         25       1800
+
+#
 # BRKGA: usa a configuração elite do irace em 01/Set/2025
 #
 # 2025-09-01 10:32:39 UTC: Elite configurations (first number is the configuration ID; listed from best to worst according to the sum of ranks):
@@ -104,13 +114,13 @@ do
             --arq_saida $relatorio \
             --arq_gantt $gantt_sa \
             --time_limit $TIMELIMIT \
-            --temp_inicial 1150\
+            --temp_inicial 605 \
             --temp_final 1 \
             --alpha 0.998 \
-            --iter_por_temp 160 \
-            --p_block 0.05 \
-            --p_shift 0.7 \
-            --block_size 8 \
+            --iter_por_temp 178 \
+            --p_block 0.06 \
+            --p_shift 0.46 \
+            --block_size 10 \
             
         # Verifica se o comando Python executou com sucesso. Se deu exit() != 0, não salva porque deu problema
         if [ $? -eq 0 ]; then
