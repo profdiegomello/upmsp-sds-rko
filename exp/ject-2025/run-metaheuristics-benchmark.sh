@@ -69,7 +69,8 @@ fi
 
 
 # Agora, lista todas as instancias da pasta e guarda em uma variavel
-BENCHMARK=$(ls $PASTA | grep ".txt" | sort -R)
+# BENCHMARK=$(ls -1 $PASTA | grep ".txt" | sort -R)
+BENCHMARK=$(find $PASTA -type f -name "*.txt" -exec basename {} \; | sort -R)
 BENCH_SIZE=$(echo "$BENCHMARK" | wc -l)
 
 echo
