@@ -1,5 +1,17 @@
 #!/bin/bash
 
+#
+# BRKGA: usa a configuração elite do irace em 01/Set/2025
+#
+# 2025-09-01 10:32:39 UTC: Elite configurations (first number is the configuration ID; listed from best to worst according to the sum of ranks):
+#
+#     n_geracoes n_individuos percentual_elite percentual_mutados chance_cross decoder tempo_limite
+# 159        400         1500           0.1800             0.0947       0.7445     ect          300
+# 131        400         1500           0.1806             0.0914       0.7470     ect          300
+# 151        400         1500           0.1742             0.0767       0.7830     ect          300
+# 153        600         1500           0.1764             0.0788       0.7620     ect          300
+
+
 # Testando se foram informados os argumentos necessarios
 if [ "$#" -lt 1 ]; then
     echo
@@ -18,11 +30,11 @@ if [ ! -d $1 ]; then
     exit 1
 fi
 
-# Se informou tambem o tempo limite, captura da linha de comando. Senão, assume 1 hs de experimento
+# Se informou tambem o tempo limite, captura da linha de comando. Senão, assume 5 min de experimento
 if [ "$#" -eq 2 ]; then
     TIMELIMIT=$2
 else
-    TIMELIMIT=3600
+    TIMELIMIT=300
 fi
 
 # Cria a pasta results, se ela ainda nao existir
@@ -125,11 +137,11 @@ do
             --arq_saida $relatorio \
             --gantt $gantt_brkga \
             --tempo_limite $TIMELIMIT \
-            --n_geracoes 500 \
-            --n_individuos 1000 \
-            --percentual_elite 0.1821 \
-            --percentual_mutados 0.08 \
-            --chance_cross 0.8 \
+            --n_geracoes 400 \
+            --n_individuos 1500 \
+            --percentual_elite 0.18 \
+            --percentual_mutados 0.095 \
+            --chance_cross 0.75 \
             --decoder ect \
 
         # Verifica se o comando Python executou com sucesso. Se deu exit() != 0, não salva porque deu problema
