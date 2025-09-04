@@ -4,6 +4,7 @@
 *.py[cod]
 gantt-*.png
 gantt.png-*.png
+cronograma-*.png
 
 # Ignorar diretórios
 __pycache__/
