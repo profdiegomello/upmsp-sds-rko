@@ -9,8 +9,18 @@ gantt.png-*.png
 # Ignorar diretórios
 __pycache__/
 .venv/
+exp/ject-2025/results/sa-brkga/
+cronograma-I*.png
 
 # Ignorar arquivos específicos
 .DS_Store
 token.txt
 .env
+
+# Ignorar plots do rko-tsp
+Synthetic-solution.png
+src/original/rko-tsp/*-solution.png
+
+# Ignorar plots do analysis_rko-tsp
+src/original/analysis_rko-tsp/*/*.png
+src/original/analysis_rko-tsp/*/*.log

@@ -28,6 +28,10 @@ COPY ./ /app/
 # 6) Configura o token da API do Kaggle
 RUN mkdir -p /root/.config/kaggle && echo '{"username":"everthonvalado","key":"2eb29fb3d6d624834ac906b93bd70650"}' > /root/.config/kaggle/kaggle.json && chmod 600 /root/.config/kaggle/kaggle.json
 
+# 7) Configura a variavel de ambiente apontando pra licenca do gurobi
+COPY ./gurobi.lic /app/gurobi.lic
+RUN export GRB_LICENCE_FILE="/app/gurobi.lic"
+
 # 7) Comando padrão para rodar o código se nenhum outro executável for indicado
 # CMD ["python", "solver.py"]
 CMD ["bash"]
