@@ -51,6 +51,12 @@ def salvar_resultado(
         gap_str="---"
         lowerbound_str = "---"
 
+    if objetivo is not None:
+        objetivo_str = f"{objetivo:.4f}"
+    else:
+        objetivo_str = "---"
+
+
     # Apenas solvers MIP contém restricoes e variaveis        
     if constraints == 0:
         constraints_str = '---'
@@ -71,7 +77,7 @@ def salvar_resultado(
                  f"{machines}\t"
                  f"{modelo}\t"
                  f"{status}\t"
-                 f"{objetivo:.4f}\t"
+                 f"{objetivo_str}\t"
                  f"{lowerbound_str}\t"
                  f"{gap_str}\t"
                  f"{runtime:.4f}\t"
