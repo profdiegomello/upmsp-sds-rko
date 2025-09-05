@@ -38,7 +38,7 @@ def salvar_resultado(
     novo_arquivo = not os.path.exists(arquivo_saida)
 
     # Se lowerbound ou gap forem None, vamos definir uma string padrão '---'
-    if lowerbound is not None:
+    if lowerbound is not None and lowerbound != 0:
     
         if gap is not None:
            gap_str = gap
