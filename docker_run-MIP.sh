@@ -14,6 +14,7 @@ $SUDO docker build --tag upmsp -f Dockerfile ./
 
 # $SUDO docker run -it --volume ./:/app upmsp bash
 $SUDO docker run -it --volume ./:/app upmsp bash -c 'cd ./exp/ject-2025/ && ( ./run-mip-benchmark.sh ../../bench/benchmark/medium/ 1200 )'
+#$SUDO docker run -it --volume ./:/app upmsp bash -c 'cd ./exp/ject-2025/ && ( ./run-mip-benchmark.sh ../../bench/benchmark/teste/ 300 )'
 
 ## se precisar liberar espaço em disco, apague o cache do docker build: 
 # $SUDO docker buildx prune -f
