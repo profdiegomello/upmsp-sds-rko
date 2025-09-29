@@ -50,7 +50,8 @@ axes = axes.flatten()
 # Define as cores e o offset para cada modelo
 model_colors =  {'SA': 'blue',   'RKO': 'green',    'BRKGA': 'olive',   'RKGA': 'coral',  'MIP': 'red'}
 model_offsets = {'SA': -0.2,     'RKO': -0.1,           'BRKGA': 0,       'RKGA': 0.1,       'MIP': 0.2}
-models = ['SA', 'RKO', 'BRKGA', 'RKGA', 'MIP']
+# models = ['SA', 'RKO', 'BRKGA', 'RKGA', 'MIP']
+models = ['SA', 'RKO', 'BRKGA', 'RKGA']
 
 for i, group_val in enumerate(ratio_groups):
     ax = axes[i]
