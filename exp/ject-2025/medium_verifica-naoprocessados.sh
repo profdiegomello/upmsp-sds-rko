@@ -3,8 +3,11 @@
 # MODEL="UPMSP-SDS-MIP"
 # FILE="results/report.dat"
 
-MODEL="RKO"
-FILE="results/report-rko.dat"
+# MODEL="RKO"
+# FILE="results/report-rko.dat"
+
+MODEL="RKGA"
+FILE="results/report-rkga.dat"
 
 echo '[INFO ] verificando instancias não processadas para o modelo' $MODEL 'conforme resultados em ' $FILE
 
