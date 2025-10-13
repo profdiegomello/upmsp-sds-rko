@@ -1,0 +1,6 @@
+n_geracoes         "" c ("200" "400" "600")
+n_individuos       "" c ("500" "1000" "1500")
+percentual_elite   "" r (0.15 , 0.20)
+percentual_mutados "" r (0.07 , 0.10)
+chance_cross       "" r (0.65 , 0.85)
+tempo_limite       "" c ("300")
