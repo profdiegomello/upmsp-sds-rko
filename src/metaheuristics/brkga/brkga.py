@@ -11,7 +11,7 @@ GERACAO_FINAL=1
 
 def encode(dados, n_individuos, decoder):
     populacao=[]
-    if decoder == "n":
+    if decoder == "n" or "m3law":
         for i in range(n_individuos):
             individuo=[]
             for j in dados["N"]:
@@ -209,6 +209,61 @@ def decode_individuo(individuo, indice, n_populacao, dados, decoder):
 
             # Aloca o job na melhor máquina
             maquinas_jobs[melhor_maquina].append(job)
+    
+    elif decoder == "m3law":
+        # Define quantos jobs à frente o algoritmo vai "olhar".
+        # Pode ser fixo ou proporcional (ex: max(3, int(n_jobs * 0.05)))
+        WINDOW_SIZE = 5 
+        
+        # 1. Ordena os jobs pela prioridade
+        jobs_ordenados = sorted(range(1, n_jobs + 1), key=lambda j: copia[j - 1])
+        
+        # Lista de jobs pendentes (usamos list para poder remover itens)
+        jobs_pendentes = list(jobs_ordenados)
+
+        maquinas_jobs = {m: [] for m in dados["M"]}
+        tempo_termino_maquinas = {m: 0 for m in dados["M"]}
+        ultimo_job_maquina = {m: 0 for m in dados["M"]} # Dummy job 0
+
+        # Enquanto houver jobs para alocar
+        while jobs_pendentes:
+            # 2. Define a janela de visualização (Look Ahead)
+            # Pega os primeiros 'WINDOW_SIZE' jobs da lista de pendentes
+            janela = jobs_pendentes[:WINDOW_SIZE]
+            
+            melhor_job = None
+            melhor_maquina = None
+            menor_tempo_termino = float('inf')
+
+            # 3. Avalia todas as combinações (Job da Janela X Máquina)
+            for job_candidato in janela:
+                for maquina in dados["M"]:
+                    # Calcula tempo de setup e processamento
+                    setup_time = dados["S"].get((maquina, ultimo_job_maquina[maquina], job_candidato), 0)
+                    processing_time = dados["p"].get((maquina, job_candidato), float('inf'))
+                    
+                    # O objetivo é minimizar o makespan local (terminar o quanto antes)
+                    completion_time = tempo_termino_maquinas[maquina] + setup_time + processing_time
+
+                    # Critério guloso: menor tempo de término (Earliest Completion Time)
+                    if completion_time < menor_tempo_termino:
+                        menor_tempo_termino = completion_time
+                        melhor_maquina = maquina
+                        melhor_job = job_candidato
+
+            # 4. Realiza a alocação do melhor par encontrado
+            if melhor_job is not None and melhor_maquina is not None:
+                maquinas_jobs[melhor_maquina].append(melhor_job)
+                tempo_termino_maquinas[melhor_maquina] = menor_tempo_termino
+                ultimo_job_maquina[melhor_maquina] = melhor_job
+                
+                # Remove o job escolhido da lista de pendentes
+                jobs_pendentes.remove(melhor_job)
+            else:
+                # Fallback de segurança (caso processing_time seja inf para todos, o que não deve ocorrer)
+                job_forcado = jobs_pendentes.pop(0)
+                # (Lógica de fallback simples: joga na primeira máquina ou aleatória)
+                maquinas_jobs[dados["M"][0]].append(job_forcado)
             
     # Armazena o resultado decodificado
     n_populacao[indice] = maquinas_jobs
