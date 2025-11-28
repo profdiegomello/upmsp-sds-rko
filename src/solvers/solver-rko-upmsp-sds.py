@@ -101,7 +101,7 @@ class UPMSPSDSProblem(RKOEnvAbstract):
 
     def _decoder_m3law(self, keys: np.ndarray) -> dict:
         """
-        Novo Decoder: Mioptic Minimum Makespan + Look Ahead Window.
+        Decoder: Mioptic Minimum Makespan + Look Ahead Window.
         Analisa uma janela de tarefas futuras para decidir a melhor alocação.
         """
         num_jobs = len(self.dados["N"])
@@ -197,8 +197,7 @@ if __name__ == "__main__":
     parser.add_argument("--time", type=int, default=60, help="Tempo limite de execução em segundos.")
     parser.add_argument("--gantt", type=str, default=None, help="Nome base para o arquivo do gráfico de Gantt.")
     parser.add_argument("--output", type=str, default=None, help="Arquivo de saída para registrar os resultados.")
-    # NOVO: Argumento para selecionar o decoder
-    parser.add_argument("--decoder", type=str, default="ECT", choices=["ECT", "M3LAW"], help="Estratégia de decodificação (ECT ou M3LAW).")
+    parser.add_argument("--decoder", type=str, default="ECT", help="Estratégia de decodificação (ECT ou M3LAW).")
     
     args = parser.parse_args()
 
