@@ -44,24 +44,22 @@ WINDOW_HEIGHT = 975
 AGENT_CARD_WIDTH = 360
 AGENT_CARD_HEIGHT = 300
 
-# ==============================================================================
-# NOVA FUNÇÃO: COLETOR DE DADOS
-# ==============================================================================
-def collect_all_data(knight_tab, sliders_tab, io_tab) -> dict:
+#Coleta dados de todas as abas
+def coleta_dados(knight_tab, sliders_tab, io_tab) -> dict:
     """
     Varre todas as abas, extrai os valores dos widgets e empacota em um dicionário.
     """
     data = {}
 
-    # 1. Coletando Knight Tab (Hyper-parameters)
-    # Verificamos se os widgets foram criados antes de tentar acessar
+    #Coletando Knight Tab (Hyper-parameters)
+    # Verifica se os widgets foram criados antes de tentar acessar
     if hasattr(knight_tab, 'widgets'):
         data["hyper_parameters"] = {
             "decoder": knight_tab.widgets["decoder"].get(),
             "time_limit": knight_tab.widgets["time_limit"].get()
         }
 
-    # 2. Coletando Sliders Tab (Agents)
+    #Coletando Sliders Tab (Agents)
     data["agents"] = {}
     if hasattr(sliders_tab, 'params'):
         for agent_name, widgets in sliders_tab.params.items():
@@ -77,7 +75,7 @@ def collect_all_data(knight_tab, sliders_tab, io_tab) -> dict:
                 
                 data["agents"][agent_name] = agent_params
 
-    # 3. Coletando IO Tab (Paths)
+    #Coletando IO Tab (Paths)
     data["io"] = {}
     if hasattr(io_tab, 'widgets'):
         for key, entry_widget in io_tab.widgets.items():
@@ -128,7 +126,7 @@ def build_app() -> Tuple[ctk.CTk, callable, ctk.CTkFrame, ctk.CTkFrame, ctk.CTkF
 
     return janela, show_tab, knight_tab, sliders_tab, io_tab, play_tab
 
-# --- CONFIGURAÇÃO DAS ABAS (ATUALIZADAS COM STORAGE) ---
+# ABAS
 
 def _setup_knight_tab(tab):
     tab.widgets = {} # Storage
@@ -242,12 +240,14 @@ def _setup_play_tab(tab, knight_tab, sliders_tab, io_tab):
     
     def on_start():
         # AQUI É O MOMENTO MÁGICO
-        dados = collect_all_data(knight_tab, sliders_tab, io_tab)
+        dados = coleta_dados(knight_tab, sliders_tab, io_tab)
         
         # depois troco para chamar a thread
         print(dados)
         #print("Dicionário pronto para ser enviado para a Thread!")
 
+    #daqui pra baixo eh soh para simular um terminal onde o  
+    #usuario nao consegue escrever. "Output box"
     class RedirectText(object):
         def __init__(self, text_widget):
             self.text_widget = text_widget
