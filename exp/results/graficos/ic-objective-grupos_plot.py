@@ -18,7 +18,10 @@ df['ERRO'] = (df['IC_SUPERIOR_95'] - df['IC_INFERIOR_95']) / 2
 
 # --- ALTERAÇÃO: Nova Estratégia de Agrupamento ---
 # Agrupa arredondando a razão para o 0.5 mais próximo.
-df['RATIO_GROUP'] = (df['JOBS'] / df['MACHINES'] * 2).round() / 2
+# df['RATIO_GROUP'] = (df['JOBS'] / df['MACHINES'] * 2).round() / 2
+
+# Agrupa arredondando a razão para o 1.0 mais próximo.
+df['RATIO_GROUP'] = (df['JOBS'] / df['MACHINES']).round()
 
 df['RATIO_GROUP'] = df['RATIO_GROUP'].clip(upper=20) ## arredonda tudo acima de 20 para 20
 
@@ -48,9 +51,16 @@ axes = axes.flatten()
 # --- 3. Plotagem Iterativa em cada Subfigura ---
 
 # Define as cores e o offset para cada modelo
-model_colors =  {'RKO-Cheapest': 'blue',   'RKO-M3LAW': 'green',    'RKO-ECT': 'olive',   'RKO-INC': 'coral',  'RKO-KSTS': 'red'}
-model_offsets = {'RKO-Cheapest': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1, 'RKO-KSTS': 0.2}
-models = ['RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC', 'RKO-KSTS']
+
+## APENAS os RKO-Decoders 
+# model_colors =  {'RKO-Cheapest': 'blue',   'RKO-M3LAW': 'green',    'RKO-ECT': 'olive',   'RKO-INC': 'coral',  'RKO-KSTS': 'red'}
+# model_offsets = {'RKO-Cheapest': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1, 'RKO-KSTS': 0.2}
+# models = ['RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC', 'RKO-KSTS']
+
+## MIP, SA, BRKGA e RKO-Decoders
+model_colors =  {'SA': 'blue', 'BRKGA': 'magenta', 'RKO-Cheapest': 'green',   'RKO-M3LAW': 'olive',    'RKO-ECT': 'darkseagreen',   'RKO-INC': 'yellowgreen' }#,  'RKO-KSTS': 'coral' , 'MIP': 'red'}
+model_offsets = {'SA': -0.4, 'BRKGA': -0.3, 'RKO-Cheapest': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1 }#, 'RKO-KSTS': 0.2 , 'MIP': 0.3}
+models = ['SA', 'BRKGA', 'RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC'] #, 'RKO-KSTS' , 'MIP']
 
 for i, group_val in enumerate(ratio_groups):
     ax = axes[i]
@@ -85,9 +95,9 @@ for i in range(n_groups, len(axes)):
 
 handles, labels = ax.get_legend_handles_labels()
 # fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=3, title='Modelo', fontsize=12)
-fig.legend(handles, labels, loc='lower right', bbox_to_anchor=(1, 0), ncol=3, title='Modelo-Decoder', fontsize=12)
+fig.legend(handles, labels, loc='lower right', bbox_to_anchor=(1, 0), ncol=3, title='Modelo', fontsize=12)
 
-fig.suptitle(f'Desempenho dos Decoders RKO para métrica Makespan\n\ndecoders={models}', fontsize=18)
+fig.suptitle(f'Desempenho do [RKO, SA, BRKGA, MIP] para métrica Makespan', fontsize=18)
 
 
 fig.supxlabel('Configuração (Jobs, Machines)', fontsize=14, y=0.02)
@@ -95,7 +105,7 @@ fig.supylabel('IC 95%: Objective', fontsize=14, x=0.04)
 
 fig.tight_layout(rect=[0.05, 0.05, 1, 0.94])
 
-plt.savefig('grafico_subplots_por_razao_0.5.png', dpi=300)
+plt.savefig('grafico_subplots_por_razao.png', dpi=300)
 plt.show()
 
-print("\nGráfico com nova estratégia de agrupamento salvo como 'grafico_subplots_por_razao_0.5.png'")
+print("\nGráfico com nova estratégia de agrupamento salvo como 'grafico_subplots_por_razao.png'")

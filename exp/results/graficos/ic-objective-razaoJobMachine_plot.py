@@ -30,9 +30,16 @@ x_labels = [f'({row.JOBS}, {row.MACHINES})' for index, row in unique_configs.ite
 x_ticks = np.arange(len(x_labels))
 
 # Define as cores e o offset para cada modelo
-model_colors =  {'RKO-Cheapest': 'blue',   'RKO-M3LAW': 'green',    'RKO-ECT': 'olive',   'RKO-INC': 'coral',  'RKO-KSTS': 'red'}
-model_offsets = {'RKO-Cheapest': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1, 'RKO-KSTS': 0.2}
-models = ['RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC', 'RKO-KSTS']
+
+## APENAS os RKO-Decoders 
+# model_colors =  {'RKO-Cheapest': 'blue',   'RKO-M3LAW': 'green',    'RKO-ECT': 'olive',   'RKO-INC': 'coral',  'RKO-KSTS': 'red'}
+# model_offsets = {'RKO-Cheapest': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1, 'RKO-KSTS': 0.2}
+# models = ['RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC', 'RKO-KSTS']
+
+## MIP, SA, BRKGA e RKO-Decoders
+model_colors =  {'SA': 'blue', 'BRKGA': 'magenta', 'RKO-Cheapest': 'green',   'RKO-M3LAW': 'olive',    'RKO-ECT': 'darkseagreen',   'RKO-INC': 'yellowgreen',  'RKO-KSTS': 'coral', 'MIP': 'red'}
+model_offsets = {'SA': -0.4, 'BRKGA': -0.3, 'RKO-Cheapest': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1, 'RKO-KSTS': 0.2, 'MIP': 0.3}
+models = ['SA', 'BRKGA', 'RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC', 'RKO-KSTS', 'MIP']
 
 # Cria a figura e os eixos do gráfico (agora apenas um)
 # Aumentamos bastante a largura para acomodar todos os pontos
@@ -67,7 +74,8 @@ for model in models:
 
 # --- 4. Customização e Exibição ---
 
-ax.set_title(f'Desempenho dos Decoders RKO para métrica Makespan\n\ndecoders={models}', fontsize=18, pad=20)
+# ax.set_title(f'Desempenho dos Decoders RKO para métrica Makespan\n\ndecoders={models}', fontsize=18, pad=20)
+ax.set_title('Desempenho do [RKO, SA, BRKGA, MIP] para métrica Makespan', fontsize=18, pad=20)
 ax.set_ylabel('IC 95% do Makespan (em escala logarítmica)', fontsize=14)
 ax.set_xlabel('Grupo de Instâncias (Tarefas, Máquinas)\n\nOBS.: ordenadas pela razão Tarefas/Máquinas', fontsize=14)
 
@@ -86,7 +94,7 @@ ax.set_yscale('log')
 ax.set_xticks(x_ticks)
 ax.set_xticklabels(x_labels, rotation=45, ha='right')
 
-ax.legend(title='Modelo-Decoder', fontsize=12)
+ax.legend(title='Modelo', fontsize=12)
 ax.grid(True, which='both', linestyle='--', linewidth=0.5)
 fig.tight_layout()
 
