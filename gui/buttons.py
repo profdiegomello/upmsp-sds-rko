@@ -1,6 +1,12 @@
 import customtkinter as ctk
 from PIL import Image
 
+
+#OBS: CODIGO SUJEITO A MUDANCAS E REFATORACOES
+#VERSAO 1.0
+#19/12/2025 , JOAO VITOR FONSECA
+
+
 def create_buttons(master, show_tab, knight_tab, sliders_tab, scroll_tab, play_tab):
     """
     Cria os botões laterais (Knight, Sliders, IO) dentro de um frame.
