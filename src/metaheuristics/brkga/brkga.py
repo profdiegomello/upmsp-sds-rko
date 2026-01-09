@@ -1,3 +1,5 @@
+# metaheuristics/brkga/brkga.py
+
 import random
 import time
 
@@ -11,30 +13,21 @@ GERACAO_FINAL=1
 
 def encode(dados, n_individuos, decoder):
     populacao=[]
-    if decoder == "n" or "m3law":
-        for i in range(n_individuos):
-            individuo=[]
-            for j in dados["N"]:
-                individuo.append(random.random())
-            populacao.append(individuo)
-    elif decoder == "2n" or decoder == "2n*":
+    # Decoder 2N e CHEAPEST precisam de 2 genes por job
+    if decoder == "2n" or decoder == "2n*" or decoder == "cheapest":
         for i in range(n_individuos):
             individuo=[]
             for j in range(0, 2*len(dados["N"]), 1):
                 individuo.append(random.random())
             populacao.append(individuo)
-    elif decoder == "ect":
+    # Decoders padrão (1 gene por job)
+    elif decoder == "n" or decoder == "m3law" or decoder == "ect" or decoder == "incremental":
         for i in range(n_individuos):
             individuo=[]
-            for j in range(0, len(dados["N"]), 1):
+            for j in dados["N"]:
                 individuo.append(random.random())
             populacao.append(individuo)
-    elif decoder == "incremental":
-        for i in range(n_individuos):
-            individuo=[]
-            for j in range(0, len(dados["N"]), 1):
-                individuo.append(random.random())
-            populacao.append(individuo)
+    
     return populacao
 
 def verifica_tempo_expirado(inicio, limite):
@@ -212,7 +205,6 @@ def decode_individuo(individuo, indice, n_populacao, dados, decoder):
     
     elif decoder == "m3law":
         # Define quantos jobs à frente o algoritmo vai "olhar".
-        # Pode ser fixo ou proporcional (ex: max(3, int(n_jobs * 0.05)))
         WINDOW_SIZE = 5 
         
         # 1. Ordena os jobs pela prioridade
@@ -228,7 +220,6 @@ def decode_individuo(individuo, indice, n_populacao, dados, decoder):
         # Enquanto houver jobs para alocar
         while jobs_pendentes:
             # 2. Define a janela de visualização (Look Ahead)
-            # Pega os primeiros 'WINDOW_SIZE' jobs da lista de pendentes
             janela = jobs_pendentes[:WINDOW_SIZE]
             
             melhor_job = None
@@ -260,11 +251,113 @@ def decode_individuo(individuo, indice, n_populacao, dados, decoder):
                 # Remove o job escolhido da lista de pendentes
                 jobs_pendentes.remove(melhor_job)
             else:
-                # Fallback de segurança (caso processing_time seja inf para todos, o que não deve ocorrer)
+                # Fallback de segurança
                 job_forcado = jobs_pendentes.pop(0)
-                # (Lógica de fallback simples: joga na primeira máquina ou aleatória)
                 maquinas_jobs[dados["M"][0]].append(job_forcado)
+
+    elif decoder == "cheapest":
+        # -------------------------------------------------------------
+        # DECODER CHEAPEST INSERTION (com Bias Ranking + Busca Local)
+        # -------------------------------------------------------------
+        
+        # Garante tamanho (segurança)
+        if len(copia) < 2 * n_jobs:
+            copia = copia + [random.random() for _ in range((2 * n_jobs) - len(copia))]
+
+        genes_ordem = copia[:n_jobs]
+        genes_escolha = copia[n_jobs:2*n_jobs]
+
+        # 1. Ordena jobs pela prioridade (primeira metade do cromossomo)
+        jobs_ordenados = sorted(range(1, n_jobs + 1), key=lambda j: genes_ordem[j - 1])
+
+        maquinas_jobs = {m: [] for m in dados["M"]}
+        carga_maquinas = {m: 0.0 for m in dados["M"]}
+        machines_list = sorted(list(dados["M"])) # Lista estável de IDs das máquinas
+
+        # Função auxiliar local para calcular tempo (setup + processamento)
+        def calc_tempo_seq(m, seq):
+            t = 0.0
+            ant = 0
+            for jb in seq:
+                t += dados["S"].get((m, ant, jb), 0)
+                t += dados["p"].get((m, jb), 0)
+                ant = jb
+            return t
+
+        # 2. Inserção mais barata (Cheapest Insertion)
+        for job in jobs_ordenados:
+            ranking_opcoes = [] # (makespan_proj, maquina, posicao, incremento)
+
+            for m in machines_list:
+                seq_atual = maquinas_jobs[m]
+                menor_incr = float('inf')
+                melhor_pos = 0
+
+                # Testa todas as posições de inserção
+                for pos in range(len(seq_atual) + 1):
+                    nova_seq = seq_atual[:pos] + [job] + seq_atual[pos:]
+                    tempo_novo = calc_tempo_seq(m, nova_seq)
+                    incremento = tempo_novo - carga_maquinas[m]
+                    
+                    if incremento < menor_incr:
+                        menor_incr = incremento
+                        melhor_pos = pos
+                
+                makespan_proj = carga_maquinas[m] + menor_incr
+                ranking_opcoes.append((makespan_proj, m, melhor_pos, menor_incr))
             
+            # Ordena opções pelo menor makespan projetado
+            ranking_opcoes.sort(key=lambda x: x[0])
+
+            # Seleção viciada (Biased Ranking) usando genes_escolha
+            gene_val = genes_escolha[job - 1]
+            bias = 10.0
+            idx_escolhido = int(len(ranking_opcoes) * (gene_val ** bias))
+            if idx_escolhido >= len(ranking_opcoes):
+                idx_escolhido = len(ranking_opcoes) - 1
+            
+            _, maq_sel, pos_sel, custo_sel = ranking_opcoes[idx_escolhido]
+
+            # Efetiva a inserção
+            maquinas_jobs[maq_sel].insert(pos_sel, job)
+            carga_maquinas[maq_sel] += custo_sel
+
+        # 3. Busca Local (Tenta mover último job da máquina crítica)
+        if carga_maquinas:
+            mq_critica = max(carga_maquinas, key=carga_maquinas.get)
+            mk_atual = carga_maquinas[mq_critica]
+
+            if len(maquinas_jobs[mq_critica]) > 0:
+                job_problematico = maquinas_jobs[mq_critica][-1]
+                
+                # Custo da crítica sem o job
+                seq_critica_sem = maquinas_jobs[mq_critica][:-1]
+                custo_critica_sem = calc_tempo_seq(mq_critica, seq_critica_sem)
+                
+                melhor_mov = None
+                menor_mk_found = mk_atual
+
+                for m_dest in machines_list:
+                    if m_dest == mq_critica: continue
+                    
+                    seq_dest = maquinas_jobs[m_dest]
+                    # Testa todas posições no destino
+                    for pos in range(len(seq_dest) + 1):
+                        nova_seq_dest = seq_dest[:pos] + [job_problematico] + seq_dest[pos:]
+                        custo_dest = calc_tempo_seq(m_dest, nova_seq_dest)
+                        
+                        # Novo makespan local (apenas entre as duas máquinas envolvidas)
+                        novo_pico = max(custo_critica_sem, custo_dest)
+                        
+                        if novo_pico < menor_mk_found:
+                            menor_mk_found = novo_pico
+                            melhor_mov = (m_dest, pos)
+                
+                if melhor_mov:
+                    m_dest, pos_dest = melhor_mov
+                    maquinas_jobs[mq_critica].pop()
+                    maquinas_jobs[m_dest].insert(pos_dest, job_problematico)
+
     # Armazena o resultado decodificado
     n_populacao[indice] = maquinas_jobs
 
@@ -466,7 +559,7 @@ def solve(dados, nome_instancia, tempo_limite, n_individuos, n_geracoes, percent
             else:
                 geracao+=1
                 estado=0
-           
+            
     # Calcula o runtime     
     tempo_f = time.time() - t_inicio
     
