@@ -16,14 +16,14 @@ def resource_path(relative_path):
 
 def create_buttons(master, show_tab, knight_tab, sliders_tab, scroll_tab, play_tab):
     """
-    Cria os botões laterais (Knight, Sliders, IO) dentro de um frame.
+    Cria os botoes laterais (Knight, Sliders, IO) dentro de um frame.
     
-    master: frame onde os botões serão colocados
-    show_tab: função que alterna entre as abas
+    master: frame onde os botoes serão colocados
+    show_tab: funcao que alterna entre as abas
     knight_tab, sliders_tab, scroll_tab: frames das abas
     """
 
-    # Frame lateral para os botões
+    # Frame lateral para os botoes
     buttons_frame = ctk.CTkFrame(master, width=40, height=300, fg_color="transparent")
     buttons_frame.grid(row=2, column=0, columnspan=2, sticky="ns")
     buttons_frame.grid_propagate(False)

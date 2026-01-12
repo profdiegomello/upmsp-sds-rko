@@ -99,7 +99,7 @@ def manipulador_retorno_interface(dados):
         mensagem_formatada += f"   {mensagem_extra}\n"
         mensagem_formatada += "="*43 + "\n\n"
 
-        # Reabilita botão START
+        # Reabilita botao START
         def _reenable_start():
             try:
                 if START_BUTTON_GLOBAL is not None:
@@ -117,7 +117,7 @@ def manipulador_retorno_interface(dados):
         mensagem_erro = dados.get('message', 'Erro desconhecido')
         mensagem_formatada = f"\n!!! ERRO CRÍTICO !!!\n{mensagem_erro}\n"
 
-        # Reabilita botão START de forma thread-safe em caso de erro também
+        # Reabilita botao START de forma thread-safe em caso de erro também
         def _reenable_start_err():
             try:
                 if START_BUTTON_GLOBAL is not None:
@@ -412,7 +412,7 @@ def configurar_aba_entrada_saida(aba):
         botao_busca.grid(row=1, column=1, pady=10)
 
 def configurar_aba_execucao(aba, aba_parametros, aba_agentes, aba_entrada_saida):
-    """Configura a aba final com o terminal e botão de start"""
+    """Configura a aba final com o terminal e botao de start"""
     global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL
     
     def ao_clicar_iniciar():
@@ -431,7 +431,7 @@ def configurar_aba_execucao(aba, aba_parametros, aba_agentes, aba_entrada_saida)
         print(f"Iniciando otimização com limite de {dados_coletados['hyper_parameters']['time_limit']}s...")
         inicio = datetime.now()
         print("inicio: "+inicio.strftime("%d/%m %H:%M:%S"))
-        # Desabilita o botão START apos clicar
+        # Desabilita o botao START apos clicar
         try:
             if START_BUTTON_GLOBAL is not None:
                 START_BUTTON_GLOBAL.configure(state="disabled", text="RUNNING...")
