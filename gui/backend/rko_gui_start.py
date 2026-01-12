@@ -1,217 +1,165 @@
 import threading
-import time
 import os
-import sys
-import subprocess
-from datetime import datetime, timedelta
+import traceback
+from datetime import datetime
+from queue import Queue, Empty
 
-# ==============================================================================
-# CONFIGURAÇÃO DE CAMINHOS
-# ==============================================================================
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# Caminho para o script do solver
-solver_script_path = os.path.join(current_dir, 'rko_dependencies', 'solver_rko.py')
+try:
+    from backend.rko_dependencies.solver_core import run_rko
+except Exception:
+    run_rko = None
 
-# ==============================================================================
-# LÓGICA DE EXECUÇÃO (VIA SUBPROCESS)
-# ==============================================================================
+# FILA GLOBAL DE LOG 
+LOG_QUEUE = Queue(maxsize=2000)
 
-def iniciar_resolucao(dados_dict, funcao_callback_interface):
-
-    #Lança a thread que gerencia a bateria de testes.
-    
-    thread = threading.Thread(
-        target=_rodar_comando_externo, 
-        args=(dados_dict, funcao_callback_interface)
-    )
-    thread.daemon = True 
-    thread.start()
-
-def _rodar_comando_externo(dados, callback):
+# CALLBACK GLOBAL 
+def solver_callback(dados: dict):
+    # Callback chamado pelo solver
     try:
-        # --- 1. Preparar Configurações Gerais ---
-        pasta_instancias = dados['io'].get('instance_path', '')
-        caminho_saida = dados['io'].get('output_path', '')
-        caminho_gantt = dados['io'].get('gantt_path', '')
-        
-        # Validação da pasta de instâncias
-        arquivos_validos = []
-        if pasta_instancias and os.path.isdir(pasta_instancias):
-            arquivos_validos = [f for f in os.listdir(pasta_instancias) if f.endswith('.txt')]
-            arquivos_validos.sort() 
-        else:
-            if os.path.isfile(pasta_instancias) and pasta_instancias.endswith('.txt'):
-                pasta_instancias = os.path.dirname(pasta_instancias)
-                arquivos_validos = [os.path.basename(dados['io'].get('instance_path'))]
+        LOG_QUEUE.put_nowait(dados)
+    except Exception:
+        pass  # nunca bloquear o solver
 
-        if not arquivos_validos:
-            callback({"status": "error", "message": "Nenhum arquivo de instância (.txt) encontrado."})
+# LOGGER THREAD
+def logger_worker(gui_callback):
+    # Thread dedicada a atualizar GUI e imprimir logs
+    while True:
+        try:
+            dados = LOG_QUEUE.get(timeout=0.2)
+        except Empty:
+            continue
+
+        if dados is None:
+            break  # sinal de encerramento
+
+        # sempre atualiza GUI
+        if gui_callback:
+            gui_callback(dados)
+
+# ENTRY POINT DA GUI
+def iniciar_resolucao(dados_dict, callback_interface):
+    thread = threading.Thread(
+        target=_executar_solver, 
+        args=(dados_dict, callback_interface), 
+        daemon=True 
+    )
+    thread.start() 
+
+def _executar_solver(dados, callback_interface):
+    # 1. CAPTURA DOS CAMINHOS DE IO
+    output_path = dados.get('io', {}).get('output_path', '').strip()
+    gantt_path = dados.get('io', {}).get('gantt_path', '').strip()  
+    try:
+        if run_rko is None:
+            callback_interface({
+                "status": "error",
+                "message": "run_rko não disponível."
+            })
             return
 
-        decoder = dados['hyper_parameters'].get('decoder', 'ect')
-        time_limit = dados['hyper_parameters'].get('time_limit', '60')
+        # inicia logger thread
+        logger = threading.Thread(
+            target=logger_worker,
+            args=(callback_interface,),
+            daemon=True
+        )
+        logger.start()
+
+        instance_path = dados.get('io', {}).get('instance_path', '').strip()
+        decoder = str(dados.get('hyper_parameters', {}).get('decoder', 'ect')).lower()
+        time_limit = int(dados.get('hyper_parameters', {}).get('time_limit', 60))
+        execution_times = int(dados.get('hyper_parameters', {}).get('execution_times', 1))
+        agents = dados.get('agents', {})
+
+        if execution_times < 1:
+            execution_times = 1
+
+        # resolve instâncias
+        if os.path.isdir(instance_path):
+            arquivos = [
+                os.path.join(instance_path, f)
+                for f in sorted(os.listdir(instance_path))
+                if f.endswith(".txt")
+            ]
+        elif os.path.isfile(instance_path):
+            arquivos = [instance_path]
+        else:
+            callback_interface({
+                "status": "error",
+                "message": "Caminho de instância inválido."
+            })
+            LOG_QUEUE.put(None)
+            return
+
+        total = len(arquivos) * execution_times
+        atual = 0
         
-        try:
-            numero_execucoes = int(dados['hyper_parameters'].get('execution_times', '1'))
-        except ValueError:
-            numero_execucoes = 1
+        LOG_QUEUE.put({
+            "status": "log",
+            "message": f"Instâncias encontradas: {len(arquivos)} | Execuções/instância: {execution_times}"
+        })
+        LOG_QUEUE.put({
+            "status": "log",
+            "message": "=" * 50
+        })
 
-        total_tarefas = len(arquivos_validos) * numero_execucoes
-        tarefa_atual = 0
+        for arquivo in arquivos:
+            nome = os.path.basename(arquivo)
 
-        # --- DEFINIÇÃO DO ARQUIVO DE SAÍDA ÚNICO (Lógica Híbrida) ---
-        arquivo_resultado_unico = ""
-        caminho_usuario = dados['io'].get('output_path', '').strip()
+            for run_idx in range(1, execution_times + 1):
+                atual += 1
 
-        if caminho_usuario:
-            # Caso 1: Usuário digitou um arquivo específico (ex: /home/user/Teste1.txt)
-            if caminho_usuario.lower().endswith('.txt'):
-                pasta_destino = os.path.dirname(caminho_usuario)
-                # Só cria pasta se houver um caminho de diretório
-                if pasta_destino:
-                    os.makedirs(pasta_destino, exist_ok=True)
-                arquivo_resultado_unico = caminho_usuario
-            
-            # Caso 2: Usuário selecionou apenas uma pasta (ex: /home/user/Resultados)
-            else:
-                os.makedirs(caminho_usuario, exist_ok=True)
-                arquivo_resultado_unico = os.path.join(caminho_usuario, "Resultados.txt")
-        # ------------------------------------------------------------
-        # -------------------------------------------
+                LOG_QUEUE.put({
+                    "status": "running",
+                    "message": f"\nProcessando ({atual}/{total}): {nome} [Run {run_idx}]"
+                })
 
-        # --- PREPARAÇÃO PARA ESTIMATIVA DE TEMPO ---
-        inicio_bateria = time.time()
-        
-        callback({"status": "log", "message": f"Instâncias: {len(arquivos_validos)} | Execuções/Instância: {numero_execucoes}"})
-        if arquivo_resultado_unico:
-            callback({"status": "log", "message": f"Saída consolidada em: Resultados.txt"})
-        callback({"status": "log", "message": "="*50 + "\n"})
+                try:
+                    # ENVIO PARA O SOLVER
+                    resultado = run_rko(
+                        instance_path=arquivo,
+                        decoder=decoder,
+                        time_limit=time_limit,
+                        agents=agents,
+                        callback=solver_callback,
+                        save_path=output_path,  # Caminho do arq. de saida
+                        gantt_path=gantt_path   # Caminho do gantt
+                    )
 
-        # --- 2. Loop Principal (Para cada Arquivo) ---
-        for arquivo in arquivos_validos:
-            caminho_instancia_completo = os.path.join(pasta_instancias, arquivo)
-            
-            # --- 3. Loop de Repetições ---
-            for execucao_atual in range(1, numero_execucoes + 1):
-                tarefa_atual += 1
-                
-                # Cabeçalho da Tarefa
-                msg_status = f"Processando ({tarefa_atual}/{total_tarefas}): {arquivo} [Run {execucao_atual}]"
-                callback({"status": "running", "message": msg_status})
+                    LOG_QUEUE.put({
+                        "status": "update",
+                        "makespan": resultado["makespan"],
+                        "instancia": nome
+                    })
 
-                # GANTT CONTINUA DINÂMICO (Um arquivo imagem por execução)
-                arquivo_gantt = ""
-                if caminho_gantt:
-                    os.makedirs(caminho_gantt, exist_ok=True)
-                    sufixo_run = f"_run{execucao_atual}" if numero_execucoes > 1 else ""
-                    # O script adiciona .png, passamos o base name
-                    nome_base_gantt = f"Gantt_{os.path.basename(arquivo).replace('.txt', '')}_{decoder}{sufixo_run}"
-                    arquivo_gantt = os.path.join(caminho_gantt, nome_base_gantt)
+                    LOG_QUEUE.put({
+                        "status": "log",
+                        "message": f"Concluído: {nome} [Run {run_idx}]",
+                    })
 
-                # --- LÓGICA DE EXECUÇÃO: MODO DEV vs MODO EXECUTÁVEL ---
-                if getattr(sys, 'frozen', False):
-                    # ESTAMOS RODANDO COMO EXECUTÁVEL
-                    # O executável do solver estará na mesma pasta do executável principal
-                    pasta_base = os.path.dirname(os.path.abspath(sys.executable))
-                    
-                    # Nome do executável do motor (no Linux não tem .exe)
-                    nome_solver = "solver_worker" 
-                    caminho_solver = os.path.join(pasta_base, nome_solver)
-                    
-                    # O comando agora chama o executável direto, sem "python" antes
-                    cmd = [
-                        caminho_solver,
-                        "--input", caminho_instancia_completo,
-                        "--time", str(time_limit),
-                        "--decoder", decoder
-                    ]
-                    
-                else:
-                    # MODO DESENVOLVIMENTO (VS CODE)
-                    # Continua igual, chamando python + script
-                    executavel_python = sys.executable
-                    dir_atual = os.path.dirname(os.path.abspath(__file__))
-                    caminho_script = os.path.join(dir_atual, 'rko_dependencies', 'solver_rko.py')
-                    
-                    cmd = [
-                        executavel_python,
-                        "-u",
-                        caminho_script,
-                        "--input", caminho_instancia_completo,
-                        "--time", str(time_limit),
-                        "--decoder", decoder
-                    ]
-                
-                
-                
-                # Configuração dos Agentes 
-                mapa_agentes = {
-                    "BRKGA": "--brkga", "SA": "--sa", "ILS": "--ils",
-                    "VNS": "--vns", "PSO": "--pso", "GA1": "--ga", "LNS": "--lns"
-                }
-                agentes_ativos = dados.get('agents', {})
-                for nome_ui, flag_arg in mapa_agentes.items():
-                    if nome_ui in agentes_ativos:
-                        cmd.extend([flag_arg, "1"])
-                    else:
-                        cmd.extend([flag_arg, "0"])
+                except Exception as e:
+                    tb = traceback.format_exc()
+                    LOG_QUEUE.put({
+                        "status": "error",
+                        "message": f"Erro na instância {nome} (run {run_idx}): {e}\n{tb}"
+                    })
 
-                # Passa o Arquivo Único de Resultados
-                if arquivo_resultado_unico:
-                    cmd.extend(["--output", arquivo_resultado_unico])
-                
-                # Passa o Arquivo de Gantt Específico
-                if arquivo_gantt: 
-                    cmd.extend(["--gantt", arquivo_gantt])
-                    
-                # Cria uma cópia das variáveis de ambiente
-                env_vars = os.environ.copy()
-                env_vars["PYTHONUNBUFFERED"] = "1"
+        agora = datetime.now().strftime("%d/%m %H:%M:%S")
 
-                # Executa
-                processo = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    bufsize=1,
-                    universal_newlines=True,
-                    env=env_vars
-                )
+        LOG_QUEUE.put({
+            "status": "finished",
+            "message": f"Execução finalizada em: {agora}"
+        })
 
-                # Lê logs em tempo real
-                while True:
-                    linha = processo.stdout.readline()
-                    if linha == '' and processo.poll() is not None:
-                        break
-                    if linha:
-                        callback({"status": "log", "message": linha.rstrip()})
-
-                # Captura erros finais
-                stdout, stderr = processo.communicate()
-                if stderr:
-                    callback({"status": "error", "message": f"Erro na instância {arquivo}:\n{stderr}"})
-                
-                # --- CÁLCULO DE ESTIMATIVA (ETA) ---
-                agora = time.time()
-                tempo_decorrido = agora - inicio_bateria
-                tempo_medio_por_tarefa = tempo_decorrido / tarefa_atual
-                tarefas_restantes = total_tarefas - tarefa_atual
-                segundos_restantes = int(tempo_medio_por_tarefa * tarefas_restantes)
-                data_termino = datetime.now() + timedelta(seconds=segundos_restantes)
-                
-                log_progresso =  f"\n[PROGRESSO] {tarefa_atual}/{total_tarefas} ({(tarefa_atual/total_tarefas)*100:.1f}%)"
-                log_progresso += f" | Faltam: {str(timedelta(seconds=segundos_restantes))}"
-                log_progresso += f" | Fim: {data_termino.strftime('%H:%M:%S')}"
-                log_progresso += f"\n" + "-"*50
-                
-                callback({"status": "log", "message": log_progresso})
-                
-                time.sleep(0.5) 
-
-        callback({"status": "finished", "message": "\nFim.\n"})
+        # encerra logger
+        LOG_QUEUE.put(None)
 
     except Exception as e:
-        import traceback
-        callback({"status": "error", "message": f"Erro no gerenciador de lote: {str(e)}"})
-        print(traceback.format_exc())
+        tb = traceback.format_exc()
+        try:
+            callback_interface({
+                "status": "error",
+                "message": f"Erro no gerenciador: {e}\n{tb}"
+            })
+        except Exception:
+            pass

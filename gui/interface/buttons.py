@@ -3,12 +3,9 @@ from PIL import Image
 import os
 import sys
 
-
-
 def resource_path(relative_path):
-    """ Obtém o caminho absoluto para recursos, funcione em dev ou PyInstaller """
+    """ Obtem o caminho absoluto para recursos"""
     try:
-        # PyInstaller cria uma pasta temporária e armazena o caminho em _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")

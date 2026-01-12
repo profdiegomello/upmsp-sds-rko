@@ -1,4 +1,6 @@
 import os
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -29,7 +31,7 @@ def salvar_resultado(
     status: str
 ):
 
-    print(objetivo) # Necessário para o irace pegar o makespan do stdout
+    print(f"Melhor makespan encontrado: {objetivo}")
 
     # Registra os resultados no arquivo passado, usando tabulação como separador.
     # Caso lowerbound ou gap sejam None, registra como '---'.

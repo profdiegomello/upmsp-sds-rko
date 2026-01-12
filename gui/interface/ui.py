@@ -5,9 +5,10 @@ from tkinter import filedialog
 from typing import Tuple
 import sys
 import os
+from datetime import datetime
 
 def resource_path(relative_path):
-    """ Obtém o caminho absoluto para recursos, funcione em dev ou PyInstaller """
+    #Obtem o caminho absoluto para recursos
     try:
         # PyInstaller cria uma pasta temporária e armazena o caminho em _MEIPASS
         base_path = sys._MEIPASS
@@ -16,8 +17,6 @@ def resource_path(relative_path):
 
     return os.path.join(base_path, relative_path)
 
-
-# --- IMPORTAÇÃO DO MIDDLEWARE ---
 try:
     import backend.rko_gui_start as rko_gui_start
 except ImportError:
@@ -47,14 +46,13 @@ ALTURA_JANELA = 975
 LARGURA_CARTAO_AGENTE = 360
 ALTURA_CARTAO_AGENTE = 300
 
-# ==============================================================================
-# ESTRUTURA PARA SEGURANÇA DE THREADS (LOGS E TERMINAL)
-# ==============================================================================
-
-# 1. Variável Global para guardar a referência do terminal (widget de texto)
+#Variavel Global para guardar a referencia do terminal (widget de texto)
 ESCRITOR_TERMINAL_GLOBAL = None
 
-# 2. Classe para Redirecionamento Seguro de Texto (Thread-Safe)
+#Variavel global para o START button (para evitar multiplos cliques)
+START_BUTTON_GLOBAL = None
+
+#Classe para Redirecionamento Seguro de Texto 
 class RedirecionadorTextoThreadSeguro(object):
     def __init__(self, widget_texto):
         self.widget_texto = widget_texto
@@ -81,13 +79,12 @@ class RedirecionadorTextoThreadSeguro(object):
         # Método necessário para compatibilidade com sys.stdout
         pass
 
-# 3. Função de Callback GLOBAL (Recebe dados do Solver)
+#Callback 
 def manipulador_retorno_interface(dados):
     """
     Função global que recebe dados do solver e escreve no terminal da interface.
-    Versão BLINDADA contra erros de chave (KeyError).
     """
-    global ESCRITOR_TERMINAL_GLOBAL
+    global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL
     
     # Se o terminal não estiver inicializado, aborta para evitar erros
     if ESCRITOR_TERMINAL_GLOBAL is None:
@@ -96,23 +93,46 @@ def manipulador_retorno_interface(dados):
     mensagem_formatada = ""
     tipo_status = dados.get("status")
 
-    if tipo_status == "update":
-        valor_makespan = dados.get('makespan', 0)
-        mensagem_formatada = f">>> [RKO] Makespan Melhorou: {valor_makespan:.2f}\n"
-    
-    elif tipo_status == "finished":
+    if tipo_status == "finished":
         mensagem_extra = dados.get("message", "Processo Finalizado.")
-        mensagem_formatada =  "\n" + "="*35 + "\n"
+        mensagem_formatada =  "\n" + "="*43 + "\n"
         mensagem_formatada += f"   {mensagem_extra}\n"
-        mensagem_formatada += "="*35 + "\n\n"
+        mensagem_formatada += "="*43 + "\n\n"
+
+        # Reabilita botão START
+        def _reenable_start():
+            try:
+                if START_BUTTON_GLOBAL is not None:
+                    START_BUTTON_GLOBAL.configure(state="normal", text="START SOLVER")
+            except Exception:
+                pass
+
+        # usa o widget do terminal para agendar na thread principal
+        try:
+            ESCRITOR_TERMINAL_GLOBAL.widget_texto.after(0, _reenable_start)
+        except Exception:
+            pass
     
     elif tipo_status == "error":
         mensagem_erro = dados.get('message', 'Erro desconhecido')
         mensagem_formatada = f"\n!!! ERRO CRÍTICO !!!\n{mensagem_erro}\n"
+
+        # Reabilita botão START de forma thread-safe em caso de erro também
+        def _reenable_start_err():
+            try:
+                if START_BUTTON_GLOBAL is not None:
+                    START_BUTTON_GLOBAL.configure(state="normal", text="START SOLVER")
+            except Exception:
+                pass
+
+        try:
+            ESCRITOR_TERMINAL_GLOBAL.widget_texto.after(0, _reenable_start_err)
+        except Exception:
+            pass
     
     elif tipo_status == "running":
         mensagem_status = dados.get('message', 'Rodando')
-        mensagem_formatada = f"--- {mensagem_status} ---\n"
+        mensagem_formatada = f"{mensagem_status}\n"
     
     elif tipo_status == "log":
         texto_log = dados.get("message", "")
@@ -122,9 +142,7 @@ def manipulador_retorno_interface(dados):
     if mensagem_formatada:
         ESCRITOR_TERMINAL_GLOBAL.write(mensagem_formatada)
 
-# ==============================================================================
-# FUNÇÕES UTILITÁRIAS E DE CONSTRUÇÃO DE INTERFACE
-# ==============================================================================
+# UTILITARIOS E CONSTRUCAO DE INTERFACE
 
 def centralizar_janela(janela, largura, altura):
     largura_tela = janela.winfo_screenwidth()
@@ -174,10 +192,6 @@ def coletar_dados_interface(aba_parametros, aba_agentes, aba_entrada_saida) -> d
             
     return dados_compilados
 
-# ==============================================================================
-# CONSTRUÇÃO DA APLICAÇÃO (MAIN)
-# ==============================================================================
-
 def construir_aplicacao() -> Tuple[ctk.CTk, callable, ctk.CTkFrame, ctk.CTkFrame, ctk.CTkFrame, ctk.CTkFrame]:
     janela_principal = ctk.CTk()
     janela_principal.title("RKO-SOLVER")
@@ -226,9 +240,7 @@ def construir_aplicacao() -> Tuple[ctk.CTk, callable, ctk.CTkFrame, ctk.CTkFrame
     
     return janela_principal, mostrar_aba, aba_parametros, aba_agentes, aba_entrada_saida, aba_execucao
 
-# ==============================================================================
-# CONFIGURAÇÃO DE CADA ABA
-# ==============================================================================
+# CONFIGURACAO DE CADA ABA
 def configurar_aba_parametros(aba):
     aba.widgets_armazenados = {} 
     
@@ -270,10 +282,8 @@ def configurar_aba_parametros(aba):
     entrada_execucoes.grid(row=2, column=3, padx=15, sticky="n", pady=5)
     aba.widgets_armazenados["execution_times"] = entrada_execucoes
     
-
 def configurar_aba_agentes(aba):
-    """Configura a aba com os sliders e parâmetros dos agentes"""
-    # Área de rolagem para caber todos os agentes
+    # Area de rolagem para caber todos os agentes
     area_rolagem = ctk.CTkScrollableFrame(aba, width=1160, height=860, fg_color="transparent")
     area_rolagem.grid(row=0, column=0, columnspan=10, rowspan=10, padx=10, pady=10, sticky="nsew")
     
@@ -285,7 +295,7 @@ def configurar_aba_agentes(aba):
     cabecalho = ctk.CTkLabel(area_rolagem, text="AGENTS PARAMETERS", font=FONTES["titulo"], text_color=CORES["destaque"])
     cabecalho.grid(row=0, column=0, columnspan=3, sticky="ew", padx=12, pady=(8,12))
     
-    # Dicionário de configuração para gerar os cartões automaticamente
+    # dicionario de configuracao
     configuracao_agentes = {
         "BRKGA": {
             "linha": 1, "coluna": 0, "titulo": "BIASED RANDOM KEY GENETIC ALGORITHM (BRKGA)", 
@@ -403,7 +413,7 @@ def configurar_aba_entrada_saida(aba):
 
 def configurar_aba_execucao(aba, aba_parametros, aba_agentes, aba_entrada_saida):
     """Configura a aba final com o terminal e botão de start"""
-    global ESCRITOR_TERMINAL_GLOBAL
+    global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL
     
     def ao_clicar_iniciar():
         if rko_gui_start is None:
@@ -412,18 +422,26 @@ def configurar_aba_execucao(aba, aba_parametros, aba_agentes, aba_entrada_saida)
 
         dados_coletados = coletar_dados_interface(aba_parametros, aba_agentes, aba_entrada_saida)
         
-        # Limpa o terminal antes de começar
+        # Limpa o terminal antes de comecar
         if ESCRITOR_TERMINAL_GLOBAL:
             ESCRITOR_TERMINAL_GLOBAL.widget_texto.configure(state="normal")
             ESCRITOR_TERMINAL_GLOBAL.widget_texto.delete("1.0", "end")
             ESCRITOR_TERMINAL_GLOBAL.widget_texto.configure(state="disabled")
         
         print(f"Iniciando otimização com limite de {dados_coletados['hyper_parameters']['time_limit']}s...")
-        
-        # Inicia o solver passando a função de callback global
+        inicio = datetime.now()
+        print("inicio: "+inicio.strftime("%d/%m %H:%M:%S"))
+        # Desabilita o botão START apos clicar
+        try:
+            if START_BUTTON_GLOBAL is not None:
+                START_BUTTON_GLOBAL.configure(state="disabled", text="RUNNING...")
+        except Exception:
+            pass
+
+        # Inicia a computacao e envia a funcao de callback para garantir comunicacao
         rko_gui_start.iniciar_resolucao(dados_coletados, manipulador_retorno_interface)
 
-    # Layout da Aba de Execução
+    # Layout da Aba de Execucao
     rotulo_execucao = ctk.CTkLabel(aba, text="EXECUTION LOG", text_color=CORES["destaque"], font=FONTES["titulo"])
     rotulo_execucao.grid(row=0, column=3, columnspan=3, sticky="ew", padx=7, pady=(8,12))
     
@@ -457,3 +475,6 @@ def configurar_aba_execucao(aba, aba_parametros, aba_agentes, aba_entrada_saida)
     
     # Redireciona prints do Python para o terminal da GUI
     sys.stdout = ESCRITOR_TERMINAL_GLOBAL
+
+    # Guarda referencia global do botao START (para bloquear/reabilitar)
+    START_BUTTON_GLOBAL = botao_iniciar
