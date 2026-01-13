@@ -1,7 +1,6 @@
-# metaheuristics/brkga/brkga.py
-
 import random
 import time
+import numpy as np  #adicionado para o ksts
 
 # O import de 'threading' foi removido, pois não é mais necessário.
 
@@ -14,7 +13,7 @@ GERACAO_FINAL=1
 def encode(dados, n_individuos, decoder):
     populacao=[]
     # Decoder 2N e CHEAPEST precisam de 2 genes por job
-    if decoder == "2n" or decoder == "2n*" or decoder == "cheapest":
+    if decoder == "2n" or decoder == "2n*" or decoder == "cheapest" or decoder == "ksts":
         for i in range(n_individuos):
             individuo=[]
             for j in range(0, 2*len(dados["N"]), 1):
@@ -357,6 +356,104 @@ def decode_individuo(individuo, indice, n_populacao, dados, decoder):
                     m_dest, pos_dest = melhor_mov
                     maquinas_jobs[mq_critica].pop()
                     maquinas_jobs[m_dest].insert(pos_dest, job_problematico)
+
+    # -------------------------------------------------------------------------
+    # Decoder KSTS
+    # -------------------------------------------------------------------------
+    elif decoder == "ksts":
+        # Converte lista para array numpy
+        keys = np.array(copia)
+        num_jobs = len(dados["N"])
+        
+        # Garante tamanho minimo
+        if len(keys) < 2 * num_jobs:
+            keys = np.resize(keys, 2 * num_jobs)
+
+        priority_keys = keys[:num_jobs]
+        roulette_keys = keys[num_jobs:2 * num_jobs]
+        
+        # Mapeamento de índices para IDs reais das máquinas
+        machine_ids_list = sorted(list(dados["M"]))
+        num_machines = len(machine_ids_list)
+
+        # Ordem global
+        # argsort retorna índices baseados em 0, que correspondem à posição no array keys.
+        # Como os keys estão alinhados com dados["N"] ordenados (geralmente 1..N),
+        # idx 0 -> Job 1, idx 1 -> Job 2, etc.
+        jobs_ordered_indices = np.argsort(priority_keys)
+
+        # Estruturas locais (usando índice 0..M-1)
+        local_schedules = [[] for _ in range(num_machines)]
+        machine_completion_times = np.zeros(num_machines)
+        cargas = np.zeros(num_machines)  # proxy de carga = soma dos tempos de processamento
+
+        epsilon = 1e-9
+
+        # Helper para calcular threshold (adaptado para usar 'dados')
+        def calc_threshold(machine_idx, last_job):
+            """Média dos setups S(machine, last_job, j) para todos j != last_job."""
+            m_id_real = machine_ids_list[machine_idx]
+            vals = []
+            # Idealmente iterar sobre todos jobs possiveis. 
+            # Como dados["N"] é a lista de jobs, usamos ela.
+            for j in dados["N"]:
+                if j == last_job:
+                    continue
+                vals.append(dados["S"].get((m_id_real, last_job, j), 0))
+            return float(sum(vals) / len(vals)) if vals else 0.0
+
+        for idx in jobs_ordered_indices:
+            job = int(idx) + 1 # Assume jobs de 1 a N
+
+            # --- roleta adaptativa por carga ---
+            weights = [1.0 / (epsilon + c) for c in cargas]
+            total_w = sum(weights)
+            probs = [w / total_w for w in weights] if total_w > 0 else [1.0 / num_machines] * num_machines
+            cumul = np.cumsum(probs)
+
+            r = float(roulette_keys[int(idx)] % 1.0)
+            mk_roleta_idx = int(np.searchsorted(cumul, r, side='right'))
+            if mk_roleta_idx >= num_machines:
+                mk_roleta_idx = num_machines - 1
+
+            # --- cria conjunto de candidatas via critério de setup ---
+            candidatas = []  # (machine_idx, s_val)
+            for m_idx in range(num_machines):
+                m_id_real = machine_ids_list[m_idx]
+                if not local_schedules[m_idx]:
+                    # máquina vazia => candidato automático com setup 0
+                    candidatas.append((m_idx, 0.0))
+                else:
+                    last_job = local_schedules[m_idx][-1]
+                    s_val = float(dados["S"].get((m_id_real, last_job, job), 0))
+                    T_k = calc_threshold(m_idx, last_job)
+                    if s_val <= T_k:
+                        candidatas.append((m_idx, s_val))
+
+            # --- decisão final ---
+            if candidatas:
+                best_m_idx, best_s = min(candidatas, key=lambda x: x[1])
+            else:
+                best_m_idx = mk_roleta_idx
+                m_id_real = machine_ids_list[best_m_idx]
+                last_job = local_schedules[best_m_idx][-1] if local_schedules[best_m_idx] else 0
+                best_s = float(dados["S"].get((m_id_real, last_job, job), 0))
+
+            # atualiza schedule e tempos
+            m_id_real_final = machine_ids_list[best_m_idx]
+            proc_time = float(dados["p"].get((m_id_real_final, job), 0.0))
+            
+            local_schedules[best_m_idx].append(job)
+            # atualiza tempo de conclusão: somando o setup escolhido + proc_time
+            machine_completion_times[best_m_idx] += best_s + proc_time
+            cargas[best_m_idx] += proc_time
+
+        # Constrói o dicionario final {MachineID: [Jobs]}
+        maquinas_jobs = {}
+        for m_idx, job_list in enumerate(local_schedules):
+            real_id = machine_ids_list[m_idx]
+            maquinas_jobs[real_id] = job_list
+
 
     # Armazena o resultado decodificado
     n_populacao[indice] = maquinas_jobs
