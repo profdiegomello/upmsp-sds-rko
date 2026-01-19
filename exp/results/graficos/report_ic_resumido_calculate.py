@@ -5,11 +5,12 @@ import numpy as np
 # Lê o arquivo DAT original. O delimitador é tabulação
 try:
     # df = pd.read_csv('../ject-2025/graficos/report-small.csv', sep=';', decimal='.', header=0)
-    df = pd.read_csv('report-rko-unified.dat', sep='\t', decimal='.', header=0)
+    # df = pd.read_csv('report-rko-unified.dat', sep='\t', decimal='.', header=0)
+    df = pd.read_csv('report-all-unified.dat', sep='\t', decimal='.', header=0)
 
     # keep only columns of interest: JOBS, MACHINES, MODEL, OBJECTIVE, RUNTIME
     df = df[['JOBS', 'MACHINES', 'MODEL', 'OBJECTIVE', 'RUNTIME']]
-    print("\n[DEBUG] Amostra de dados do arquivo 'report-rko-unified.dat':")
+    print("\n[DEBUG] Amostra de dados do arquivo 'report-brkga-rko-unified.dat':")
     print(df)
 
     #count how many times each combination of JOBS, MACHINES, MODEL appears

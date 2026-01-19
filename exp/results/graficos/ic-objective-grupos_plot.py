@@ -58,9 +58,26 @@ axes = axes.flatten()
 # models = ['RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC', 'RKO-KSTS']
 
 ## MIP, SA, BRKGA e RKO-Decoders
-model_colors =  {'SA': 'blue', 'BRKGA': 'magenta', 'RKO-Cheapest': 'green',   'RKO-M3LAW': 'olive',    'RKO-ECT': 'darkseagreen',   'RKO-INC': 'yellowgreen' }#,  'RKO-KSTS': 'coral' , 'MIP': 'red'}
-model_offsets = {'SA': -0.4, 'BRKGA': -0.3, 'RKO-Cheapest': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1 }#, 'RKO-KSTS': 0.2 , 'MIP': 0.3}
-models = ['SA', 'BRKGA', 'RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC'] #, 'RKO-KSTS' , 'MIP']
+# model_colors =  {'SA': 'magenta', 'BRKGA': 'blue', 'RKO-Cheapest': 'green',   'RKO-M3LAW': 'olive',    'RKO-ECT': 'darkseagreen',   'RKO-INC': 'yellowgreen' }#,  'RKO-KSTS': 'coral' , 'MIP': 'red'}
+# model_offsets = {'SA': -0.4, 'BRKGA': -0.3, 'RKO-Cheapest': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1 }#, 'RKO-KSTS': 0.2 , 'MIP': 0.3}
+# models = ['SA', 'BRKGA', 'RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC'] #, 'RKO-KSTS' , 'MIP']
+
+## MIP, SA, RKO-Decoders e BRKGA-Decoders
+model_colors =  {     'RKO-Cheapest': 'green',   'RKO-M3LAW': 'olive',    'RKO-ECT': 'darkseagreen',   'RKO-INC': 'yellowgreen' ,  'RKO-KSTS': 'lime' 
+                    ,  'SA': 'magenta' 
+                    , 'BRKGA-Cheapest': 'blue',   'BRKGA-M3LAW': 'cornflowerblue',    'BRKGA-ECT': 'deepskyblue',   'BRKGA-INC': 'lightskyblue' ,  'BRKGA-KSTS': 'cyan'
+                    , 'MIP': 'red'
+                }
+model_offsets = {     'RKO-Cheapest': 0.0, 'RKO-M3LAW': 0.2, 'RKO-ECT': 0.4, 'RKO-INC': 0.6 , 'RKO-KSTS': 0.6 
+                    , 'MIP': 0.6
+                    , 'BRKGA-Cheapest': 0.0, 'BRKGA-M3LAW': 0.2, 'BRKGA-ECT': 0.4, 'BRKGA-INC': 0.6 , 'BRKGA-KSTS': 0.6
+                    , 'SA': 0.6
+                }
+models = [  'RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT' #, 'RKO-KSTS'#, 'RKO-INC'
+          #, 'SA'
+          , 'BRKGA-Cheapest', 'BRKGA-M3LAW', 'BRKGA-ECT' #, 'BRKGA-KSTS' #, 'BRKGA-INC'
+          # , 'MIP'
+         ]
 
 for i, group_val in enumerate(ratio_groups):
     ax = axes[i]
@@ -97,7 +114,8 @@ handles, labels = ax.get_legend_handles_labels()
 # fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=3, title='Modelo', fontsize=12)
 fig.legend(handles, labels, loc='lower right', bbox_to_anchor=(1, 0), ncol=3, title='Modelo', fontsize=12)
 
-fig.suptitle(f'Desempenho do [RKO, SA, BRKGA, MIP] para métrica Makespan', fontsize=18)
+# fig.suptitle(f'Desempenho do [RKO, SA, BRKGA, MIP] para métrica Makespan', fontsize=18)
+fig.suptitle(f'Desempenho do RKO vs BRKGA (mesmos decoders) para métrica Makespan', fontsize=18)
 
 
 fig.supxlabel('Configuração (Jobs, Machines)', fontsize=14, y=0.02)
