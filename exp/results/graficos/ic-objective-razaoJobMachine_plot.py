@@ -32,7 +32,7 @@ x_ticks = np.arange(len(x_labels))
 # Define as cores e o offset para cada modelo
 
 ## APENAS os RKO-Decoders 
-# model_colors =  {'RKO-Cheapest': 'blue',   'RKO-M3LAW': 'green',    'RKO-ECT': 'olive',   'RKO-INC': 'coral',  'RKO-KSTS': 'red'}
+model_colors =  {'RKO-Cheapest': 'blue',   'RKO-M3LAW': 'green',    'RKO-ECT': 'olive',   'RKO-INC': 'coral',  'RKO-KSTS': 'red'}
 # model_offsets = {'RKO-Cheapest': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1, 'RKO-KSTS': 0.2}
 # models = ['RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC', 'RKO-KSTS']
 
@@ -50,19 +50,19 @@ model_colors =  {     'RKO-Cheapest': 'green',   'RKO-M3LAW': 'olive',    'RKO-E
 model_offsets = {   
                       'MIP':           0.0
                     , 'RKO-Cheapest':  0.0   , 'BRKGA-Cheapest':  0.0
-                    , 'RKO-KSTS':      0.0        , 'BRKGA-KSTS': 0.0
                     , 'RKO-M3LAW':     0.2      , 'BRKGA-M3LAW':  0.2
                     , 'RKO-ECT':       0.4         , 'BRKGA-ECT': 0.4
                     , 'RKO-INC':       0.6         , 'BRKGA-INC': 0.6
+                    , 'RKO-KSTS':      0.8        , 'BRKGA-KSTS': 0.8
                     , 'SA':            0.6
                 }
 models = [  'RKO-Cheapest' , 'BRKGA-Cheapest'
           , 'RKO-M3LAW'    , 'BRKGA-M3LAW'
           , 'RKO-ECT'      , 'BRKGA-ECT'
-          , 'RKO-INC'      #, 'BRKGA-INC'
-          , 'RKO-KSTS'     , 'BRKGA-KSTS' 
-          , 'SA'
-          , 'MIP'
+        #   , 'RKO-INC'      , 'BRKGA-INC'
+        #   , 'RKO-KSTS'     , 'BRKGA-KSTS' 
+        #   , 'SA'
+        #  , 'MIP'
          ]
 
 # Cria a figura e os eixos do gráfico (agora apenas um)
@@ -99,11 +99,11 @@ for model in models:
 # --- 4. Customização e Exibição ---
 
 # ax.set_title(f'Desempenho dos Decoders RKO para métrica Makespan\n\ndecoders={models}', fontsize=18, pad=20)
-ax.set_title('Desempenho do [RKO, BRKGA, SA, MIP] para métrica Makespan', fontsize=18, pad=20)
+# ax.set_title('Desempenho do [RKO, BRKGA, SA, MIP] para métrica Makespan', fontsize=18, pad=20)
 # ax.set_title('Desempenho do [RKO, BRKGA, SA] para métrica Makespan', fontsize=18, pad=20)
-# ax.set_title('Desempenho do RKO vs BRKGA (mesmos decoders) para métrica Makespan', fontsize=18, pad=20)
+ax.set_title('Desempenho do RKO vs BRKGA (mesmos decoders) para métrica Makespan', fontsize=18, pad=20)
 ax.set_ylabel('IC 95% do Makespan (em escala logarítmica)', fontsize=14)
-ax.set_xlabel('Grupo de Instâncias (Tarefas, Máquinas)\n\nOBS.: ordenadas pela razão Tarefas/Máquinas', fontsize=14)
+ax.set_xlabel('\nGrupo de Instâncias (Tarefas, Máquinas) ordenadas pela razão Tarefas/Máquinas', fontsize=14)
 
 # --- Definir a escala do eixo Y para logarítmica ---
 ax.set_yscale('log')

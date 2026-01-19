@@ -68,14 +68,14 @@ model_colors =  {     'RKO-Cheapest': 'green',   'RKO-M3LAW': 'olive',    'RKO-E
                     , 'BRKGA-Cheapest': 'blue',   'BRKGA-M3LAW': 'cornflowerblue',    'BRKGA-ECT': 'deepskyblue',   'BRKGA-INC': 'lightskyblue' ,  'BRKGA-KSTS': 'cyan'
                     , 'MIP': 'red'
                 }
-model_offsets = {     'RKO-Cheapest': 0.0, 'RKO-M3LAW': 0.2, 'RKO-ECT': 0.4, 'RKO-INC': 0.6 , 'RKO-KSTS': 0.6 
-                    , 'MIP': 0.6
-                    , 'BRKGA-Cheapest': 0.0, 'BRKGA-M3LAW': 0.2, 'BRKGA-ECT': 0.4, 'BRKGA-INC': 0.6 , 'BRKGA-KSTS': 0.6
-                    , 'SA': 0.6
+model_offsets = {     'RKO-Cheapest': 0.0, 'RKO-M3LAW': 0.2, 'RKO-ECT': 0.4, 'RKO-INC': 0.6 , 'RKO-KSTS': 0.8 
+                    , 'MIP': 0.8
+                    , 'BRKGA-Cheapest': 0.0, 'BRKGA-M3LAW': 0.2, 'BRKGA-ECT': 0.4, 'BRKGA-INC': 0.6 , 'BRKGA-KSTS': 0.8
+                    , 'SA': 0.8
                 }
-models = [  'RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT' #, 'RKO-KSTS'#, 'RKO-INC'
+models = [  'RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT' , 'RKO-INC' , 'RKO-KSTS'
           #, 'SA'
-          , 'BRKGA-Cheapest', 'BRKGA-M3LAW', 'BRKGA-ECT' #, 'BRKGA-KSTS' #, 'BRKGA-INC'
+          # , 'BRKGA-Cheapest', 'BRKGA-M3LAW', 'BRKGA-ECT' #, 'BRKGA-INC' #, 'BRKGA-KSTS'
           # , 'MIP'
          ]
 
@@ -115,7 +115,8 @@ handles, labels = ax.get_legend_handles_labels()
 fig.legend(handles, labels, loc='lower right', bbox_to_anchor=(1, 0), ncol=3, title='Modelo', fontsize=12)
 
 # fig.suptitle(f'Desempenho do [RKO, SA, BRKGA, MIP] para métrica Makespan', fontsize=18)
-fig.suptitle(f'Desempenho do RKO vs BRKGA (mesmos decoders) para métrica Makespan', fontsize=18)
+# fig.suptitle(f'Desempenho do RKO vs BRKGA (mesmos decoders) para métrica Makespan', fontsize=18)
+fig.suptitle(f'Desempenho dos decoders RKO para métrica Makespan', fontsize=18)
 
 
 fig.supxlabel('Configuração (Jobs, Machines)', fontsize=14, y=0.02)
