@@ -32,41 +32,43 @@ x_ticks = np.arange(len(x_labels))
 # Define as cores e o offset para cada modelo
 
 ## APENAS os RKO-Decoders 
-model_colors =  {'RKO-Cheapest': 'blue',   'RKO-M3LAW': 'green',    'RKO-ECT': 'olive',   'RKO-INC': 'coral',  'RKO-KSTS': 'red'}
-# model_offsets = {'RKO-Cheapest': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1, 'RKO-KSTS': 0.2}
-# models = ['RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC', 'RKO-KSTS']
+model_colors =  {'RKO-CHI': 'blue',   'RKO-M3LAW': 'green',    'RKO-ECT': 'olive',   'RKO-INC': 'coral',  'RKO-KSTS': 'red'}
+# model_offsets = {'RKO-CHI': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1, 'RKO-KSTS': 0.2}
+# models = ['RKO-CHI', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC', 'RKO-KSTS']
 
 ## MIP, SA, BRKGA e RKO-Decoders
-# model_colors =  {'SA': 'magenta', 'BRKGA': 'blue', 'RKO-Cheapest': 'green',   'RKO-M3LAW': 'olive',    'RKO-ECT': 'darkseagreen',   'RKO-INC': 'yellowgreen',  'RKO-KSTS': 'coral', 'MIP': 'red'}
-# model_offsets = {'SA': -0.4, 'BRKGA': -0.3, 'RKO-Cheapest': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1, 'RKO-KSTS': 0.2, 'MIP': 0.3}
-# models = ['SA', 'BRKGA', 'RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC', 'RKO-KSTS', 'MIP']
+# model_colors =  {'SA': 'magenta', 'BRKGA': 'blue', 'RKO-CHI': 'green',   'RKO-M3LAW': 'olive',    'RKO-ECT': 'darkseagreen',   'RKO-INC': 'yellowgreen',  'RKO-KSTS': 'coral', 'MIP': 'red'}
+# model_offsets = {'SA': -0.4, 'BRKGA': -0.3, 'RKO-CHI': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1, 'RKO-KSTS': 0.2, 'MIP': 0.3}
+# models = ['SA', 'BRKGA', 'RKO-CHI', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC', 'RKO-KSTS', 'MIP']
 
 ## MIP, SA, RKO-Decoders e BRKGA-Decoders
-model_colors =  {     'RKO-Cheapest': 'green',   'RKO-M3LAW': 'olive',    'RKO-ECT': 'darkseagreen',   'RKO-INC': 'yellowgreen' ,  'RKO-KSTS': 'lime' 
+model_colors =  {   #  'RKO-CHI': 'green',   'RKO-M3LAW': 'olive',    'RKO-ECT': 'darkseagreen',   'RKO-INC': 'yellowgreen' ,  'RKO-KSTS': 'lime' 
+                       'RKO-CHI': 'blue',   'RKO-M3LAW': 'cornflowerblue',    'RKO-ECT': 'deepskyblue',   'RKO-INC': 'lightskyblue' ,  'RKO-KSTS': 'steelblue'
                     ,  'SA': 'magenta' 
-                    , 'BRKGA-Cheapest': 'blue',   'BRKGA-M3LAW': 'cornflowerblue',    'BRKGA-ECT': 'deepskyblue',   'BRKGA-INC': 'lightskyblue' ,  'BRKGA-KSTS': 'cyan'
-                    , 'MIP': 'red'
+                    #, 'BRKGA-CHI': 'blue',   'BRKGA-M3LAW': 'cornflowerblue',    'BRKGA-ECT': 'deepskyblue',   'BRKGA-INC': 'lightskyblue' ,  'BRKGA-KSTS': 'cyan'
+                    , 'BRKGA-CHI': 'red',   'BRKGA-M3LAW': 'indianred',    'BRKGA-ECT': 'coral',   'BRKGA-INC': 'firebrick' ,  'BRKGA-KSTS': 'darkred'
+                    , 'MIP': 'gray'
                 }
 model_offsets = {   
                       'MIP':           0.0
-                    , 'RKO-Cheapest':  0.0   , 'BRKGA-Cheapest':  0.0
-                    , 'RKO-M3LAW':     0.2      , 'BRKGA-M3LAW':  0.2
-                    , 'RKO-ECT':       0.4         , 'BRKGA-ECT': 0.4
-                    , 'RKO-INC':       0.6         , 'BRKGA-INC': 0.6
-                    , 'RKO-KSTS':      0.8        , 'BRKGA-KSTS': 0.8
+                    , 'RKO-CHI':       0.0      , 'BRKGA-CHI':      0.0
+                    , 'RKO-M3LAW':     0.2      , 'BRKGA-M3LAW':    0.2
+                    , 'RKO-ECT':       0.4      , 'BRKGA-ECT':      0.4
+                    , 'RKO-INC':       0.6      , 'BRKGA-INC':      0.6
+                    , 'RKO-KSTS':      0.8      , 'BRKGA-KSTS':     0.8
                     , 'SA':            0.6
                 }
-models = [  'RKO-Cheapest' , 'BRKGA-Cheapest'
-          , 'RKO-M3LAW'    , 'BRKGA-M3LAW'
-          , 'RKO-ECT'      , 'BRKGA-ECT'
-        #   , 'RKO-INC'      , 'BRKGA-INC'
+models = [  
+              'RKO-CHI'      , 'BRKGA-CHI'
+            , 'RKO-M3LAW'    , 'BRKGA-M3LAW'
+            , 'RKO-ECT'      , 'BRKGA-ECT'
+        #   , 'RKO-INC'      #, 'BRKGA-INC'
         #   , 'RKO-KSTS'     , 'BRKGA-KSTS' 
         #   , 'SA'
         #  , 'MIP'
          ]
 
-# Cria a figura e os eixos do gráfico (agora apenas um)
-# Aumentamos bastante a largura para acomodar todos os pontos
+# Cria a figura e os eixos do gráfico
 fig, ax = plt.subplots(figsize=(14, 8))
 
 # --- 3. Plotagem dos Dados na Figura Única ---
@@ -91,19 +93,22 @@ for model in models:
         color=model_colors[model],
         label=model,
         capsize=5,
-        linestyle='None',
-        elinewidth=1.5,
-        markersize=5
+        linestyle='None', elinewidth=1.5, markersize=5
+        # linestyle='-', elinewidth=1.5, markersize=3
+        # linestyle=':', elinewidth=1.5, markersize=4
     )
 
 # --- 4. Customização e Exibição ---
 
-# ax.set_title(f'Desempenho dos Decoders RKO para métrica Makespan\n\ndecoders={models}', fontsize=18, pad=20)
+# ax.set_title(f'Desempenho dos Decoders RKO para métrica Makespan', fontsize=18, pad=20) #\n\ndecoders={models}
 # ax.set_title('Desempenho do [RKO, BRKGA, SA, MIP] para métrica Makespan', fontsize=18, pad=20)
-# ax.set_title('Desempenho do [RKO, BRKGA, SA] para métrica Makespan', fontsize=18, pad=20)
 ax.set_title('Desempenho do RKO vs BRKGA (mesmos decoders) para métrica Makespan', fontsize=18, pad=20)
-ax.set_ylabel('IC 95% do Makespan (em escala logarítmica)', fontsize=14)
 ax.set_xlabel('\nGrupo de Instâncias (Tarefas, Máquinas) ordenadas pela razão Tarefas/Máquinas', fontsize=14)
+
+# ax.set_title('Desempenho do RKO vs BRKGA (decoder CHI) para métrica Makespan', fontsize=18, pad=20)
+ax.set_xlabel('\nGrupo de Instâncias (Tarefas, Máquinas)', fontsize=14)
+
+ax.set_ylabel('IC 95% do Makespan (em escala logarítmica)', fontsize=14)
 
 # --- Definir a escala do eixo Y para logarítmica ---
 ax.set_yscale('log')

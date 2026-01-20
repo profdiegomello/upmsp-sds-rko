@@ -53,30 +53,35 @@ axes = axes.flatten()
 # Define as cores e o offset para cada modelo
 
 ## APENAS os RKO-Decoders 
-# model_colors =  {'RKO-Cheapest': 'blue',   'RKO-M3LAW': 'green',    'RKO-ECT': 'olive',   'RKO-INC': 'coral',  'RKO-KSTS': 'red'}
-# model_offsets = {'RKO-Cheapest': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1, 'RKO-KSTS': 0.2}
-# models = ['RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC', 'RKO-KSTS']
+# model_colors =  {'RKO-CHI': 'blue',   'RKO-M3LAW': 'green',    'RKO-ECT': 'olive',   'RKO-INC': 'coral',  'RKO-KSTS': 'red'}
+# model_offsets = {'RKO-CHI': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1, 'RKO-KSTS': 0.2}
+# models = ['RKO-CHI', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC', 'RKO-KSTS']
 
 ## MIP, SA, BRKGA e RKO-Decoders
-# model_colors =  {'SA': 'magenta', 'BRKGA': 'blue', 'RKO-Cheapest': 'green',   'RKO-M3LAW': 'olive',    'RKO-ECT': 'darkseagreen',   'RKO-INC': 'yellowgreen' }#,  'RKO-KSTS': 'coral' , 'MIP': 'red'}
-# model_offsets = {'SA': -0.4, 'BRKGA': -0.3, 'RKO-Cheapest': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1 }#, 'RKO-KSTS': 0.2 , 'MIP': 0.3}
-# models = ['SA', 'BRKGA', 'RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC'] #, 'RKO-KSTS' , 'MIP']
+# model_colors =  {'SA': 'magenta', 'BRKGA': 'blue', 'RKO-CHI': 'green',   'RKO-M3LAW': 'olive',    'RKO-ECT': 'darkseagreen',   'RKO-INC': 'yellowgreen' }#,  'RKO-KSTS': 'coral' , 'MIP': 'red'}
+# model_offsets = {'SA': -0.4, 'BRKGA': -0.3, 'RKO-CHI': -0.2, 'RKO-M3LAW': -0.1, 'RKO-ECT': 0, 'RKO-INC': 0.1 }#, 'RKO-KSTS': 0.2 , 'MIP': 0.3}
+# models = ['SA', 'BRKGA', 'RKO-CHI', 'RKO-M3LAW', 'RKO-ECT', 'RKO-INC'] #, 'RKO-KSTS' , 'MIP']
 
 ## MIP, SA, RKO-Decoders e BRKGA-Decoders
-model_colors =  {     'RKO-Cheapest': 'green',   'RKO-M3LAW': 'olive',    'RKO-ECT': 'darkseagreen',   'RKO-INC': 'yellowgreen' ,  'RKO-KSTS': 'lime' 
+model_colors =  {   #  'RKO-CHI': 'green',   'RKO-M3LAW': 'olive',    'RKO-ECT': 'darkseagreen',   'RKO-INC': 'yellowgreen' ,  'RKO-KSTS': 'lime' 
+                       'RKO-CHI': 'blue',   'RKO-M3LAW': 'cornflowerblue',    'RKO-ECT': 'deepskyblue',   'RKO-INC': 'lightskyblue' ,  'RKO-KSTS': 'steelblue'
                     ,  'SA': 'magenta' 
-                    , 'BRKGA-Cheapest': 'blue',   'BRKGA-M3LAW': 'cornflowerblue',    'BRKGA-ECT': 'deepskyblue',   'BRKGA-INC': 'lightskyblue' ,  'BRKGA-KSTS': 'cyan'
-                    , 'MIP': 'red'
+                    #, 'BRKGA-CHI': 'blue',   'BRKGA-M3LAW': 'cornflowerblue',    'BRKGA-ECT': 'deepskyblue',   'BRKGA-INC': 'lightskyblue' ,  'BRKGA-KSTS': 'cyan'
+                    , 'BRKGA-CHI': 'red',   'BRKGA-M3LAW': 'indianred',    'BRKGA-ECT': 'coral',   'BRKGA-INC': 'firebrick' ,  'BRKGA-KSTS': 'darkred'
+                    , 'MIP': 'gray'
                 }
-model_offsets = {     'RKO-Cheapest': 0.0, 'RKO-M3LAW': 0.2, 'RKO-ECT': 0.4, 'RKO-INC': 0.6 , 'RKO-KSTS': 0.8 
+model_offsets = {     'RKO-CHI': 0.0, 'RKO-M3LAW': 0.2, 'RKO-ECT': 0.4, 'RKO-INC': 0.6 , 'RKO-KSTS': 0.8 
                     , 'MIP': 0.8
-                    , 'BRKGA-Cheapest': 0.0, 'BRKGA-M3LAW': 0.2, 'BRKGA-ECT': 0.4, 'BRKGA-INC': 0.6 , 'BRKGA-KSTS': 0.8
+                    , 'BRKGA-CHI': 0.0, 'BRKGA-M3LAW': 0.2, 'BRKGA-ECT': 0.4, 'BRKGA-INC': 0.6 , 'BRKGA-KSTS': 0.8
                     , 'SA': 0.8
                 }
-models = [  'RKO-Cheapest', 'RKO-M3LAW', 'RKO-ECT' , 'RKO-INC' , 'RKO-KSTS'
-          #, 'SA'
-          # , 'BRKGA-Cheapest', 'BRKGA-M3LAW', 'BRKGA-ECT' #, 'BRKGA-INC' #, 'BRKGA-KSTS'
-          # , 'MIP'
+models = [  'RKO-CHI'      #, 'BRKGA-CHI'
+          , 'RKO-M3LAW'    #, 'BRKGA-M3LAW'
+          , 'RKO-ECT'      #, 'BRKGA-ECT'
+          , 'RKO-INC'      #, 'BRKGA-INC'
+        #   , 'RKO-KSTS'     , 'BRKGA-KSTS' 
+        #   , 'SA'
+        #  , 'MIP'
          ]
 
 for i, group_val in enumerate(ratio_groups):
