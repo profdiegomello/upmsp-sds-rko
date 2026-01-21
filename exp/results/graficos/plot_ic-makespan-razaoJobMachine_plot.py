@@ -2,6 +2,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
+SORT_RATIO = True
+LOG_SCALE = False 
+
 # --- 1. Carregamento e Preparação dos Dados ---
 
 try:
@@ -20,7 +23,7 @@ df['ERRO'] = (df['IC_SUPERIOR_95'] - df['IC_INFERIOR_95']) / 2
 df['RATIO'] = df['JOBS'] / df['MACHINES']
 
 # Ordena o DataFrame: primeiro pela razão, depois por JOBS e MACHINES para desempate
-df = df.sort_values(by=['RATIO', 'JOBS', 'MACHINES']).reset_index(drop=True)
+df = df.sort_values(by=['RATIO', 'JOBS', 'MACHINES']).reset_index(drop=True) if SORT_RATIO else df 
 
 # --- 2. Configuração do Gráfico Único ---
 
@@ -59,10 +62,10 @@ model_offsets = {
                     , 'SA':            0.6
                 }
 models = [  
-              'RKO-CHI'      , 'BRKGA-CHI'
-            , 'RKO-M3LAW'    , 'BRKGA-M3LAW'
-            , 'RKO-ECT'      , 'BRKGA-ECT'
-        #   , 'RKO-INC'      #, 'BRKGA-INC'
+              'RKO-CHI'      #, 'BRKGA-CHI'
+            , 'RKO-M3LAW'    #, 'BRKGA-M3LAW'
+            , 'RKO-ECT'      #, 'BRKGA-ECT'
+           , 'RKO-INC'      #, 'BRKGA-INC'
         #   , 'RKO-KSTS'     , 'BRKGA-KSTS' 
         #   , 'SA'
         #  , 'MIP'
@@ -93,25 +96,24 @@ for model in models:
         color=model_colors[model],
         label=model,
         capsize=5,
-        linestyle='None', elinewidth=1.5, markersize=5
-        # linestyle='-', elinewidth=1.5, markersize=3
+        # linestyle='None', elinewidth=1.5, markersize=5
+        linestyle='-', elinewidth=1.0, markersize=3
         # linestyle=':', elinewidth=1.5, markersize=4
     )
 
 # --- 4. Customização e Exibição ---
 
-# ax.set_title(f'Desempenho dos Decoders RKO para métrica Makespan', fontsize=18, pad=20) #\n\ndecoders={models}
+ax.set_title(f'Desempenho dos Decoders RKO para métrica Makespan', fontsize=18, pad=20) #\n\ndecoders={models}
 # ax.set_title('Desempenho do [RKO, BRKGA, SA, MIP] para métrica Makespan', fontsize=18, pad=20)
-ax.set_title('Desempenho do RKO vs BRKGA (mesmos decoders) para métrica Makespan', fontsize=18, pad=20)
-ax.set_xlabel('\nGrupo de Instâncias (Tarefas, Máquinas) ordenadas pela razão Tarefas/Máquinas', fontsize=14)
-
+# ax.set_title('Desempenho do RKO vs BRKGA (mesmos decoders) para métrica Makespan', fontsize=18, pad=20)
 # ax.set_title('Desempenho do RKO vs BRKGA (decoder CHI) para métrica Makespan', fontsize=18, pad=20)
-ax.set_xlabel('\nGrupo de Instâncias (Tarefas, Máquinas)', fontsize=14)
+ax.set_xlabel(f'\nGrupo de Instâncias (Tarefas, Máquinas){ " ordenadas pela razão Tarefas/Máquinas" if SORT_RATIO else "" }', fontsize=14)
 
-ax.set_ylabel('IC 95% do Makespan (em escala logarítmica)', fontsize=14)
 
 # --- Definir a escala do eixo Y para logarítmica ---
-ax.set_yscale('log')
+ax.set_yscale('log') if LOG_SCALE else ()
+ax.set_ylabel(f'IC 95% do Makespan{ " (em escala logarítmica)" if LOG_SCALE else "" }', fontsize=14)
+
 # --- Formatar os rótulos do eixo Y ---
 # Força os rótulos a serem números normais (ex: 500) em vez de notação científica (5x10²)
 # Isso melhora muito a legibilidade do eixo logarítmico.
@@ -135,4 +137,4 @@ plt.savefig('grafico_ordenado_por_razaoJobMachine.png', dpi=300)
 # Exibe o gráfico
 plt.show()
 
-print("\nGráfico único ordenado por razão salvo como 'grafico_ordenado_por_razaoJobMachine.png'")
+print("\nGráfico salvo como 'grafico_ordenado_por_razaoJobMachine.png'")

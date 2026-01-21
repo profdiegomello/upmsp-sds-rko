@@ -42,6 +42,7 @@ brkga_m3law = df[df['MODEL'] == 'BRKGA-M3LAW'][['IC_SUPERIOR_95', 'IC_INFERIOR_9
 rko_ect   = df[df['MODEL'] == 'RKO-ECT'  ][['IC_SUPERIOR_95', 'IC_INFERIOR_95']].to_records(index=False).tolist()
 brkga_ect = df[df['MODEL'] == 'BRKGA-ECT'][['IC_SUPERIOR_95', 'IC_INFERIOR_95']].to_records(index=False).tolist()
 
+rko_inc   = df[df['MODEL'] == 'RKO-INC'  ][['IC_SUPERIOR_95', 'IC_INFERIOR_95']].to_records(index=False).tolist()
 
 # Médios dos ICs já calculados
 rko_chi_mean   = [(low+high)/2 for (low,high) in rko_chi  ]
@@ -53,11 +54,19 @@ brkga_m3law_mean = [(low+high)/2 for (low,high) in brkga_m3law]
 rko_ect_mean   = [(low+high)/2 for (low,high) in rko_ect  ]
 brkga_ect_mean = [(low+high)/2 for (low,high) in brkga_ect]
 
+rko_inc_mean   = [(low+high)/2 for (low,high) in rko_inc  ]
+
 # Diferenças dos pontos médios dos ICs
 diffs = [
-    [a - b for a, b in zip(rko_chi_mean, brkga_chi_mean)],      # rko_chi - brkga_chi
-    [a - b for a, b in zip(rko_m3law_mean, brkga_m3law_mean)],  # rko_m3law - brkga_m3law
-    [a - b for a, b in zip(rko_ect_mean, brkga_ect_mean)]       # rko_ect - brkga_ect
+    [a - b for a, b in zip(rko_chi_mean, rko_m3law_mean)], 
+    [a - b for a, b in zip(rko_chi_mean, rko_ect_mean)], 
+    [a - b for a, b in zip(rko_chi_mean, rko_inc_mean)], 
+    # [a - b for a, b in zip(rko_m3law_mean, rko_ect_mean)], 
+    # [a - b for a, b in zip(rko_m3law_mean, rko_inc_mean)], 
+    # [a - b for a, b in zip(rko_ect_mean, rko_inc_mean)]    
+    [a - b for a, b in zip(rko_ect_mean, rko_m3law_mean)], 
+    [a - b for a, b in zip(rko_inc_mean, rko_m3law_mean)], 
+    [a - b for a, b in zip(rko_inc_mean, rko_ect_mean)]    
 ]
 
 # Criar matriz para heatmap
@@ -66,20 +75,25 @@ heatmap_data = np.array(diffs)
 # Plot
 fig, ax = plt.subplots(figsize=(12,4))
 sns.heatmap(
-    heatmap_data, annot=True, fmt=".2f",
+    heatmap_data, annot=True, fmt=".1f",
     cmap="RdBu_r", center=0,
     xticklabels=configs,
-    yticklabels=["CHI:   (RKO - BRKGA)", "M3LAW: (RKO - BRKGA)", "ECT:   (RKO - BRKGA)"],
+    yticklabels=["RKO: (CHI - M3LAW)", "RKO: (CHI - ECT)", "RKO: (CHI - INC)", 
+                #  "RKO: (M3LAW - ECT)", "RKO: (M3LAW - INC)", 
+                #  "RKO: (ECT - INC)" ],
+                "RKO: (ECT - M3LAW)", "RKO: (INC - M3LAW)", 
+                 "RKO: (INC - ECT)" ],
     cbar=True
+    # , robust=True
 )
 
-ax.set_title("Heatmap das Diferenças dos Pontos Médios dos ICs 95% do RKO e BRKGA\n\ncores frias (valor negativo): RKO é melhor, cores quentes (valor positivo): BRKGA é melhor).")
+ax.set_title("Heatmap das Diferenças dos Pontos Médios dos ICs 95% entre decoders no RKO: (A - B)\n\ncores frias (valor negativo): decoder A é melhor, cores quentes (valor positivo): decoder B é melhor.")
 plt.tight_layout()
 
 # Salva a imagem em um arquivo
-plt.savefig('RKOvsBRKGA-IC_heatmap-longitudinal.png', dpi=300)
+plt.savefig('Decoders-RKO-IC_heatmap-longitudinal.png', dpi=300)
 
 # Exibe o gráfico
 plt.show()
 
-print("\nGráfico salvo como 'RKOvsBRKGA-IC_heatmap-longitudinal.png'")
+print("\nGráfico salvo como 'Decoders-RKO-IC_heatmap-longitudinal.png'")
