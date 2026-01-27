@@ -5,7 +5,15 @@ from tkinter import filedialog
 from typing import Tuple
 import sys
 import os
+import re  # le os numeros do texto
+import matplotlib
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk #para o plot do grafico
+
+# Garante que o Matplotlib use o backend correto para Tkinter
+matplotlib.use("TkAgg")
 from datetime import datetime
+import backend.rko_gui_start as rko_gui_start
 
 def resource_path(relative_path):
     #Obtem o caminho absoluto para recursos
@@ -52,6 +60,51 @@ ESCRITOR_TERMINAL_GLOBAL = None
 #Variavel global para o START button (para evitar multiplos cliques)
 START_BUTTON_GLOBAL = None
 
+# GLOBAIS DO GRAFICO
+FIG_GLOBAL = None
+AX_GLOBAL = None
+CANVAS_GLOBAL = None
+LINHA_GLOBAL = None
+DADOS_X = []  # Tempo
+DADOS_Y = []  # Makespan
+NOME_INSTANCIA_ATUAL = "Aguardando..."
+
+def configurar_aba_grafico(aba):
+    global FIG_GLOBAL, AX_GLOBAL, CANVAS_GLOBAL, LINHA_GLOBAL
+
+    # 1. Configuracao do Frame principal da aba
+    frame_grafico = ctk.CTkFrame(aba, fg_color="transparent")
+    frame_grafico.pack(fill="both", expand=True, padx=10, pady=10)
+
+    # 2. Criar Figura Matplotlib (Estilo Dark para combinar)
+    plt.style.use('dark_background') 
+    FIG_GLOBAL, AX_GLOBAL = plt.subplots(figsize=(5, 4), dpi=100)
+    
+    # Ajuste de cores para fundir com o fundo do app
+    FIG_GLOBAL.patch.set_facecolor('#242424') 
+    AX_GLOBAL.set_facecolor('#2b2b2b')
+
+    # 3. Configuracao Inicial dos Eixos
+    AX_GLOBAL.set_title("Evolução do Makespan (Tempo Real)", fontsize=10, color="white")
+    AX_GLOBAL.set_xlabel("Tempo (s)", fontsize=9, color="gray")
+    AX_GLOBAL.set_ylabel("Makespan (Custo)", fontsize=9, color="gray")
+    AX_GLOBAL.grid(True, linestyle='--', alpha=0.3)
+
+    # Cria uma linha vazia
+    LINHA_GLOBAL, = AX_GLOBAL.plot([], [], color='#00FF00', linewidth=2, marker='o', markersize=4)
+
+    # 4. Embarcar no Tkinter
+    CANVAS_GLOBAL = FigureCanvasTkAgg(FIG_GLOBAL, master=frame_grafico)
+    CANVAS_GLOBAL.draw()
+    CANVAS_GLOBAL.get_tk_widget().pack(fill="both", expand=True)
+
+    # cria a barra cinza pequena com o disquete para salvar
+    toolbar = NavigationToolbar2Tk(CANVAS_GLOBAL, frame_grafico)
+    toolbar.update()
+    toolbar.pack(side="bottom", fill="x")
+
+    return frame_grafico
+
 #Classe para Redirecionamento Seguro de Texto 
 class RedirecionadorTextoThreadSeguro(object):
     def __init__(self, widget_texto):
@@ -60,10 +113,10 @@ class RedirecionadorTextoThreadSeguro(object):
     def write(self, texto):
         # Agenda a escrita para a thread principal do Tkinter para evitar travamentos
         try:
-            # O método .after(0, ...) coloca a tarefa na fila da interface gráfica
+            # O metodo .after(0, ...) coloca a tarefa na fila da interface grafica
             self.widget_texto.after(0, lambda: self.escrita_segura(texto))
         except Exception:
-            # Ignora erros caso a janela já tenha sido fechada durante o processo
+            # Ignora erros caso a janela ja tenha sido fechada durante o processo
             pass 
 
     def escrita_segura(self, texto):
@@ -76,74 +129,118 @@ class RedirecionadorTextoThreadSeguro(object):
             pass
 
     def flush(self):
-        # Método necessário para compatibilidade com sys.stdout
+        # Metodo necessario para compatibilidade com sys.stdout
         pass
 
 #Callback 
 def manipulador_retorno_interface(dados):
-    """
-    Função global que recebe dados do solver e escreve no terminal da interface.
-    """
     global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL
-    
-    # Se o terminal não estiver inicializado, aborta para evitar erros
+    # Globais do gráfico
+    global DADOS_X, DADOS_Y, CANVAS_GLOBAL, AX_GLOBAL, LINHA_GLOBAL, NOME_INSTANCIA_ATUAL
+
     if ESCRITOR_TERMINAL_GLOBAL is None:
         return
 
     mensagem_formatada = ""
     tipo_status = dados.get("status")
+    texto_log = dados.get("message", "")
 
+    # LOGICA DE PLOTAGEM
+    if tipo_status == "log" or tipo_status == "running":
+        
+        # DETECTA INICIO DE NOVA INSTANCIA -> CAPTURA NOME E LIMPA
+        # Exemplo de log: "Processando (1/9): I_100_10_S_1-49_1.txt [Run 1]"
+        if "Processando (" in texto_log:
+            try:
+                # Divide por ': ' pega a segunda parte, depois divide por ' [' e pega a primeira
+                partes = texto_log.split(': ')
+                if len(partes) > 1:
+                    NOME_INSTANCIA_ATUAL = partes[1].split(' [')[0]
+                else:
+                    NOME_INSTANCIA_ATUAL = "Instância Desconhecida"
+            except:
+                NOME_INSTANCIA_ATUAL = "Instância"
+
+            # Limpa dados
+            DADOS_X.clear()
+            DADOS_Y.clear()
+            
+            def _limpar_grafico():
+                if CANVAS_GLOBAL and AX_GLOBAL and LINHA_GLOBAL:
+                    LINHA_GLOBAL.set_data([], [])
+                    # Reseta o titulo para o inicio
+                    AX_GLOBAL.set_title(f"{NOME_INSTANCIA_ATUAL} - Iniciando...", fontsize=10, color="white")
+                    AX_GLOBAL.relim()
+                    AX_GLOBAL.autoscale_view()
+                    CANVAS_GLOBAL.draw()
+            
+            if CANVAS_GLOBAL:
+                CANVAS_GLOBAL.get_tk_widget().after(0, _limpar_grafico)
+
+        # DETECTA NOVO MAKESPAN -> PLOTA E ATUALIZA TITULO
+        match = re.search(r"BEST: (\d+\.?\d*) .* Time: (\d+\.?\d*)", texto_log)
+        
+        if match:
+            try:
+                makespan = float(match.group(1))
+                tempo = float(match.group(2))
+
+                DADOS_X.append(tempo)
+                DADOS_Y.append(makespan)
+
+                def _atualizar_grafico():
+                    if CANVAS_GLOBAL and AX_GLOBAL and LINHA_GLOBAL:
+                        LINHA_GLOBAL.set_data(DADOS_X, DADOS_Y)
+                        
+                        # --- AQUI ESTÁ A MUDANÇA DO TÍTULO ---
+                        titulo_novo = f"{NOME_INSTANCIA_ATUAL}  |  Melhor Makespan: {makespan}"
+                        AX_GLOBAL.set_title(titulo_novo, fontsize=10, color="#00FF00", fontweight="bold")
+                        # -------------------------------------
+
+                        AX_GLOBAL.relim()
+                        AX_GLOBAL.autoscale_view()
+                        CANVAS_GLOBAL.draw()
+
+                if CANVAS_GLOBAL:
+                    CANVAS_GLOBAL.get_tk_widget().after(0, _atualizar_grafico)
+            except Exception:
+                pass
+
+    # TERMINAL E BOTOES
     if tipo_status == "finished":
         mensagem_extra = dados.get("message", "Processo Finalizado.")
         mensagem_formatada =  "\n" + "="*43 + "\n"
         mensagem_formatada += f"   {mensagem_extra}\n"
         mensagem_formatada += "="*43 + "\n\n"
-
-        # Reabilita botao START
-        def _reenable_start():
-            try:
-                if START_BUTTON_GLOBAL is not None:
-                    START_BUTTON_GLOBAL.configure(state="normal", text="START SOLVER")
-            except Exception:
-                pass
-
-        # usa o widget do terminal para agendar na thread principal
-        try:
-            ESCRITOR_TERMINAL_GLOBAL.widget_texto.after(0, _reenable_start)
-        except Exception:
-            pass
     
     elif tipo_status == "error":
         mensagem_erro = dados.get('message', 'Erro desconhecido')
         mensagem_formatada = f"\n!!! ERRO CRÍTICO !!!\n{mensagem_erro}\n"
-
-        # Reabilita botao START de forma thread-safe em caso de erro também
-        def _reenable_start_err():
-            try:
-                if START_BUTTON_GLOBAL is not None:
-                    START_BUTTON_GLOBAL.configure(state="normal", text="START SOLVER")
-            except Exception:
-                pass
-
-        try:
-            ESCRITOR_TERMINAL_GLOBAL.widget_texto.after(0, _reenable_start_err)
-        except Exception:
-            pass
     
     elif tipo_status == "running":
-        mensagem_status = dados.get('message', 'Rodando')
-        mensagem_formatada = f"{mensagem_status}\n"
+        mensagem_formatada = f"{texto_log}\n"
     
     elif tipo_status == "log":
-        texto_log = dados.get("message", "")
         mensagem_formatada = f"{texto_log}\n"
 
-    # Escreve no terminal se houver mensagem
     if mensagem_formatada:
         ESCRITOR_TERMINAL_GLOBAL.write(mensagem_formatada)
 
-# UTILITARIOS E CONSTRUCAO DE INTERFACE
+    if tipo_status in ["finished", "error"]:
+        def _reset_safe():
+            try:
+                if START_BUTTON_GLOBAL is not None and hasattr(START_BUTTON_GLOBAL, 'resetar_estado'):
+                    START_BUTTON_GLOBAL.resetar_estado()
+                elif START_BUTTON_GLOBAL is not None:
+                    START_BUTTON_GLOBAL.configure(state="normal", text="START SOLVER", fg_color="#77198f")
+            except Exception:
+                pass
+        try:
+            ESCRITOR_TERMINAL_GLOBAL.widget_texto.after(0, _reset_safe)
+        except Exception:
+            pass
 
+# UTILITARIOS E CONSTRUCAO DE INTERFACE
 def centralizar_janela(janela, largura, altura):
     largura_tela = janela.winfo_screenwidth()
     altura_tela = janela.winfo_screenheight()
@@ -172,7 +269,7 @@ def coletar_dados_interface(aba_parametros, aba_agentes, aba_entrada_saida) -> d
             "execution_times": aba_parametros.widgets_armazenados["execution_times"].get()
         }
     
-    # 2. Coleta Parâmetros dos Agentes (O resto continua igual)
+    # 2. Coleta Parametros dos Agentes 
     dados_compilados["agents"] = {}
     if hasattr(aba_agentes, 'parametros_agentes'):
         for nome_agente, widgets in aba_agentes.parametros_agentes.items():
@@ -199,7 +296,7 @@ def construir_aplicacao() -> Tuple[ctk.CTk, callable, ctk.CTkFrame, ctk.CTkFrame
     janela_principal.resizable(False, False)
     ctk.set_appearance_mode('dark')
 
-    # Configuração do Grid Principal
+    # Configuracao do Grid Principal
     for malha in range(10):
         janela_principal.grid_rowconfigure(malha, minsize=20)
         janela_principal.grid_columnconfigure(malha, minsize=20)
@@ -218,27 +315,37 @@ def construir_aplicacao() -> Tuple[ctk.CTk, callable, ctk.CTkFrame, ctk.CTkFrame
     frame_principal.grid_columnconfigure(0, weight=1)
     frame_principal.grid_propagate(False)
 
-    # Criação das Abas
+    # Criacao das Abas
     aba_parametros = criar_aba_base(frame_principal)
     aba_agentes = criar_aba_base(frame_principal)
     aba_entrada_saida = criar_aba_base(frame_principal)
     aba_execucao = criar_aba_base(frame_principal)
+    aba_grafico = criar_aba_base(frame_principal)
 
     def mostrar_aba(aba_selecionada):
-        for aba in (aba_parametros, aba_agentes, aba_entrada_saida, aba_execucao):
+        for aba in (aba_parametros, aba_agentes, aba_entrada_saida, aba_execucao, aba_grafico):
             aba.grid_forget()
         aba_selecionada.grid(row=0, column=0, sticky="nsew")
 
-    # Configuração do Conteúdo de cada Aba
+    # Configuracao do Conteudo de cada Aba
     configurar_aba_parametros(aba_parametros)
     configurar_aba_agentes(aba_agentes)
     configurar_aba_entrada_saida(aba_entrada_saida)
     configurar_aba_execucao(aba_execucao, aba_parametros, aba_agentes, aba_entrada_saida)
+    configurar_aba_grafico(aba_grafico)
 
     # Inicia mostrando a primeira aba
     mostrar_aba(aba_parametros)
+
+    def ao_fechar_janela():
+        print("Encerrando aplicação e matando processos...")
+        janela_principal.destroy()
+        sys.exit(0) # Forca a morte de todas as threads e processos daemon
+        
+    janela_principal.protocol("WM_DELETE_WINDOW", ao_fechar_janela)
+
     
-    return janela_principal, mostrar_aba, aba_parametros, aba_agentes, aba_entrada_saida, aba_execucao
+    return janela_principal, mostrar_aba, aba_parametros, aba_agentes, aba_entrada_saida, aba_execucao, aba_grafico
 
 # CONFIGURACAO DE CADA ABA
 def configurar_aba_parametros(aba):
@@ -266,7 +373,7 @@ def configurar_aba_parametros(aba):
     
     # --- COLUNA 2: TIME LIMIT ---
     rotulo_tempo = ctk.CTkLabel(aba, text="TIME LIMIT (S)", font=FONTES["subtitulo"], text_color=CORES["texto"])
-    rotulo_tempo.grid(row=1, column=2, sticky="s") # Ajustado para sticky="s" para alinhar
+    rotulo_tempo.grid(row=1, column=2, sticky="s") 
     
     entrada_tempo = ctk.CTkEntry(aba, width=90, corner_radius=0, border_color=CORES["primaria"], border_width=2)
     entrada_tempo.insert(0,"60")
@@ -295,11 +402,10 @@ def configurar_aba_agentes(aba):
     cabecalho = ctk.CTkLabel(area_rolagem, text="AGENTS PARAMETERS", font=FONTES["titulo"], text_color=CORES["destaque"])
     cabecalho.grid(row=0, column=0, columnspan=3, sticky="ew", padx=12, pady=(8,12))
     
-    # dicionario de configuracao
     configuracao_agentes = {
         "BRKGA": {
             "linha": 1, "coluna": 0, "titulo": "BIASED RANDOM KEY GENETIC ALGORITHM (BRKGA)", 
-            "campos": [("Population", "100"), ("Elite set", "0.20"), ("Mutant set", "0.10"), ("Elite parent inheritance prob", "0.70")]
+            "campos": [("Population", "100"), ("Elite set %", "0.20"), ("Mutant set %", "0.10"), ("Inheritance Prob", "0.70")]
         },
         "SA": {
             "linha": 1, "coluna": 1, "titulo": "SIMULATED ANNEALING (SA)", 
@@ -315,9 +421,9 @@ def configurar_aba_agentes(aba):
         },
         "PSO": {
             "linha": 2, "coluna": 1, "titulo": "PARTICLE SWARM OPTIMIZATION (PSO)", 
-            "campos": [("PSize", "100"), ("c1", "2.05"), ("betaMin", "2.05"), ("betaMax", "0.73")]
+            "campos": [("PSize", "100"), ("c1", "2.05"), ("c2", "2.05"), ("w", "0.73")]
         },
-        "GA1": {
+        "GA": {
             "linha": 3, "coluna": 0, "titulo": "GENETIC ALGORITHM (GA)", 
             "campos": [("Population", "100"), ("CrosProb", "0.98"), ("MutProb", "0.005")]
         },
@@ -341,7 +447,7 @@ def criar_cartao_agente(conteiner_pai, config):
         border_color=CORES["borda"]
     )
     frame_agente.grid(row=config["linha"], column=config["coluna"], padx=8, pady=8, sticky="n")
-    frame_agente.grid_propagate(False) # Impede que o frame encolha ou cresça
+    frame_agente.grid_propagate(False) # Impede que o frame encolha ou cresca
     
     rotulo_titulo = ctk.CTkLabel(frame_agente, text=config["titulo"], font=FONTES["corpo_negrito"], text_color=CORES["destaque"])
     rotulo_titulo.grid(row=0, column=0, sticky="w", padx=10, pady=(8,4))
@@ -358,7 +464,7 @@ def criar_cartao_agente(conteiner_pai, config):
         entrada_valor = ctk.CTkEntry(frame_agente, width=90)
         entrada_valor.insert(0, valor_padrao)
         
-        # Ajuste fino de layout se não for a primeira coluna
+        # Ajuste fino de layout se nao for a primeira coluna
         coluna_grid = 1 if "coluna" in config and config["coluna"] != 0 else 0
         entrada_valor.grid(row=indice, column=coluna_grid, sticky="e", padx=10 if config["coluna"] != 0 else 0, pady=6)
         
@@ -412,36 +518,93 @@ def configurar_aba_entrada_saida(aba):
         botao_busca.grid(row=1, column=1, pady=10)
 
 def configurar_aba_execucao(aba, aba_parametros, aba_agentes, aba_entrada_saida):
-    """Configura a aba final com o terminal e botao de start"""
+    """Configura a aba final com o terminal e lógica de Start/Stop"""
     global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL
     
-    def ao_clicar_iniciar():
+    # Variavel de estado local para saber se esta rodando ou parado
+    estado_execucao = {"rodando": False}
+
+    
+    # LOGICA VISUAL DO BOTAO
+    def resetar_botao():
+        """Volta o botão para o estado original (Azul/START)"""
+        estado_execucao["rodando"] = False
+        try:
+            if START_BUTTON_GLOBAL:
+                START_BUTTON_GLOBAL.configure(
+                    state="normal",
+                    text='START SOLVER',
+                    fg_color="#77198f",       
+                    hover_color="#9c27b0",
+                    border_width=0,
+                    text_color="white"
+                )
+        except Exception:
+            pass
+
+    def ao_passar_mouse(event):
+        if estado_execucao["rodando"] and START_BUTTON_GLOBAL:
+            START_BUTTON_GLOBAL.configure(
+                text="STOP", 
+                fg_color="#C0392B",   # Vermelho escuro
+                hover_color="#E74C3C", # Vermelho claro
+                text_color="white"
+            )
+
+    def ao_sair_mouse(event):
+        """Se estiver rodando, volta para botao informativo (Transparente)"""
+        if estado_execucao["rodando"] and START_BUTTON_GLOBAL:
+            START_BUTTON_GLOBAL.configure(
+                text="Running...", 
+                fg_color="transparent", 
+                border_width=2,
+                border_color="#555555", # Cinza
+                text_color=("gray10", "gray90")
+            )
+
+    # ACAP DO CLIQUE (START / STOP)
+    def acao_botao():
         if rko_gui_start is None:
             print("ERRO: Middleware 'rko_gui_start' não foi importado.")
             return
 
-        dados_coletados = coletar_dados_interface(aba_parametros, aba_agentes, aba_entrada_saida)
-        
-        # Limpa o terminal antes de comecar
-        if ESCRITOR_TERMINAL_GLOBAL:
-            ESCRITOR_TERMINAL_GLOBAL.widget_texto.configure(state="normal")
-            ESCRITOR_TERMINAL_GLOBAL.widget_texto.delete("1.0", "end")
-            ESCRITOR_TERMINAL_GLOBAL.widget_texto.configure(state="disabled")
-        
-        print(f"Iniciando otimização com limite de {dados_coletados['hyper_parameters']['time_limit']}s...")
-        inicio = datetime.now()
-        print("inicio: "+inicio.strftime("%d/%m %H:%M:%S"))
-        # Desabilita o botao START apos clicar
-        try:
-            if START_BUTTON_GLOBAL is not None:
-                START_BUTTON_GLOBAL.configure(state="disabled", text="RUNNING...")
-        except Exception:
-            pass
+        #INICIAR (START) 
+        if not estado_execucao["rodando"]:
+            
+            #Coleta dados
+            dados_coletados = coletar_dados_interface(aba_parametros, aba_agentes, aba_entrada_saida)
+            if not dados_coletados:
+                return # Se houve erro na coleta
 
-        # Inicia a computacao e envia a funcao de callback para garantir comunicacao
-        rko_gui_start.iniciar_resolucao(dados_coletados, manipulador_retorno_interface)
+            # 2. Limpa terminal
+            if ESCRITOR_TERMINAL_GLOBAL:
+                ESCRITOR_TERMINAL_GLOBAL.widget_texto.configure(state="normal")
+                ESCRITOR_TERMINAL_GLOBAL.widget_texto.delete("1.0", "end")
+                ESCRITOR_TERMINAL_GLOBAL.widget_texto.configure(state="disabled")
+            
+            # 3. Muda estado visual para "Running..." (Transparente)
+            estado_execucao["rodando"] = True
+            START_BUTTON_GLOBAL.configure(
+                text="Running...",
+                fg_color="#555555",
+                border_width=2,
+                border_color="#555555",
+                text_color=("gray10", "gray90")
+            )
+            
+            print(f"Iniciando otimização com limite de {dados_coletados['hyper_parameters']['time_limit']}s...")
 
-    # Layout da Aba de Execucao
+            # 4. Inicia o Backend
+            rko_gui_start.iniciar_resolucao(dados_coletados, manipulador_retorno_interface)
+
+        # PARAR 
+        else:
+            print("\n>>> SOLICITANDO PARADA... AGUARDE O FIM DO CICLO ATUAL <<<\n")
+            rko_gui_start.solicitar_parada()
+            # O botao soh volta a ser azul quando o backend responder "finished"
+            # quem chama o resetar_botao() eh o manipulador_retorno_interface
+
+    # LAYOUT
     rotulo_execucao = ctk.CTkLabel(aba, text="EXECUTION LOG", text_color=CORES["destaque"], font=FONTES["titulo"])
     rotulo_execucao.grid(row=0, column=3, columnspan=3, sticky="ew", padx=7, pady=(8,12))
     
@@ -450,13 +613,17 @@ def configurar_aba_execucao(aba, aba_parametros, aba_agentes, aba_entrada_saida)
         text='START SOLVER', 
         width=200, 
         height=50, 
-        command=ao_clicar_iniciar,
+        command=acao_botao,
         fg_color="#77198f", 
         hover_color="#9c27b0",
         font=("Roboto", 18, "bold")
     )
     botao_iniciar.grid(row=1, column=2, sticky="n", pady=20, padx=20)
     
+    # Vincula eventos de mouse para o efeito visual
+    botao_iniciar.bind("<Enter>", ao_passar_mouse)
+    botao_iniciar.bind("<Leave>", ao_sair_mouse)
+
     terminal_texto = ctk.CTkTextbox(
         aba, 
         width=580, 
@@ -470,11 +637,11 @@ def configurar_aba_execucao(aba, aba_parametros, aba_agentes, aba_entrada_saida)
     terminal_texto.grid(row=1, column=3, sticky="nsew", rowspan=5, padx=10, pady=10)
     terminal_texto.configure(state="disabled")
 
-    # Inicializa o Escritor Global apontando para este terminal
+    # Configura Globais
     ESCRITOR_TERMINAL_GLOBAL = RedirecionadorTextoThreadSeguro(terminal_texto)
-    
-    # Redireciona prints do Python para o terminal da GUI
-    sys.stdout = ESCRITOR_TERMINAL_GLOBAL
-
-    # Guarda referencia global do botao START (para bloquear/reabilitar)
     START_BUTTON_GLOBAL = botao_iniciar
+    
+    # Anexa a função de reset ao objeto do botão para acessarmos de fora
+    START_BUTTON_GLOBAL.resetar_estado = resetar_botao
+
+    sys.stdout = ESCRITOR_TERMINAL_GLOBAL

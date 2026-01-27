@@ -1,18 +1,14 @@
 import os
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use('Agg') # Backend não-interativo para gerar imagens sem travar a GUI
 import matplotlib.pyplot as plt
 import numpy as np
 
 
-#################################################################################################
-#
-# 
-#
-#################################################################################################
-
 def calcula_gap(lowerbound, objetivo):
-    gap=((objetivo-lowerbound)/lowerbound)*100
+    if lowerbound == 0:
+        return 0.0
+    gap = ((objetivo - lowerbound) / lowerbound) * 100
     return gap
 
 def salvar_resultado(
@@ -89,30 +85,39 @@ def salvar_resultado(
         f.write(linha)
 
 #
-# Constroi grafico de Gantt
+# Constroi grafico de Gantt (MODO ESCURO)
 #
 def gantt_chart(M, N, N0, p, s, X, C, arq_gantt, instancia, makespan, str_metodo):
     """
-    Gera um gráfico de Gantt a partir de dicionários genéricos de solução (X e C).
-
-    Args:
-        M (list): Lista de máquinas.
-        N (list): Lista de jobs.
-        N0 (list): Lista de jobs incluindo o job dummy 0.
-        p (dict): Dicionário com os tempos de processamento.
-        s (dict): Dicionário com os tempos de setup (não usado diretamente na plotagem,
-                  pois está embutido em C, mas mantido por consistência).
-        X (dict): Dicionário de sequenciamento no formato {(i, k, j): 1}.
-        C (dict): Dicionário de tempo de término no formato {(i, j): tempo}.
-        mostra (int): 1 para exibir o gráfico, 0 para apenas salvar.
-        arq_gantt (str): Nome do arquivo para salvar o gráfico.
-        instancia (str): Nome da instância para o título do gráfico.
+    Gera um gráfico de Gantt com tema escuro.
     """
     
+    # Cria a figura
     fig, ax = plt.subplots(figsize=(12, 6))
+
+
+    COR_FUNDO = "#DDDDDD"  # Cinza escuro (quase preto)
     
-    # Cores para os jobs
-    # Usando um mapa de cores com base no número total de jobs
+    fig.patch.set_facecolor(COR_FUNDO) # Fundo da imagem
+    ax.set_facecolor(COR_FUNDO)        # Fundo da área do gráfico
+
+    # Bordas (Spines) em branco
+    ax.spines['bottom'].set_color('black')
+    ax.spines['top'].set_color('black') 
+    ax.spines['left'].set_color('black')
+    ax.spines['right'].set_color('black')
+    
+    # Cor dos textos dos eixos (Ticks e Labels)
+    ax.tick_params(axis='x', colors='black')
+    ax.tick_params(axis='y', colors='black')
+    ax.xaxis.label.set_color('black')
+    ax.yaxis.label.set_color('black')
+    
+    # Cor do Título
+    ax.title.set_color('black')
+    # =================================================================
+    
+    # Cores para os jobs (Tab20 é bom para distinguir muitos jobs)
     colors = plt.cm.get_cmap("tab20", len(N)) 
 
     max_completion_time = 0
@@ -121,7 +126,6 @@ def gantt_chart(M, N, N0, p, s, X, C, arq_gantt, instancia, makespan, str_metodo
     for i in M:
         for j in N:
             # Verifica se o job j está alocado em alguma sequência na máquina i
-            # Isso é verdade se existir alguma chave em X da forma (i, k, j)
             is_job_on_machine = any(X.get((i, k, j), 0) > 0.5 for k in N0)
             
             if is_job_on_machine:
@@ -129,33 +133,58 @@ def gantt_chart(M, N, N0, p, s, X, C, arq_gantt, instancia, makespan, str_metodo
                 processing_time = p.get((i, j), 0)
                 start_time = completion_time - processing_time
 
-                # Atualiza o tempo máximo de conclusão para ajustar o eixo x
+                # Atualiza o tempo máximo de conclusão
                 if completion_time > max_completion_time:
                     max_completion_time = completion_time
 
                 # Desenha a barra do job
-                ax.barh(y=f'M{i}', width=processing_time, left=start_time, height=0.5, 
-                        color=colors(j - 1), edgecolor='black')
+                ax.barh(
+                    y=f'M{i}', 
+                    width=processing_time, 
+                    left=start_time, 
+                    height=0.6, 
+                    color=colors(j - 1), 
+                    edgecolor='black', # Borda preta na barra ajuda no contraste com as cores do job
+                    alpha=0.9
+                )
                 
-                # Adiciona o nome do job no centro da barra
-                ax.text(start_time + processing_time / 2, f'M{i}', f'{j}', 
-                        ha='center', va='center', color='black', fontsize=7, fontweight='bold')
+                # Adiciona o nome do job no centro da barra (TEXTO BRANCO)
+                ax.text(
+                    start_time + processing_time / 2,
+                    f'M{i}', 
+                    f'{j}',
+                    ha='center',
+                    va='center',
+                    color='white',      
+                    fontsize=8,
+                    fontweight='bold'   # Negrito para leitura melhor
+                )
 
     # Configurações do gráfico
     ax.set_xlabel("Tempo")
     ax.set_ylabel("Máquinas")
-    ax.set_title(f"Makespan: {round(makespan,4)} ({str_metodo}) at {instancia}")
+    ax.set_title(f"Makespan: {round(makespan,4)} ({str_metodo}) - {instancia}")
     
     # Ajustar o eixo Y para inverter a ordem (Máquina 1 no topo)
     ax.invert_yaxis()
     
-    ax.set_xticks(np.arange(0, max_completion_time + 2, max(1, int((max_completion_time+2)/30))))
+    # Ajuste dos ticks do eixo X
+    step = max(1, int((max_completion_time + 2) / 30))
+    ax.set_xticks(np.arange(0, max_completion_time + 2, step))
     plt.setp(ax.get_xticklabels(), rotation=90, fontsize=8)
 
-    ax.grid(axis='x', linestyle='--', alpha=0.7)
+    # Grade (Grid) branca e suave
+    ax.grid(axis='x', linestyle='--', alpha=0.3, color='#808080')
+    
     plt.tight_layout()
 
     # Salvar o gráfico
-    plt.savefig(f'{arq_gantt}-{str_metodo}.png', dpi=300, bbox_inches='tight')
+    # Adicionamos facecolor na hora de salvar para garantir que o fundo vá junto
+    plt.savefig(
+        f'{arq_gantt}-{str_metodo}.png', 
+        dpi=300, 
+        bbox_inches='tight', 
+        facecolor=fig.get_facecolor()
+    )
 
     plt.close(fig)

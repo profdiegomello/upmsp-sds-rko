@@ -92,23 +92,30 @@ class UPMSPSDSProblem:
         return {"schedule": machine_schedules, "makespan": makespan}
 
     def _decode_ksts(self, keys: np.ndarray) -> dict:
+        """
+        KSTS (2N genes): primeiras N = prioridades; últimas N = chaves da roleta
+        """
         num_jobs = len(self.dados["N"])
         num_machines = len(self.dados["M"])
 
+        # garante tamanho mínimo
         if len(keys) < 2 * num_jobs:
             keys = np.resize(keys, 2 * num_jobs)
 
         priority_keys = keys[:num_jobs]
         roulette_keys = keys[num_jobs:2 * num_jobs]
+
+        # ordem global
         jobs_ordered = list(np.argsort(priority_keys))[:num_jobs]
 
         machine_schedules = [[] for _ in range(num_machines)]
-        machine_completion_times = np.zeros(num_machines)
-        cargas = np.zeros(num_machines)
+        machine_completion_times = np.zeros(num_machines)  # CT[m]: proc + setups
+        cargas_proc = np.zeros(num_machines)               # apenas Σ p
 
         epsilon = 1e-9
 
         def calc_threshold(machine_idx: int, last_job: int) -> float:
+            """Média dos setups S(machine, last_job, j) para todos j != last_job."""
             machine_id = machine_idx + 1
             vals = []
             for j in self.dados["N"]:
@@ -120,38 +127,56 @@ class UPMSPSDSProblem:
         for idx in jobs_ordered:
             job = int(idx) + 1
 
-            weights = [1.0 / (epsilon + c) for c in cargas]
-            total_w = sum(weights)
-            probs = [w / total_w for w in weights] if total_w > 0 else [1.0 / num_machines] * num_machines
-            cumul = np.cumsum(probs)
+            # Roleta adaptativa baseada no TEMPO TOTAL (CT)
+            load_metric = machine_completion_times
 
+            weights = [1.0 / (epsilon + load_metric[m_idx]) for m_idx in range(num_machines)]
+            total_w = sum(weights)
+
+            probs = (
+                [w / total_w for w in weights]
+                if total_w > 0
+                else [1.0 / num_machines] * num_machines
+            )
+
+            cumul = np.cumsum(probs)
             r = float(roulette_keys[int(idx)] % 1.0)
-            mk_roleta_idx = int(np.searchsorted(cumul, r, side='right'))
+
+            mk_roleta_idx = int(np.searchsorted(cumul, r, side="right"))
             if mk_roleta_idx >= num_machines:
                 mk_roleta_idx = num_machines - 1
 
-            candidatas = []
+            # Conjunto de candidatas via criterio de setup
+            candidatas = []  # (machine_idx, setup_val)
+
             for m_idx in range(num_machines):
                 if not machine_schedules[m_idx]:
+                    # maquina vazia => setup zero, candidata automatica
                     candidatas.append((m_idx, 0.0))
                 else:
                     last_job = machine_schedules[m_idx][-1]
-                    s_val = float(self.dados["S"].get((m_idx + 1, last_job, job), 0))
+                    setup_val = float(self.dados["S"].get((m_idx + 1, last_job, job), 0))
                     T_k = calc_threshold(m_idx, last_job)
-                    if s_val <= T_k:
-                        candidatas.append((m_idx, s_val))
 
+                    if setup_val <= T_k:
+                        candidatas.append((m_idx, setup_val))
+
+            # Decisao final
             if candidatas:
+                # escolha gulosa: menor setup admissível
                 best_m_idx, best_s = min(candidatas, key=lambda x: x[1])
             else:
+                # fallback: roleta adaptativa
                 best_m_idx = mk_roleta_idx
                 last_job = machine_schedules[best_m_idx][-1] if machine_schedules[best_m_idx] else 0
                 best_s = float(self.dados["S"].get((best_m_idx + 1, last_job, job), 0))
 
+            # Atualizações
             proc_time = float(self.dados["p"].get((best_m_idx + 1, job), 0.0))
+
             machine_schedules[best_m_idx].append(job)
             machine_completion_times[best_m_idx] += best_s + proc_time
-            cargas[best_m_idx] += proc_time
+            cargas_proc[best_m_idx] += proc_time
 
         makespan = float(np.max(machine_completion_times)) if machine_completion_times.size > 0 else 0.0
         return {"schedule": machine_schedules, "makespan": makespan}
