@@ -23,15 +23,16 @@ df['RATIO'] = df['JOBS'] / df['MACHINES']
 
 # Cria os rótulos a partir dos dados já ordenados
 unique_configs = df[['JOBS', 'MACHINES']].drop_duplicates()
-configs = (unique_configs['JOBS'].astype(str) + 'j' + '/' + unique_configs['MACHINES'].astype(str) + 'm' ).tolist()
+# configs = (unique_configs['JOBS'].astype(str) + 'j' + '/' + unique_configs['MACHINES'].astype(str) + 'm' ).tolist()
+configs = ('(' + unique_configs['JOBS'].astype(str) + ' , ' + unique_configs['MACHINES'].astype(str) + ')' ).tolist()
 
 overlaps = []
-decoder_list = ['CHI', 'M3LAW', 'ECT', 'INC']
+decoder_list = ['CHI', 'M3LAW', 'ECT', 'INC', 'KSTS']
 decoder_combinations = [ 
-    ['CHI', 'M3LAW'] , ['CHI', 'ECT'] , ['CHI', 'INC'] , ['CHI', 'KSTS'] 
-    , ['M3LAW', 'ECT'] , ['M3LAW', 'INC'], ['M3LAW', 'KSTS']
-    , ['ECT', 'INC'], ['ECT', 'KSTS']
-    , ['INC', 'KSTS']
+    ['CHI', 'M3LAW'] , ['CHI', 'ECT'] #, ['CHI', 'INC'] , ['CHI', 'KSTS'] 
+    , ['M3LAW', 'ECT'] #, ['M3LAW', 'INC'], ['M3LAW', 'KSTS']
+    # , ['ECT', 'INC'], ['ECT', 'KSTS']
+    # , ['INC', 'KSTS']
 ]
 for decoder_pair in decoder_combinations:
 
@@ -43,7 +44,7 @@ for decoder_pair in decoder_combinations:
     for (brkga_high, brkga_low), (rko_high, rko_low) in zip(rko_decoder1_ic, rko_decoder0_ic):
         overlap = max(0, min(brkga_high, rko_high) - max(brkga_low, rko_low)) # se tiver sobreposição o valor é positivo, se não tiver é negativo (por isso o max com 0)
         total_range = max(brkga_high, rko_high) - min(brkga_low, rko_low)
-        overlap_ratio = overlap / total_range if total_range > 0 else 0
+        overlap_ratio = 100*(overlap / total_range) if total_range > 0 else 0
         decoder_overlap.append(overlap_ratio)
 
     # print(f"Decoder Pair {decoder_pair}: Overlap = {decoder_overlap}\n\n")
@@ -56,15 +57,34 @@ heatmap_data = np.array(overlaps)
 # Plot
 fig, ax = plt.subplots(figsize=(12,4))
 sns.heatmap(
-    heatmap_data, annot=True, fmt=".2f",
-    cmap="RdBu_r", center=0, #RdBu_r #seismic #bwr #BuPu
-    xticklabels=configs,
-    yticklabels=[f"RKO: ({pair[0]} ∩ {pair[1]})" for pair in decoder_combinations],
-    cbar=True
+    heatmap_data, annot=True, fmt=".1f"
+    , center=0
+    # , cmap="viridis_r"    # 100% seguro para daltonicos, recomendado por revistas
+    # , cmap="cividis_r"    # 100% seguro para daltonicos, recomendado por revistas
+    
+    , cmap="PuOr_r"       # seguro para daltonicos
+    # , cmap="plasma_r"     # moderadamente seguro para daltonicos
+    # , cmap="inferno_r"     # moderadamente seguro para daltonicos
+    # , cmap="coolwarm_r"   # moderadamente seguro para daltonicos
+
+    # , cmap="PiYG"   # ruim para daltônicos, revistas recomendasm viridis, cividis ou plasma
+    # , cmap="RdYlGn" # ruim para daltônicos, revistas recomendasm viridis, cividis ou plasma
+    # , cmap="RdBu_r" # ruim para daltônicos, revistas recomendasm viridis, cividis ou plasma
+    , xticklabels=configs
+    , yticklabels=[f"RKO: ({pair[0]} ∩ {pair[1]})" for pair in decoder_combinations]
+    , cbar=True
     # , robust=True
 )
 
-ax.set_title("Heatmap de Sobreposição dos ICs 95% entre decoders no RKO: (A ∩ B)\n\n(valores de 0 a 1 indicam a fração de interseção entre os ICs)")
+import matplotlib.ticker as mticker
+cbar = ax.collections[0].colorbar
+cbar.ax.yaxis.set_major_formatter(mticker.PercentFormatter())
+
+fig.supxlabel('Configuração (Jobs, Machines)', fontsize=10, y=0.02)
+
+fig.suptitle(f'Heatmap de Sobreposição dos ICs 95% entre decoders no RKO', fontsize=12)
+ax.set_title("(A ∩ B) como percentual de interseção entre os dos ICs 95% do Makespan", fontsize=8)
+# ax.set_title("Heatmap de Sobreposição dos ICs 95% entre decoders no RKO: (A ∩ B)\n\n(valores de 0 a 1 indicam a fração de interseção entre os ICs)")
 
 plt.tight_layout()
 

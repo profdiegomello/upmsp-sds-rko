@@ -60,13 +60,10 @@ rko_inc_mean   = [(low+high)/2 for (low,high) in rko_inc  ]
 diffs = [
     [a - b for a, b in zip(rko_chi_mean, rko_m3law_mean)], 
     [a - b for a, b in zip(rko_chi_mean, rko_ect_mean)], 
-    [a - b for a, b in zip(rko_chi_mean, rko_inc_mean)], 
-    # [a - b for a, b in zip(rko_m3law_mean, rko_ect_mean)], 
+    # [a - b for a, b in zip(rko_chi_mean, rko_inc_mean)], 
+    [a - b for a, b in zip(rko_m3law_mean, rko_ect_mean)], 
     # [a - b for a, b in zip(rko_m3law_mean, rko_inc_mean)], 
     # [a - b for a, b in zip(rko_ect_mean, rko_inc_mean)]    
-    [a - b for a, b in zip(rko_ect_mean, rko_m3law_mean)], 
-    [a - b for a, b in zip(rko_inc_mean, rko_m3law_mean)], 
-    [a - b for a, b in zip(rko_inc_mean, rko_ect_mean)]    
 ]
 
 # Criar matriz para heatmap
@@ -78,11 +75,13 @@ sns.heatmap(
     heatmap_data, annot=True, fmt=".1f",
     cmap="RdBu_r", center=0,
     xticklabels=configs,
-    yticklabels=["RKO: (CHI - M3LAW)", "RKO: (CHI - ECT)", "RKO: (CHI - INC)", 
-                #  "RKO: (M3LAW - ECT)", "RKO: (M3LAW - INC)", 
-                #  "RKO: (ECT - INC)" ],
-                "RKO: (ECT - M3LAW)", "RKO: (INC - M3LAW)", 
-                 "RKO: (INC - ECT)" ],
+    yticklabels=["RKO: (CHI - M3LAW)", 
+                 "RKO: (CHI - ECT)", 
+                 # "RKO: (CHI - INC)", 
+                 "RKO: (M3LAW - ECT)" 
+                 #, "RKO: (M3LAW - INC)", 
+                 # "RKO: (ECT - INC)" 
+                 ],
     cbar=True
     # , robust=True
 )
@@ -91,9 +90,9 @@ ax.set_title("Heatmap das Diferenças dos Pontos Médios dos ICs 95% entre decod
 plt.tight_layout()
 
 # Salva a imagem em um arquivo
-plt.savefig('Decoders-RKO-IC_heatmap-longitudinal.png', dpi=300)
+plt.savefig('Decoders-RKO-IC_heatmap-diff.png', dpi=300)
 
 # Exibe o gráfico
 plt.show()
 
-print("\nGráfico salvo como 'Decoders-RKO-IC_heatmap-longitudinal.png'")
+print("\nGráfico salvo como 'Decoders-RKO-IC_heatmap-diff.png'")

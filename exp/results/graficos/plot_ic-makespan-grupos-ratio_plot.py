@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math
 
+OFFSET_IC_MODELOS = False
+
 # --- 1. Carregamento e Preparação dos Dados ---
 
 try:
@@ -88,14 +90,29 @@ for i, group_val in enumerate(ratio_groups):
     ax = axes[i]
     group_df = df[df['RATIO_GROUP'] == group_val]
     unique_configs = group_df[['JOBS', 'MACHINES']].drop_duplicates()
+
+    # --- Valores máximos da escala Y para os grupos ficarem na mesma escala ---
+    # ratio_val = unique_configs['RATIO'].iloc[0]
+    # ymax_por_ratio = {100: 350, 150: 550, 200: 750}
+    # if ratio_val in ymax_por_ratio:
+    #     ax.set_ylim(0, ymax_por_ratio[ratio_val])
+    # --------------------------------
+
     x_labels = [f'({row.JOBS}, {row.MACHINES})' for _, row in unique_configs.iterrows()]
+    # x_labels = [f'{row.JOBS}j/{row.MACHINES}m' for _, row in unique_configs.iterrows()]
     x_ticks = np.arange(len(x_labels))
+    ax.set_xlabel("(Tarefas , Máquinas)", fontsize=8)
 
     for model in models:
         model_df = group_df[group_df['MODEL'] == model].reset_index()
         if not model_df.empty:
-            x_positions = [x_labels.index(f"({row['JOBS']}, {row['MACHINES']})") for _, row in model_df.iterrows()]
-            x_plot = [pos + model_offsets[model] for pos in x_positions]
+            x_positions = [x_labels.index(f"({row.JOBS}, {row.MACHINES})") for _, row in model_df.iterrows()]
+            # x_positions = [x_labels.index(f"{row.JOBS}j/{row.MACHINES}m") for _, row in model_df.iterrows()]
+            
+            if OFFSET_IC_MODELOS: 
+                x_plot = [pos + model_offsets[model] for pos in x_positions]
+            else:
+                x_plot = x_positions
 
             ax.errorbar(
                 x=x_plot, y=model_df['PONTO_MEDIO'], yerr=model_df['ERRO'],
@@ -105,7 +122,8 @@ for i, group_val in enumerate(ratio_groups):
 
     # --- ALTERAÇÃO: Formato do Título do Subplot ---
     # Garante que o título mostre o valor com uma casa decimal (ex: 2.0, 2.5)
-    ax.set_title(f'Razão j/m ≈ {group_val:.1f}', fontsize=10)
+    # ax.set_title(f'Razão j/m ≈ {group_val:.1f}', fontsize=10)
+    ax.set_title(f'Razão job/machine ≈ {group_val:.1f}', fontsize=10)
     ax.set_xticks(x_ticks)
     ax.set_xticklabels(x_labels, rotation=0, ha='right')
     ax.grid(True, which='both', linestyle='--', linewidth=0.5)

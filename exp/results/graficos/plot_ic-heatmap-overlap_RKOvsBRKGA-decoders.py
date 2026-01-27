@@ -26,10 +26,11 @@ df = df.sort_values(by=[SORT_BY, 'JOBS', 'MACHINES']).reset_index(drop=True)
 
 # Cria os rótulos a partir dos dados já ordenados
 unique_configs = df[['JOBS', 'MACHINES']].drop_duplicates()
-configs = (unique_configs['JOBS'].astype(str) + 'j' + '/' + unique_configs['MACHINES'].astype(str) + 'm' ).tolist()
+# configs = (unique_configs['JOBS'].astype(str) + 'j' + '/' + unique_configs['MACHINES'].astype(str) + 'm' ).tolist()
+configs = ('(' + unique_configs['JOBS'].astype(str) + ' , ' + unique_configs['MACHINES'].astype(str) + ')' ).tolist()
 
 overlaps = []
-decoder_list = ['CHI', 'M3LAW', 'ECT']
+decoder_list = ['CHI', 'M3LAW', 'ECT'] #, 'INC']
 for decoder in decoder_list:
 
     rko_ic   = df[df['MODEL'] == f'RKO-{decoder}'  ][['IC_SUPERIOR_95', 'IC_INFERIOR_95']].to_records(index=False).tolist()
@@ -40,7 +41,7 @@ for decoder in decoder_list:
     for (brkga_high, brkga_low), (rko_high, rko_low) in zip(brkga_ic, rko_ic):
         overlap = max(0, min(brkga_high, rko_high) - max(brkga_low, rko_low)) # se tiver sobreposição o valor é positivo, se não tiver é negativo (por isso o max com 0)
         total_range = max(brkga_high, rko_high) - min(brkga_low, rko_low)
-        overlap_ratio = overlap / total_range if total_range > 0 else 0
+        overlap_ratio = 100*(overlap / total_range) if total_range > 0 else 0
         decoder_overlap.append(overlap_ratio)
 
     overlaps.append(decoder_overlap)
@@ -52,15 +53,34 @@ heatmap_data = np.array(overlaps)
 # Plot
 fig, ax = plt.subplots(figsize=(12,4))
 sns.heatmap(
-    heatmap_data, annot=True, fmt=".2f",
-    cmap="RdBu_r", center=0, #RdBu_r #seismic #bwr #BuPu
-    xticklabels=configs,
-    yticklabels=["CHI:   (RKO ∩ BRKGA)", "M3LAW: (RKO ∩ BRKGA)", "ECT:   (RKO ∩ BRKGA)"],
-    cbar=True
+    heatmap_data, annot=True, fmt=".1f"
+    , center=0
+    # , cmap="viridis_r"    # 100% seguro para daltonicos, recomendado por revistas
+    # , cmap="cividis_r"    # 100% seguro para daltonicos, recomendado por revistas
+    
+    , cmap="PuOr_r"       # seguro para daltonicos
+    # , cmap="plasma_r"     # moderadamente seguro para daltonicos
+    # , cmap="inferno_r"     # moderadamente seguro para daltonicos
+    # , cmap="coolwarm_r"   # moderadamente seguro para daltonicos
+
+    # , cmap="PiYG"   # ruim para daltônicos, revistas recomendasm viridis, cividis ou plasma
+    # , cmap="RdYlGn" # ruim para daltônicos, revistas recomendasm viridis, cividis ou plasma
+    # , cmap="RdBu_r" # ruim para daltônicos, revistas recomendasm viridis, cividis ou plasma
+    , xticklabels=configs
+    , yticklabels=["CHI:   (RKO ∩ BRKGA)", "M3LAW: (RKO ∩ BRKGA)", "ECT:   (RKO ∩ BRKGA)" ]#, "INC:   (RKO ∩ BRKGA)"]
+    , cbar=True
     # , robust=True
 )
 
-ax.set_title("Heatmap de Sobreposição dos ICs 95% do RKO e BRKGA: (A ∩ B)\n\n(valores de 0 a 1 indicam a fração de interseção entre os ICs)")
+import matplotlib.ticker as mticker
+cbar = ax.collections[0].colorbar
+cbar.ax.yaxis.set_major_formatter(mticker.PercentFormatter())
+
+fig.supxlabel('Configuração (Jobs, Machines)', fontsize=10, y=0.02)
+
+fig.suptitle(f'Heatmap de Sobreposição dos ICs 95% do RKO e BRKGA', fontsize=12)
+ax.set_title("(A ∩ B) como percentual de interseção entre os dos ICs 95% do Makespan", fontsize=8)
+# ax.set_title("Heatmap de Sobreposição dos ICs 95% do RKO e BRKGA: (A ∩ B)\n\n(valores de 0 a 1 indicam a fração de interseção entre os ICs)")
 
 plt.tight_layout()
 
