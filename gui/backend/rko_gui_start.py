@@ -9,16 +9,12 @@ try:
 except Exception:
     run_rko = None
 
-# =============================================================================
-# VARIÁVEIS GLOBAIS DE CONTROLE
-# =============================================================================
+# VARIAVEIS GLOBAIS DE CONTROLE
 LOG_QUEUE = Queue(maxsize=2000)
 STOP_EVENT = threading.Event()
 SOLVER_THREAD = None 
 
-# =============================================================================
-# FUNÇÕES AUXILIARES
-# =============================================================================
+# FUNCOES AUXILIARES
 def solicitar_parada():
     """Chamado pela GUI para abortar a execução."""
     STOP_EVENT.set()
@@ -73,10 +69,10 @@ def iniciar_resolucao(dados_dict, callback_interface):
     )
     SOLVER_THREAD.start()
 
-# LÓGICA DO GERENTE DE EXECUÇÃO
+# LOGICA DO GERENTE DE EXECUCAO
 def _executar_solver(dados, callback_interface):
 
-    # 1. CAPTURA DOS CAMINHOS DE IO
+    # CAPTURA DOS CAMINHOS DE IO
     output_path = dados.get('io', {}).get('output_path', '').strip()
     gantt_path = dados.get('io', {}).get('gantt_path', '').strip()
 
@@ -100,10 +96,10 @@ def _executar_solver(dados, callback_interface):
         
         LOG_QUEUE.put({
             "status": "log",
-            "message": f"Começando bateria de testes em: {data_inicio}"
+            "message": f"Começando os testes em: {data_inicio}"
         })
 
-        # 2. CAPTURA DE PARÂMETROS
+        # CAPTURA DE PARAMETROS
         instance_path = dados.get('io', {}).get('instance_path', '').strip()
         decoder = str(dados.get('hyper_parameters', {}).get('decoder', 'ect')).lower()
         time_limit = int(dados.get('hyper_parameters', {}).get('time_limit', 60))
@@ -113,7 +109,7 @@ def _executar_solver(dados, callback_interface):
         if execution_times < 1:
             execution_times = 1
 
-        # 3. LISTAGEM DE ARQUIVOS
+        # LISTAGEM DE ARQUIVOS
         if os.path.isdir(instance_path):
             arquivos = [
                 os.path.join(instance_path, f)
@@ -142,10 +138,10 @@ def _executar_solver(dados, callback_interface):
             "message": "=" * 50
         })
 
-        # 4. LOOP PRINCIPAL COM VERIFICAÇÃO DE PARADA
+        # LOOP PRINCIPAL COM VERIFICACAO DE PARADA
         for arquivo in arquivos:
             
-            # Checa se usuário clicou em STOP antes de iniciar novo arquivo
+            # Checa se usuario clicou em STOP antes de iniciar novo arquivo
             if STOP_EVENT.is_set():
                 break
 
@@ -153,7 +149,7 @@ def _executar_solver(dados, callback_interface):
 
             for run_idx in range(1, execution_times + 1):
                 
-                # Checa se usuário clicou em STOP antes de iniciar nova rodada
+                # Checa se usuario clicou em STOP antes de iniciar nova rodada
                 if STOP_EVENT.is_set():
                     LOG_QUEUE.put({
                         "status": "error", 
@@ -176,7 +172,7 @@ def _executar_solver(dados, callback_interface):
                         agents=agents,
                         callback=solver_callback,
                         save_path=output_path,  # CSV
-                        gantt_path=gantt_path   # Gráfico
+                        gantt_path=gantt_path   # Grafico
                     )
 
                     LOG_QUEUE.put({
@@ -197,11 +193,11 @@ def _executar_solver(dados, callback_interface):
                         "message": f"Erro na instância {nome} (run {run_idx}): {e}\n{tb}"
                     })
             
-            # Quebra o loop externo também se o stop foi acionado
+            # Quebra o loop externo tambem se o stop foi acionado
             if STOP_EVENT.is_set():
                 break
 
-        # 5. FINALIZAÇÃO
+        #FINALIZAÇÃO
         if STOP_EVENT.is_set():
              LOG_QUEUE.put({
                 "status": "finished",
@@ -212,7 +208,7 @@ def _executar_solver(dados, callback_interface):
              agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
              LOG_QUEUE.put({
                 "status": "finished",
-                "message": f"Execução da bateria finalizada em: {agora}"
+                "message": f"Execução finalizada em: {agora}"
             })
 
         # encerra logger

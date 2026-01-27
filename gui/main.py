@@ -11,7 +11,7 @@ from interface.ui import construir_aplicacao
 
 def main():
     # cria a janela e tabs
-    janela, show_tab, knight_tab, sliders_tab, io_tab, play_tab, chart_tab = construir_aplicacao()
+    janela, show_tab, knight_tab, sliders_tab, io_tab, play_tab, chart_tab, gantt_tab = construir_aplicacao()
 
     # cria os botoes
     buttons_frame = create_buttons(janela,
@@ -20,7 +20,8 @@ def main():
                                     sliders_tab,
                                     io_tab,
                                     play_tab,
-                                    chart_tab
+                                    chart_tab,
+                                    gantt_tab
                                     )
     
     # inicia a interface

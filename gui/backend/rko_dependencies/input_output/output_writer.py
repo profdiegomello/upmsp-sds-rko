@@ -35,7 +35,7 @@ def salvar_resultado(
     # Verifica se o arquivo já existe para saber se deve escrever o cabeçalho
     novo_arquivo = not os.path.exists(arquivo_saida)
 
-    # Se lowerbound ou gap forem None, vamos definir uma string padrão '---'
+    # Se lowerbound ou gap forem None,  definir uma string padrão '---'
     if lowerbound is not None and lowerbound != 0:
     
         if gap is not None:
@@ -178,8 +178,7 @@ def gantt_chart(M, N, N0, p, s, X, C, arq_gantt, instancia, makespan, str_metodo
     
     plt.tight_layout()
 
-    # Salvar o gráfico
-    # Adicionamos facecolor na hora de salvar para garantir que o fundo vá junto
+    # Salvar o grafico
     plt.savefig(
         f'{arq_gantt}-{str_metodo}.png', 
         dpi=300, 

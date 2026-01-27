@@ -393,11 +393,21 @@ class UPMSPSDSProblem:
             self.melhor_local = makespan
             if hasattr(self, 'ui_callback') and self.ui_callback:
                 try:
+                    # Prepara dados para o Gantt dinamico
+                    # Soh calcula se for uma melhoria
+                    X, C = self.convert_schedule_to_gantt_format(solution)
+                    
                     dados = {
                         "status": "update",
                         "makespan": makespan,
                         "instancia": self.instance_name,
-                        "source": getattr(self, "current_agent", "RKO")
+                        "source": getattr(self, "current_agent", "RKO"),
+                        "gantt_data": {
+                            "M": list(self.dados["M"]), # Lista de maquinas
+                            "p": self.dados["p"],       # Tempos de processamento
+                            "X": X,                     # Sequenciamento
+                            "C": C                      # Tempos de término
+                        }
                     }
 
                     self.ui_callback(dados)
@@ -405,7 +415,6 @@ class UPMSPSDSProblem:
                     pass
 
         return makespan
-
     def convert_schedule_to_gantt_format(self, decoded_solution: dict):
         schedule = decoded_solution["schedule"]
         X = {}

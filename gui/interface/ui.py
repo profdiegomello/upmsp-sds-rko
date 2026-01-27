@@ -6,6 +6,7 @@ from typing import Tuple
 import sys
 import os
 import re  # le os numeros do texto
+import time
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk #para o plot do grafico
@@ -69,14 +70,19 @@ DADOS_X = []  # Tempo
 DADOS_Y = []  # Makespan
 NOME_INSTANCIA_ATUAL = "Aguardando..."
 
+# GLOBAIS DO GANTT DINAMICO
+FIG_GANTT = None
+AX_GANTT = None
+CANVAS_GANTT = None
+
 def configurar_aba_grafico(aba):
     global FIG_GLOBAL, AX_GLOBAL, CANVAS_GLOBAL, LINHA_GLOBAL
 
-    # 1. Configuracao do Frame principal da aba
+    # Configuracao do Frame principal da aba
     frame_grafico = ctk.CTkFrame(aba, fg_color="transparent")
     frame_grafico.pack(fill="both", expand=True, padx=10, pady=10)
 
-    # 2. Criar Figura Matplotlib (Estilo Dark para combinar)
+    # Criar Figura Matplotlib 
     plt.style.use('dark_background') 
     FIG_GLOBAL, AX_GLOBAL = plt.subplots(figsize=(5, 4), dpi=100)
     
@@ -84,16 +90,16 @@ def configurar_aba_grafico(aba):
     FIG_GLOBAL.patch.set_facecolor('#242424') 
     AX_GLOBAL.set_facecolor('#2b2b2b')
 
-    # 3. Configuracao Inicial dos Eixos
+    # Configuracao Inicial dos Eixos
     AX_GLOBAL.set_title("Evolução do Makespan (Tempo Real)", fontsize=10, color="white")
-    AX_GLOBAL.set_xlabel("Tempo (s)", fontsize=9, color="gray")
-    AX_GLOBAL.set_ylabel("Makespan (Custo)", fontsize=9, color="gray")
+    AX_GLOBAL.set_xlabel("Tempo (s)", fontsize=9, color="white")
+    AX_GLOBAL.set_ylabel("Makespan (Custo)", fontsize=9, color="white")
     AX_GLOBAL.grid(True, linestyle='--', alpha=0.3)
 
     # Cria uma linha vazia
     LINHA_GLOBAL, = AX_GLOBAL.plot([], [], color='#00FF00', linewidth=2, marker='o', markersize=4)
 
-    # 4. Embarcar no Tkinter
+    # Embarcar no Tkinter
     CANVAS_GLOBAL = FigureCanvasTkAgg(FIG_GLOBAL, master=frame_grafico)
     CANVAS_GLOBAL.draw()
     CANVAS_GLOBAL.get_tk_widget().pack(fill="both", expand=True)
@@ -105,6 +111,95 @@ def configurar_aba_grafico(aba):
 
     return frame_grafico
 
+def configurar_aba_gantt_live(aba):
+    global FIG_GANTT, AX_GANTT, CANVAS_GANTT
+
+    frame_grafico = ctk.CTkFrame(aba, fg_color="transparent")
+    frame_grafico.pack(fill="both", expand=True, padx=10, pady=10)
+
+    # Cria Figura Matplotlib com Estilo Dark
+    plt.style.use('dark_background') 
+    FIG_GANTT, AX_GANTT = plt.subplots(figsize=(5, 4), dpi=100)
+    
+    # Ajuste de cores
+    FIG_GANTT.patch.set_facecolor('#242424') 
+    AX_GANTT.set_facecolor('#212121')
+    
+    # Configuracao Inicial
+    AX_GANTT.set_title("Gantt Dinâmico", fontsize=10, color="white")
+    AX_GANTT.set_xlabel("Horizonte de sequenciamento", fontsize=9, color="white")
+    AX_GANTT.set_ylabel("Máquinas", fontsize=9, color="white")
+    AX_GANTT.grid(True, linestyle='--', alpha=0.1, color='white')
+
+    # Embarcar no Tkinter
+    CANVAS_GANTT = FigureCanvasTkAgg(FIG_GANTT, master=frame_grafico)
+    CANVAS_GANTT.draw()
+    CANVAS_GANTT.get_tk_widget().pack(fill="both", expand=True)
+
+    # Barra de Ferramentas
+    toolbar = NavigationToolbar2Tk(CANVAS_GANTT, frame_grafico)
+    toolbar.update()
+    toolbar.pack(side="bottom", fill="x")
+
+    return frame_grafico
+
+def atualizar_desenho_gantt(dados_gantt, nome_instancia, tempo_decorrido):
+   
+    global FIG_GANTT, AX_GANTT, CANVAS_GANTT
+    
+    if not AX_GANTT or not dados_gantt:
+        return
+
+    # Limpa
+    AX_GANTT.clear()
+    
+    # Desempacota
+    M = dados_gantt["M"]
+    p = dados_gantt["p"]
+    X = dados_gantt["X"]
+    C = dados_gantt["C"]
+    
+    import matplotlib.cm as cm
+    max_job_id = max([k[1] for k in C.keys()]) if C else 10
+    colors = cm.get_cmap("tab20", max_job_id + 1)
+    max_completion_time = 0
+
+    # Desenha Barras
+    for i in M:
+        jobs_na_maquina = []
+        for (m, k, j), val in X.items():
+            if m == i and val > 0.5:
+                jobs_na_maquina.append(j)
+        
+        for j in jobs_na_maquina:
+            completion_time = C.get((i, j), 0)
+            processing_time = p.get((i, j), 0)
+            start_time = completion_time - processing_time
+
+            if completion_time > max_completion_time:
+                max_completion_time = completion_time
+
+            AX_GANTT.barh(y=f'M{i}', width=processing_time, left=start_time, height=0.6, color=colors(j), edgecolor='black', alpha=0.9)
+            
+            if processing_time > 0: 
+                AX_GANTT.text(start_time + processing_time / 2, f'M{i}', f'{j}', ha='center', va='center', color='white', fontsize=7, fontweight='bold')
+
+    # Estilos e titulo
+    AX_GANTT.set_facecolor('#212121')
+    AX_GANTT.invert_yaxis()
+    
+    titulo = f"Instância: {nome_instancia}  |  Makespan: {max_completion_time}  |  Tempo: {tempo_decorrido:.2f}s"
+    AX_GANTT.set_title(titulo, color="white", fontsize=11, fontweight="bold")
+
+    AX_GANTT.set_xlabel("Horizonte de Sequenciamento", fontsize=9, color="white")
+    AX_GANTT.set_ylabel("Máquinas", fontsize=9, color="white")
+    
+    AX_GANTT.tick_params(axis='x', colors='white', labelsize=8)
+    AX_GANTT.tick_params(axis='y', colors='white', labelsize=8)
+    for spine in AX_GANTT.spines.values(): spine.set_color('white')
+    AX_GANTT.grid(axis='x', linestyle='--', alpha=0.2, color='white')
+
+    CANVAS_GANTT.draw()
 #Classe para Redirecionamento Seguro de Texto 
 class RedirecionadorTextoThreadSeguro(object):
     def __init__(self, widget_texto):
@@ -132,113 +227,101 @@ class RedirecionadorTextoThreadSeguro(object):
         # Metodo necessario para compatibilidade com sys.stdout
         pass
 
-#Callback 
+MELHOR_MAKESPAN_ATUAL = float('inf')
+TEMPO_INICIO_BATERIA = 0
+
 def manipulador_retorno_interface(dados):
     global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL
-    # Globais do gráfico
     global DADOS_X, DADOS_Y, CANVAS_GLOBAL, AX_GLOBAL, LINHA_GLOBAL, NOME_INSTANCIA_ATUAL
+    global CANVAS_GANTT, AX_GANTT
+    global MELHOR_MAKESPAN_ATUAL, TEMPO_INICIO_BATERIA
 
-    if ESCRITOR_TERMINAL_GLOBAL is None:
-        return
+    if ESCRITOR_TERMINAL_GLOBAL is None: return
 
-    mensagem_formatada = ""
     tipo_status = dados.get("status")
     texto_log = dados.get("message", "")
 
-    # LOGICA DE PLOTAGEM
-    if tipo_status == "log" or tipo_status == "running":
+    # ATUALIZACAO DO GANTT DINAMICO
+    if tipo_status == "update":
+        makespan = dados.get("makespan")
+        gantt_data = dados.get("gantt_data")
         
-        # DETECTA INICIO DE NOVA INSTANCIA -> CAPTURA NOME E LIMPA
-        # Exemplo de log: "Processando (1/9): I_100_10_S_1-49_1.txt [Run 1]"
+        if makespan < MELHOR_MAKESPAN_ATUAL:
+            MELHOR_MAKESPAN_ATUAL = makespan
+            
+            # Calcula tempo decorrido 
+            tempo_decorrido = time.time() - TEMPO_INICIO_BATERIA if TEMPO_INICIO_BATERIA > 0 else 0.0
+
+            if gantt_data and CANVAS_GANTT:
+                # Passa o nome da instancia e o tempo calculado
+                CANVAS_GANTT.get_tk_widget().after(
+                    0, 
+                    lambda: atualizar_desenho_gantt(gantt_data, NOME_INSTANCIA_ATUAL, tempo_decorrido)
+                )
+
+    # LOGICA DO GRÁFICO E LOGS
+    elif tipo_status == "log" or tipo_status == "running":
+        
         if "Processando (" in texto_log:
+            # RESET DO RECORDE E TIMER 
+            MELHOR_MAKESPAN_ATUAL = float('inf')
+            TEMPO_INICIO_BATERIA = time.time() # Reseta o relogio
+            
             try:
-                # Divide por ': ' pega a segunda parte, depois divide por ' [' e pega a primeira
                 partes = texto_log.split(': ')
-                if len(partes) > 1:
-                    NOME_INSTANCIA_ATUAL = partes[1].split(' [')[0]
-                else:
-                    NOME_INSTANCIA_ATUAL = "Instância Desconhecida"
+                NOME_INSTANCIA_ATUAL = partes[1].split(' [')[0] if len(partes) > 1 else "Instância"
             except:
                 NOME_INSTANCIA_ATUAL = "Instância"
 
-            # Limpa dados
-            DADOS_X.clear()
-            DADOS_Y.clear()
+            DADOS_X.clear(); DADOS_Y.clear()
             
             def _limpar_grafico():
                 if CANVAS_GLOBAL and AX_GLOBAL and LINHA_GLOBAL:
                     LINHA_GLOBAL.set_data([], [])
-                    # Reseta o titulo para o inicio
                     AX_GLOBAL.set_title(f"{NOME_INSTANCIA_ATUAL} - Iniciando...", fontsize=10, color="white")
-                    AX_GLOBAL.relim()
-                    AX_GLOBAL.autoscale_view()
-                    CANVAS_GLOBAL.draw()
+                    AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view(); CANVAS_GLOBAL.draw()
+                
+                if AX_GANTT and CANVAS_GANTT:
+                    AX_GANTT.clear()
+                    AX_GANTT.set_title("Aguardando Solução...", color="white", fontsize=10)
+                    AX_GANTT.set_facecolor('#212121')
+                    CANVAS_GANTT.draw()
             
-            if CANVAS_GLOBAL:
-                CANVAS_GLOBAL.get_tk_widget().after(0, _limpar_grafico)
+            if CANVAS_GLOBAL: CANVAS_GLOBAL.get_tk_widget().after(0, _limpar_grafico)
 
-        # DETECTA NOVO MAKESPAN -> PLOTA E ATUALIZA TITULO
         match = re.search(r"BEST: (\d+\.?\d*) .* Time: (\d+\.?\d*)", texto_log)
-        
         if match:
             try:
                 makespan = float(match.group(1))
                 tempo = float(match.group(2))
+                DADOS_X.append(tempo); DADOS_Y.append(makespan)
+                
+                if makespan < MELHOR_MAKESPAN_ATUAL: MELHOR_MAKESPAN_ATUAL = makespan
 
-                DADOS_X.append(tempo)
-                DADOS_Y.append(makespan)
-
-                def _atualizar_grafico():
+                def _atualizar_grafico_linha():
                     if CANVAS_GLOBAL and AX_GLOBAL and LINHA_GLOBAL:
                         LINHA_GLOBAL.set_data(DADOS_X, DADOS_Y)
-                        
-                        # --- AQUI ESTÁ A MUDANÇA DO TÍTULO ---
-                        titulo_novo = f"{NOME_INSTANCIA_ATUAL}  |  Melhor Makespan: {makespan}"
-                        AX_GLOBAL.set_title(titulo_novo, fontsize=10, color="#00FF00", fontweight="bold")
-                        # -------------------------------------
+                        AX_GLOBAL.set_title(f"{NOME_INSTANCIA_ATUAL}  |  Melhor: {MELHOR_MAKESPAN_ATUAL}", fontsize=10, color="#00FF00", fontweight="bold")
+                        AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view(); CANVAS_GLOBAL.draw()
 
-                        AX_GLOBAL.relim()
-                        AX_GLOBAL.autoscale_view()
-                        CANVAS_GLOBAL.draw()
+                if CANVAS_GLOBAL: CANVAS_GLOBAL.get_tk_widget().after(0, _atualizar_grafico_linha)
+            except: pass
 
-                if CANVAS_GLOBAL:
-                    CANVAS_GLOBAL.get_tk_widget().after(0, _atualizar_grafico)
-            except Exception:
-                pass
-
-    # TERMINAL E BOTOES
+    #TERMINAL
     if tipo_status == "finished":
-        mensagem_extra = dados.get("message", "Processo Finalizado.")
-        mensagem_formatada =  "\n" + "="*43 + "\n"
-        mensagem_formatada += f"   {mensagem_extra}\n"
-        mensagem_formatada += "="*43 + "\n\n"
-    
+        ESCRITOR_TERMINAL_GLOBAL.write(f"\n{'='*43}\n   {dados.get('message', 'Fim.')}\n{'='*43}\n\n")
     elif tipo_status == "error":
-        mensagem_erro = dados.get('message', 'Erro desconhecido')
-        mensagem_formatada = f"\n!!! ERRO CRÍTICO !!!\n{mensagem_erro}\n"
-    
-    elif tipo_status == "running":
-        mensagem_formatada = f"{texto_log}\n"
-    
-    elif tipo_status == "log":
-        mensagem_formatada = f"{texto_log}\n"
-
-    if mensagem_formatada:
-        ESCRITOR_TERMINAL_GLOBAL.write(mensagem_formatada)
+        ESCRITOR_TERMINAL_GLOBAL.write(f"\n!!! ERRO CRÍTICO !!!\n{dados.get('message', '')}\n")
+    elif tipo_status in ["running", "log"]:
+        ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
 
     if tipo_status in ["finished", "error"]:
         def _reset_safe():
             try:
-                if START_BUTTON_GLOBAL is not None and hasattr(START_BUTTON_GLOBAL, 'resetar_estado'):
-                    START_BUTTON_GLOBAL.resetar_estado()
-                elif START_BUTTON_GLOBAL is not None:
-                    START_BUTTON_GLOBAL.configure(state="normal", text="START SOLVER", fg_color="#77198f")
-            except Exception:
-                pass
-        try:
-            ESCRITOR_TERMINAL_GLOBAL.widget_texto.after(0, _reset_safe)
-        except Exception:
-            pass
+                if START_BUTTON_GLOBAL: START_BUTTON_GLOBAL.resetar_estado()
+            except: pass
+        try: ESCRITOR_TERMINAL_GLOBAL.widget_texto.after(0, _reset_safe)
+        except: pass
 
 # UTILITARIOS E CONSTRUCAO DE INTERFACE
 def centralizar_janela(janela, largura, altura):
@@ -260,7 +343,7 @@ def coletar_dados_interface(aba_parametros, aba_agentes, aba_entrada_saida) -> d
 
     dados_compilados = {}
     
-    # 1. Coleta Hyper-Parameters
+    # Coleta Hyper-Parameters
     if hasattr(aba_parametros, 'widgets_armazenados'):
         dados_compilados["hyper_parameters"] = {
             "decoder": aba_parametros.widgets_armazenados["decoder"].get(),
@@ -269,7 +352,7 @@ def coletar_dados_interface(aba_parametros, aba_agentes, aba_entrada_saida) -> d
             "execution_times": aba_parametros.widgets_armazenados["execution_times"].get()
         }
     
-    # 2. Coleta Parametros dos Agentes 
+    # Coleta Parametros dos Agentes 
     dados_compilados["agents"] = {}
     if hasattr(aba_agentes, 'parametros_agentes'):
         for nome_agente, widgets in aba_agentes.parametros_agentes.items():
@@ -281,7 +364,7 @@ def coletar_dados_interface(aba_parametros, aba_agentes, aba_entrada_saida) -> d
                         parametros_do_agente[chave] = widget.get()
                 dados_compilados["agents"][nome_agente] = parametros_do_agente
     
-    # 3. Coleta Caminhos de I/O
+    # Coleta Caminhos de I/O
     dados_compilados["io"] = {}
     if hasattr(aba_entrada_saida, 'widgets_armazenados'):
         for chave, widget_entrada in aba_entrada_saida.widgets_armazenados.items():
@@ -321,9 +404,10 @@ def construir_aplicacao() -> Tuple[ctk.CTk, callable, ctk.CTkFrame, ctk.CTkFrame
     aba_entrada_saida = criar_aba_base(frame_principal)
     aba_execucao = criar_aba_base(frame_principal)
     aba_grafico = criar_aba_base(frame_principal)
+    aba_gantt = criar_aba_base(frame_principal)
 
     def mostrar_aba(aba_selecionada):
-        for aba in (aba_parametros, aba_agentes, aba_entrada_saida, aba_execucao, aba_grafico):
+        for aba in (aba_parametros, aba_agentes, aba_entrada_saida, aba_execucao, aba_grafico, aba_gantt):
             aba.grid_forget()
         aba_selecionada.grid(row=0, column=0, sticky="nsew")
 
@@ -333,6 +417,7 @@ def construir_aplicacao() -> Tuple[ctk.CTk, callable, ctk.CTkFrame, ctk.CTkFrame
     configurar_aba_entrada_saida(aba_entrada_saida)
     configurar_aba_execucao(aba_execucao, aba_parametros, aba_agentes, aba_entrada_saida)
     configurar_aba_grafico(aba_grafico)
+    configurar_aba_gantt_live(aba_gantt)
 
     # Inicia mostrando a primeira aba
     mostrar_aba(aba_parametros)
@@ -345,7 +430,7 @@ def construir_aplicacao() -> Tuple[ctk.CTk, callable, ctk.CTkFrame, ctk.CTkFrame
     janela_principal.protocol("WM_DELETE_WINDOW", ao_fechar_janela)
 
     
-    return janela_principal, mostrar_aba, aba_parametros, aba_agentes, aba_entrada_saida, aba_execucao, aba_grafico
+    return janela_principal, mostrar_aba, aba_parametros, aba_agentes, aba_entrada_saida, aba_execucao, aba_grafico, aba_gantt
 
 # CONFIGURACAO DE CADA ABA
 def configurar_aba_parametros(aba):
@@ -354,7 +439,7 @@ def configurar_aba_parametros(aba):
     rotulo_titulo = ctk.CTkLabel(aba, text="HYPER-PARAMETERS", text_color=CORES["destaque"], font=FONTES["titulo"])
     rotulo_titulo.grid(row=0, column=1, sticky="e", columnspan=3)
     
-    # --- COLUNA 1: DECODER ---
+    # DECODER 
     rotulo_decoder = ctk.CTkLabel(aba, text="SELECT DECODER", font=FONTES["subtitulo"], text_color=CORES["texto"])
     rotulo_decoder.grid(row=1, column=1, padx=10, sticky="s")
     
@@ -371,7 +456,7 @@ def configurar_aba_parametros(aba):
     combo_decoder.grid(row=2, column=1, padx=10, sticky="n", pady=5)
     aba.widgets_armazenados["decoder"] = combo_decoder 
     
-    # --- COLUNA 2: TIME LIMIT ---
+    # TIME LIMIT 
     rotulo_tempo = ctk.CTkLabel(aba, text="TIME LIMIT (S)", font=FONTES["subtitulo"], text_color=CORES["texto"])
     rotulo_tempo.grid(row=1, column=2, sticky="s") 
     
@@ -380,7 +465,7 @@ def configurar_aba_parametros(aba):
     entrada_tempo.grid(row=2, column=2, padx=15, sticky="n", pady=5)
     aba.widgets_armazenados["time_limit"] = entrada_tempo 
 
-    # --- COLUNA 3: EXECUTION TIMES ---
+    # EXECUTION TIMES 
     rotulo_execucoes = ctk.CTkLabel(aba, text="EXECUTION TIMES", font=FONTES["subtitulo"], text_color=CORES["texto"])
     rotulo_execucoes.grid(row=1, column=3, sticky="s")
     
@@ -576,13 +661,13 @@ def configurar_aba_execucao(aba, aba_parametros, aba_agentes, aba_entrada_saida)
             if not dados_coletados:
                 return # Se houve erro na coleta
 
-            # 2. Limpa terminal
+            # Limpa terminal
             if ESCRITOR_TERMINAL_GLOBAL:
                 ESCRITOR_TERMINAL_GLOBAL.widget_texto.configure(state="normal")
                 ESCRITOR_TERMINAL_GLOBAL.widget_texto.delete("1.0", "end")
                 ESCRITOR_TERMINAL_GLOBAL.widget_texto.configure(state="disabled")
             
-            # 3. Muda estado visual para "Running..." (Transparente)
+            # Muda estado visual para "Running..." (Transparente)
             estado_execucao["rodando"] = True
             START_BUTTON_GLOBAL.configure(
                 text="Running...",
@@ -594,7 +679,7 @@ def configurar_aba_execucao(aba, aba_parametros, aba_agentes, aba_entrada_saida)
             
             print(f"Iniciando otimização com limite de {dados_coletados['hyper_parameters']['time_limit']}s...")
 
-            # 4. Inicia o Backend
+            # Inicia o Backend
             rko_gui_start.iniciar_resolucao(dados_coletados, manipulador_retorno_interface)
 
         # PARAR 
@@ -641,7 +726,7 @@ def configurar_aba_execucao(aba, aba_parametros, aba_agentes, aba_entrada_saida)
     ESCRITOR_TERMINAL_GLOBAL = RedirecionadorTextoThreadSeguro(terminal_texto)
     START_BUTTON_GLOBAL = botao_iniciar
     
-    # Anexa a função de reset ao objeto do botão para acessarmos de fora
+    # Anexa a funcao de reset ao objeto do botao para acessar de fora
     START_BUTTON_GLOBAL.resetar_estado = resetar_botao
 
     sys.stdout = ESCRITOR_TERMINAL_GLOBAL
