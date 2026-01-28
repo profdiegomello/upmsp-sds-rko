@@ -1,5 +1,6 @@
 import sys
 import os
+import multiprocessing
 
 #GARANTE QUE O DIRETORIO `gui/` ESTEJA NO sys.path 
 GUI_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -28,4 +29,5 @@ def main():
     janela.mainloop()
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()

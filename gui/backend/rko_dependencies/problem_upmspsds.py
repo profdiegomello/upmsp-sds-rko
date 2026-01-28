@@ -151,7 +151,6 @@ class UPMSPSDSProblem:
 
             for m_idx in range(num_machines):
                 if not machine_schedules[m_idx]:
-                    # maquina vazia => setup zero, candidata automatica
                     candidatas.append((m_idx, 0.0))
                 else:
                     last_job = machine_schedules[m_idx][-1]
