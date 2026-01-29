@@ -9,30 +9,26 @@ import re  # le os numeros do texto
 import time
 import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk #para o plot do grafico
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 # Garante que o Matplotlib use o backend correto para Tkinter
 matplotlib.use("TkAgg")
-from datetime import datetime
-import backend.rko_gui_start as rko_gui_start
 
-def resource_path(relative_path):
-    #Obtem o caminho absoluto para recursos
-    try:
-        # PyInstaller cria uma pasta temporária e armazena o caminho em _MEIPASS
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-
-    return os.path.join(base_path, relative_path)
-
+# Tenta importar o backend
 try:
     import backend.rko_gui_start as rko_gui_start
 except ImportError:
-    print("ERRO: 'rko_gui_start.py' não encontrado.") #debug
+    print("ERRO: 'rko_gui_start.py' não encontrado.")
     rko_gui_start = None
 
-# DESIGN/PERFUMARIA
+def resource_path(relative_path):
+    """Obtem o caminho absoluto para recursos (imagens/assets)"""
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
 CORES = {
     "fundo_principal": "#1A1A1D",
     "fundo_cartao": "#151516",
@@ -55,56 +51,50 @@ ALTURA_JANELA = 975
 LARGURA_CARTAO_AGENTE = 360
 ALTURA_CARTAO_AGENTE = 300
 
-#Variavel Global para guardar a referencia do terminal (widget de texto)
+# VARIAVEIS GLOBAIS DE CONTROLE 
 ESCRITOR_TERMINAL_GLOBAL = None
-
-#Variavel global para o START button (para evitar multiplos cliques)
 START_BUTTON_GLOBAL = None
 
-# GLOBAIS DO GRAFICO
+# GLOBAIS DO GRAFICO DE LINHA
 FIG_GLOBAL = None
 AX_GLOBAL = None
 CANVAS_GLOBAL = None
 LINHA_GLOBAL = None
-DADOS_X = []  # Tempo
-DADOS_Y = []  # Makespan
+DADOS_X = []
+DADOS_Y = []
 NOME_INSTANCIA_ATUAL = "Aguardando..."
 
 # GLOBAIS DO GANTT DINAMICO
 FIG_GANTT = None
 AX_GANTT = None
 CANVAS_GANTT = None
+MELHOR_MAKESPAN_ATUAL = float('inf')
+TEMPO_INICIO_BATERIA = 0
+
 
 def configurar_aba_grafico(aba):
     global FIG_GLOBAL, AX_GLOBAL, CANVAS_GLOBAL, LINHA_GLOBAL
 
-    # Configuracao do Frame principal da aba
     frame_grafico = ctk.CTkFrame(aba, fg_color="transparent")
     frame_grafico.pack(fill="both", expand=True, padx=10, pady=10)
 
-    # Criar Figura Matplotlib 
     plt.style.use('dark_background') 
     FIG_GLOBAL, AX_GLOBAL = plt.subplots(figsize=(5, 4), dpi=100)
     
-    # Ajuste de cores para fundir com o fundo do app
     FIG_GLOBAL.patch.set_facecolor('#242424') 
     AX_GLOBAL.set_facecolor('#2b2b2b')
 
-    # Configuracao Inicial dos Eixos
     AX_GLOBAL.set_title("Evolução do Makespan (Tempo Real)", fontsize=10, color="white")
     AX_GLOBAL.set_xlabel("Tempo (s)", fontsize=9, color="white")
     AX_GLOBAL.set_ylabel("Makespan (Custo)", fontsize=9, color="white")
     AX_GLOBAL.grid(True, linestyle='--', alpha=0.3)
 
-    # Cria uma linha vazia
     LINHA_GLOBAL, = AX_GLOBAL.plot([], [], color='#00FF00', linewidth=2, marker='o', markersize=4)
 
-    # Embarcar no Tkinter
     CANVAS_GLOBAL = FigureCanvasTkAgg(FIG_GLOBAL, master=frame_grafico)
     CANVAS_GLOBAL.draw()
     CANVAS_GLOBAL.get_tk_widget().pack(fill="both", expand=True)
 
-    # cria a barra cinza pequena com o disquete para salvar
     toolbar = NavigationToolbar2Tk(CANVAS_GLOBAL, frame_grafico)
     toolbar.update()
     toolbar.pack(side="bottom", fill="x")
@@ -117,26 +107,21 @@ def configurar_aba_gantt_live(aba):
     frame_grafico = ctk.CTkFrame(aba, fg_color="transparent")
     frame_grafico.pack(fill="both", expand=True, padx=10, pady=10)
 
-    # Cria Figura Matplotlib com Estilo Dark
     plt.style.use('dark_background') 
     FIG_GANTT, AX_GANTT = plt.subplots(figsize=(5, 4), dpi=100)
     
-    # Ajuste de cores
     FIG_GANTT.patch.set_facecolor('#242424') 
     AX_GANTT.set_facecolor('#212121')
     
-    # Configuracao Inicial
     AX_GANTT.set_title("Gantt Dinâmico", fontsize=10, color="white")
     AX_GANTT.set_xlabel("Horizonte de sequenciamento", fontsize=9, color="white")
     AX_GANTT.set_ylabel("Máquinas", fontsize=9, color="white")
     AX_GANTT.grid(True, linestyle='--', alpha=0.1, color='white')
 
-    # Embarcar no Tkinter
     CANVAS_GANTT = FigureCanvasTkAgg(FIG_GANTT, master=frame_grafico)
     CANVAS_GANTT.draw()
     CANVAS_GANTT.get_tk_widget().pack(fill="both", expand=True)
 
-    # Barra de Ferramentas
     toolbar = NavigationToolbar2Tk(CANVAS_GANTT, frame_grafico)
     toolbar.update()
     toolbar.pack(side="bottom", fill="x")
@@ -144,16 +129,13 @@ def configurar_aba_gantt_live(aba):
     return frame_grafico
 
 def atualizar_desenho_gantt(dados_gantt, nome_instancia, tempo_decorrido):
-   
     global FIG_GANTT, AX_GANTT, CANVAS_GANTT
     
     if not AX_GANTT or not dados_gantt:
         return
 
-    # Limpa
     AX_GANTT.clear()
     
-    # Desempacota
     M = dados_gantt["M"]
     p = dados_gantt["p"]
     X = dados_gantt["X"]
@@ -164,7 +146,6 @@ def atualizar_desenho_gantt(dados_gantt, nome_instancia, tempo_decorrido):
     colors = cm.get_cmap("tab20", max_job_id + 1)
     max_completion_time = 0
 
-    # Desenha Barras
     for i in M:
         jobs_na_maquina = []
         for (m, k, j), val in X.items():
@@ -184,13 +165,11 @@ def atualizar_desenho_gantt(dados_gantt, nome_instancia, tempo_decorrido):
             if processing_time > 0: 
                 AX_GANTT.text(start_time + processing_time / 2, f'M{i}', f'{j}', ha='center', va='center', color='white', fontsize=7, fontweight='bold')
 
-    # Estilos e titulo
     AX_GANTT.set_facecolor('#212121')
     AX_GANTT.invert_yaxis()
     
     titulo = f"Instância: {nome_instancia}  |  Makespan: {max_completion_time}  |  Tempo: {tempo_decorrido:.2f}s"
     AX_GANTT.set_title(titulo, color="white", fontsize=11, fontweight="bold")
-
     AX_GANTT.set_xlabel("Horizonte de Sequenciamento", fontsize=9, color="white")
     AX_GANTT.set_ylabel("Máquinas", fontsize=9, color="white")
     
@@ -200,36 +179,31 @@ def atualizar_desenho_gantt(dados_gantt, nome_instancia, tempo_decorrido):
     AX_GANTT.grid(axis='x', linestyle='--', alpha=0.2, color='white')
 
     CANVAS_GANTT.draw()
-#Classe para Redirecionamento Seguro de Texto 
+
+# REDIRECIONADOR DE TEXTO 
 class RedirecionadorTextoThreadSeguro(object):
     def __init__(self, widget_texto):
         self.widget_texto = widget_texto
 
     def write(self, texto):
-        # Agenda a escrita para a thread principal do Tkinter para evitar travamentos
         try:
-            # O metodo .after(0, ...) coloca a tarefa na fila da interface grafica
             self.widget_texto.after(0, lambda: self.escrita_segura(texto))
         except Exception:
-            # Ignora erros caso a janela ja tenha sido fechada durante o processo
             pass 
 
     def escrita_segura(self, texto):
         try:
             self.widget_texto.configure(state="normal")
             self.widget_texto.insert("end", texto)
-            self.widget_texto.see("end") # Rola automaticamente para o final
+            self.widget_texto.see("end")
             self.widget_texto.configure(state="disabled")
         except Exception:
             pass
 
     def flush(self):
-        # Metodo necessario para compatibilidade com sys.stdout
         pass
 
-MELHOR_MAKESPAN_ATUAL = float('inf')
-TEMPO_INICIO_BATERIA = 0
-
+# MANIPULADOR DE EVENTOS DA INTERFACE 
 def manipulador_retorno_interface(dados):
     global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL
     global DADOS_X, DADOS_Y, CANVAS_GLOBAL, AX_GLOBAL, LINHA_GLOBAL, NOME_INSTANCIA_ATUAL
@@ -241,31 +215,27 @@ def manipulador_retorno_interface(dados):
     tipo_status = dados.get("status")
     texto_log = dados.get("message", "")
 
-    # ATUALIZACAO DO GANTT DINAMICO
+    # 1. ATUALIZACAO DO GANTT AO VIVO
     if tipo_status == "update":
         makespan = dados.get("makespan")
         gantt_data = dados.get("gantt_data")
         
         if makespan < MELHOR_MAKESPAN_ATUAL:
             MELHOR_MAKESPAN_ATUAL = makespan
-            
-            # Calcula tempo decorrido 
             tempo_decorrido = time.time() - TEMPO_INICIO_BATERIA if TEMPO_INICIO_BATERIA > 0 else 0.0
 
             if gantt_data and CANVAS_GANTT:
-                # Passa o nome da instancia e o tempo calculado
                 CANVAS_GANTT.get_tk_widget().after(
                     0, 
                     lambda: atualizar_desenho_gantt(gantt_data, NOME_INSTANCIA_ATUAL, tempo_decorrido)
                 )
 
-    # LOGICA DO GRÁFICO E LOGS
+    # 2. LOGICA DO GRAFICO E LOGS
     elif tipo_status == "log" or tipo_status == "running":
         
         if "Processando (" in texto_log:
-            # RESET DO RECORDE E TIMER 
             MELHOR_MAKESPAN_ATUAL = float('inf')
-            TEMPO_INICIO_BATERIA = time.time() # Reseta o relogio
+            TEMPO_INICIO_BATERIA = time.time()
             
             try:
                 partes = texto_log.split(': ')
@@ -307,7 +277,7 @@ def manipulador_retorno_interface(dados):
                 if CANVAS_GLOBAL: CANVAS_GLOBAL.get_tk_widget().after(0, _atualizar_grafico_linha)
             except: pass
 
-    #TERMINAL
+    # 3. TERMINAL E BOTOES
     if tipo_status == "finished":
         ESCRITOR_TERMINAL_GLOBAL.write(f"\n{'='*43}\n   {dados.get('message', 'Fim.')}\n{'='*43}\n\n")
     elif tipo_status == "error":
@@ -323,7 +293,8 @@ def manipulador_retorno_interface(dados):
         try: ESCRITOR_TERMINAL_GLOBAL.widget_texto.after(0, _reset_safe)
         except: pass
 
-# UTILITARIOS E CONSTRUCAO DE INTERFACE
+#LAYOUT GERAIS 
+
 def centralizar_janela(janela, largura, altura):
     largura_tela = janela.winfo_screenwidth()
     altura_tela = janela.winfo_screenheight()
@@ -340,19 +311,15 @@ def criar_aba_base(container_pai) -> ctk.CTkFrame:
     return aba
 
 def coletar_dados_interface(aba_parametros, aba_agentes, aba_entrada_saida) -> dict:
-
     dados_compilados = {}
     
-    # Coleta Hyper-Parameters
     if hasattr(aba_parametros, 'widgets_armazenados'):
         dados_compilados["hyper_parameters"] = {
             "decoder": aba_parametros.widgets_armazenados["decoder"].get(),
             "time_limit": aba_parametros.widgets_armazenados["time_limit"].get(),
-            # Captura o novo campo
             "execution_times": aba_parametros.widgets_armazenados["execution_times"].get()
         }
     
-    # Coleta Parametros dos Agentes 
     dados_compilados["agents"] = {}
     if hasattr(aba_agentes, 'parametros_agentes'):
         for nome_agente, widgets in aba_agentes.parametros_agentes.items():
@@ -364,7 +331,6 @@ def coletar_dados_interface(aba_parametros, aba_agentes, aba_entrada_saida) -> d
                         parametros_do_agente[chave] = widget.get()
                 dados_compilados["agents"][nome_agente] = parametros_do_agente
     
-    # Coleta Caminhos de I/O
     dados_compilados["io"] = {}
     if hasattr(aba_entrada_saida, 'widgets_armazenados'):
         for chave, widget_entrada in aba_entrada_saida.widgets_armazenados.items():
@@ -372,19 +338,17 @@ def coletar_dados_interface(aba_parametros, aba_agentes, aba_entrada_saida) -> d
             
     return dados_compilados
 
-def construir_aplicacao() -> Tuple[ctk.CTk, callable, ctk.CTkFrame, ctk.CTkFrame, ctk.CTkFrame, ctk.CTkFrame]:
+def construir_aplicacao() -> Tuple[ctk.CTk, callable, ctk.CTkFrame, ctk.CTkFrame, ctk.CTkFrame, ctk.CTkFrame, ctk.CTkFrame, ctk.CTkFrame]:
     janela_principal = ctk.CTk()
     janela_principal.title("RKO-SOLVER")
     centralizar_janela(janela_principal, LARGURA_JANELA, ALTURA_JANELA)
     janela_principal.resizable(False, False)
     ctk.set_appearance_mode('dark')
 
-    # Configuracao do Grid Principal
     for malha in range(10):
         janela_principal.grid_rowconfigure(malha, minsize=20)
         janela_principal.grid_columnconfigure(malha, minsize=20)
 
-    # Frame Principal que segura as abas
     frame_principal = ctk.CTkFrame(
         janela_principal, 
         fg_color=CORES["fundo_principal"], 
@@ -398,7 +362,6 @@ def construir_aplicacao() -> Tuple[ctk.CTk, callable, ctk.CTkFrame, ctk.CTkFrame
     frame_principal.grid_columnconfigure(0, weight=1)
     frame_principal.grid_propagate(False)
 
-    # Criacao das Abas
     aba_parametros = criar_aba_base(frame_principal)
     aba_agentes = criar_aba_base(frame_principal)
     aba_entrada_saida = criar_aba_base(frame_principal)
@@ -411,7 +374,6 @@ def construir_aplicacao() -> Tuple[ctk.CTk, callable, ctk.CTkFrame, ctk.CTkFrame
             aba.grid_forget()
         aba_selecionada.grid(row=0, column=0, sticky="nsew")
 
-    # Configuracao do Conteudo de cada Aba
     configurar_aba_parametros(aba_parametros)
     configurar_aba_agentes(aba_agentes)
     configurar_aba_entrada_saida(aba_entrada_saida)
@@ -419,27 +381,23 @@ def construir_aplicacao() -> Tuple[ctk.CTk, callable, ctk.CTkFrame, ctk.CTkFrame
     configurar_aba_grafico(aba_grafico)
     configurar_aba_gantt_live(aba_gantt)
 
-    # Inicia mostrando a primeira aba
     mostrar_aba(aba_parametros)
 
     def ao_fechar_janela():
         print("Encerrando aplicação e matando processos...")
         janela_principal.destroy()
-        sys.exit(0) # Forca a morte de todas as threads e processos daemon
+        sys.exit(0)
         
     janela_principal.protocol("WM_DELETE_WINDOW", ao_fechar_janela)
 
-    
     return janela_principal, mostrar_aba, aba_parametros, aba_agentes, aba_entrada_saida, aba_execucao, aba_grafico, aba_gantt
 
-# CONFIGURACAO DE CADA ABA
 def configurar_aba_parametros(aba):
     aba.widgets_armazenados = {} 
     
     rotulo_titulo = ctk.CTkLabel(aba, text="HYPER-PARAMETERS", text_color=CORES["destaque"], font=FONTES["titulo"])
     rotulo_titulo.grid(row=0, column=1, sticky="e", columnspan=3)
     
-    # DECODER 
     rotulo_decoder = ctk.CTkLabel(aba, text="SELECT DECODER", font=FONTES["subtitulo"], text_color=CORES["texto"])
     rotulo_decoder.grid(row=1, column=1, padx=10, sticky="s")
     
@@ -456,7 +414,6 @@ def configurar_aba_parametros(aba):
     combo_decoder.grid(row=2, column=1, padx=10, sticky="n", pady=5)
     aba.widgets_armazenados["decoder"] = combo_decoder 
     
-    # TIME LIMIT 
     rotulo_tempo = ctk.CTkLabel(aba, text="TIME LIMIT (S)", font=FONTES["subtitulo"], text_color=CORES["texto"])
     rotulo_tempo.grid(row=1, column=2, sticky="s") 
     
@@ -465,17 +422,15 @@ def configurar_aba_parametros(aba):
     entrada_tempo.grid(row=2, column=2, padx=15, sticky="n", pady=5)
     aba.widgets_armazenados["time_limit"] = entrada_tempo 
 
-    # EXECUTION TIMES 
     rotulo_execucoes = ctk.CTkLabel(aba, text="EXECUTION TIMES", font=FONTES["subtitulo"], text_color=CORES["texto"])
     rotulo_execucoes.grid(row=1, column=3, sticky="s")
     
     entrada_execucoes = ctk.CTkEntry(aba, width=90, corner_radius=0, border_color=CORES["primaria"], border_width=2)
-    entrada_execucoes.insert(0, "1") # Valor padrão 1
+    entrada_execucoes.insert(0, "1")
     entrada_execucoes.grid(row=2, column=3, padx=15, sticky="n", pady=5)
     aba.widgets_armazenados["execution_times"] = entrada_execucoes
     
 def configurar_aba_agentes(aba):
-    # Area de rolagem para caber todos os agentes
     area_rolagem = ctk.CTkScrollableFrame(aba, width=1160, height=860, fg_color="transparent")
     area_rolagem.grid(row=0, column=0, columnspan=10, rowspan=10, padx=10, pady=10, sticky="nsew")
     
@@ -522,17 +477,12 @@ def configurar_aba_agentes(aba):
         aba.parametros_agentes[nome_agente] = criar_cartao_agente(area_rolagem, config)
 
 def criar_cartao_agente(conteiner_pai, config):
-    """Cria o cartão visual (Frame) para um agente específico"""
     frame_agente = ctk.CTkFrame(
-        conteiner_pai, 
-        fg_color=CORES["fundo_cartao"], 
-        width=LARGURA_CARTAO_AGENTE, 
-        height=ALTURA_CARTAO_AGENTE, 
-        border_width=1, 
-        border_color=CORES["borda"]
+        conteiner_pai, fg_color=CORES["fundo_cartao"], width=LARGURA_CARTAO_AGENTE, 
+        height=ALTURA_CARTAO_AGENTE, border_width=1, border_color=CORES["borda"]
     )
     frame_agente.grid(row=config["linha"], column=config["coluna"], padx=8, pady=8, sticky="n")
-    frame_agente.grid_propagate(False) # Impede que o frame encolha ou cresca
+    frame_agente.grid_propagate(False)
     
     rotulo_titulo = ctk.CTkLabel(frame_agente, text=config["titulo"], font=FONTES["corpo_negrito"], text_color=CORES["destaque"])
     rotulo_titulo.grid(row=0, column=0, sticky="w", padx=10, pady=(8,4))
@@ -549,7 +499,6 @@ def criar_cartao_agente(conteiner_pai, config):
         entrada_valor = ctk.CTkEntry(frame_agente, width=90)
         entrada_valor.insert(0, valor_padrao)
         
-        # Ajuste fino de layout se nao for a primeira coluna
         coluna_grid = 1 if "coluna" in config and config["coluna"] != 0 else 0
         entrada_valor.grid(row=indice, column=coluna_grid, sticky="e", padx=10 if config["coluna"] != 0 else 0, pady=6)
         
@@ -558,7 +507,6 @@ def criar_cartao_agente(conteiner_pai, config):
     return widgets_do_agente
 
 def configurar_aba_entrada_saida(aba):
-    """Configura a aba de caminhos de arquivos (IO)"""
     aba.widgets_armazenados = {} 
     
     def selecionar_diretorio(widget_entrada):
@@ -592,12 +540,8 @@ def configurar_aba_entrada_saida(aba):
         aba.widgets_armazenados[chave] = entrada_caminho 
         
         botao_busca = ctk.CTkButton(
-            frame_secao, 
-            text="" if imagem_pontos else "...", 
-            width=30, 
-            image=imagem_pontos, 
-            fg_color="transparent", 
-            hover_color=CORES["destaque"], 
+            frame_secao, text="" if imagem_pontos else "...", width=30, image=imagem_pontos, 
+            fg_color="transparent", hover_color=CORES["destaque"], 
             command=lambda ent=entrada_caminho: selecionar_diretorio(ent)
         )
         botao_busca.grid(row=1, column=1, pady=10)
@@ -606,127 +550,65 @@ def configurar_aba_execucao(aba, aba_parametros, aba_agentes, aba_entrada_saida)
     """Configura a aba final com o terminal e lógica de Start/Stop"""
     global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL
     
-    # Variavel de estado local para saber se esta rodando ou parado
     estado_execucao = {"rodando": False}
 
-    
-    # LOGICA VISUAL DO BOTAO
     def resetar_botao():
-        """Volta o botão para o estado original (Azul/START)"""
         estado_execucao["rodando"] = False
         try:
             if START_BUTTON_GLOBAL:
-                START_BUTTON_GLOBAL.configure(
-                    state="normal",
-                    text='START SOLVER',
-                    fg_color="#77198f",       
-                    hover_color="#9c27b0",
-                    border_width=0,
-                    text_color="white"
-                )
-        except Exception:
-            pass
+                START_BUTTON_GLOBAL.configure(state="normal", text='START SOLVER', fg_color="#77198f", hover_color="#9c27b0", border_width=0, text_color="white")
+        except Exception: pass
 
     def ao_passar_mouse(event):
         if estado_execucao["rodando"] and START_BUTTON_GLOBAL:
-            START_BUTTON_GLOBAL.configure(
-                text="STOP", 
-                fg_color="#C0392B",   # Vermelho escuro
-                hover_color="#E74C3C", # Vermelho claro
-                text_color="white"
-            )
+            START_BUTTON_GLOBAL.configure(text="STOP", fg_color="#C0392B", hover_color="#E74C3C", text_color="white")
 
     def ao_sair_mouse(event):
-        """Se estiver rodando, volta para botao informativo (Transparente)"""
         if estado_execucao["rodando"] and START_BUTTON_GLOBAL:
-            START_BUTTON_GLOBAL.configure(
-                text="Running...", 
-                fg_color="transparent", 
-                border_width=2,
-                border_color="#555555", # Cinza
-                text_color=("gray10", "gray90")
-            )
+            START_BUTTON_GLOBAL.configure(text="Running...", fg_color="transparent", border_width=2, border_color="#555555", text_color=("gray10", "gray90"))
 
-    # ACAP DO CLIQUE (START / STOP)
     def acao_botao():
         if rko_gui_start is None:
             print("ERRO: Middleware 'rko_gui_start' não foi importado.")
             return
 
-        #INICIAR (START) 
         if not estado_execucao["rodando"]:
-            
-            #Coleta dados
             dados_coletados = coletar_dados_interface(aba_parametros, aba_agentes, aba_entrada_saida)
-            if not dados_coletados:
-                return # Se houve erro na coleta
+            if not dados_coletados: return 
 
-            # Limpa terminal
             if ESCRITOR_TERMINAL_GLOBAL:
                 ESCRITOR_TERMINAL_GLOBAL.widget_texto.configure(state="normal")
                 ESCRITOR_TERMINAL_GLOBAL.widget_texto.delete("1.0", "end")
                 ESCRITOR_TERMINAL_GLOBAL.widget_texto.configure(state="disabled")
             
-            # Muda estado visual para "Running..." (Transparente)
             estado_execucao["rodando"] = True
-            START_BUTTON_GLOBAL.configure(
-                text="Running...",
-                fg_color="#555555",
-                border_width=2,
-                border_color="#555555",
-                text_color=("gray10", "gray90")
-            )
+            START_BUTTON_GLOBAL.configure(text="Running...", fg_color="#555555", border_width=2, border_color="#555555", text_color=("gray10", "gray90"))
             
             print(f"Iniciando otimização com limite de {dados_coletados['hyper_parameters']['time_limit']}s...")
-
-            # Inicia o Backend
             rko_gui_start.iniciar_resolucao(dados_coletados, manipulador_retorno_interface)
 
-        # PARAR 
         else:
             print("\n>>> SOLICITANDO PARADA... AGUARDE O FIM DO CICLO ATUAL <<<\n")
             rko_gui_start.solicitar_parada()
-            # O botao soh volta a ser azul quando o backend responder "finished"
-            # quem chama o resetar_botao() eh o manipulador_retorno_interface
 
-    # LAYOUT
     rotulo_execucao = ctk.CTkLabel(aba, text="EXECUTION LOG", text_color=CORES["destaque"], font=FONTES["titulo"])
-    rotulo_execucao.grid(row=0, column=3, columnspan=3, sticky="ew", padx=7, pady=(8,12))
+    rotulo_execucao.grid(row=0, column=0, columnspan=10, sticky="ew", padx=7, pady=(8,0))
     
     botao_iniciar = ctk.CTkButton(
-        aba, 
-        text='START SOLVER', 
-        width=200, 
-        height=50, 
-        command=acao_botao,
-        fg_color="#77198f", 
-        hover_color="#9c27b0",
-        font=("Roboto", 18, "bold")
+        aba, text='START SOLVER', width=200, height=50, command=acao_botao,
+        fg_color="#77198f", hover_color="#9c27b0", font=("Roboto", 18, "bold")
     )
-    botao_iniciar.grid(row=1, column=2, sticky="n", pady=20, padx=20)
+    botao_iniciar.grid(row=1, column=0, columnspan=10, pady=0, padx=20)
     
-    # Vincula eventos de mouse para o efeito visual
     botao_iniciar.bind("<Enter>", ao_passar_mouse)
     botao_iniciar.bind("<Leave>", ao_sair_mouse)
 
-    terminal_texto = ctk.CTkTextbox(
-        aba, 
-        width=580, 
-        height=600, 
-        border_width=2, 
-        fg_color="black", 
-        text_color="#00FF00",
-        border_color="#2D2D35", 
-        font=("Consolas", 12)
-    )
-    terminal_texto.grid(row=1, column=3, sticky="nsew", rowspan=5, padx=10, pady=10)
+    terminal_texto = ctk.CTkTextbox(aba, border_width=2, fg_color="black", text_color="#00FF00", border_color="#2D2D35", font=("Consolas", 13))
+    terminal_texto.grid(row=2, column=0, columnspan=10, rowspan=8, sticky="nsew", padx=45, pady=(0,45))
     terminal_texto.configure(state="disabled")
 
-    # Configura Globais
     ESCRITOR_TERMINAL_GLOBAL = RedirecionadorTextoThreadSeguro(terminal_texto)
     START_BUTTON_GLOBAL = botao_iniciar
-    
-    # Anexa a funcao de reset ao objeto do botao para acessar de fora
     START_BUTTON_GLOBAL.resetar_estado = resetar_botao
 
     sys.stdout = ESCRITOR_TERMINAL_GLOBAL
