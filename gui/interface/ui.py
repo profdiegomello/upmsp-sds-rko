@@ -167,85 +167,89 @@ def configurar_aba_gantt_live(aba):
     NavigationToolbar2Tk(CANVAS_GANTT, frame).pack(side="bottom", fill="x")
     return frame
 
-def configurar_aba_historico(aba):
+def configurar_aba_historico(aba, largura_total=1600, altura_total=900):
     global FRAME_LISTA_HISTORICO, FIG_HIST_LINHA, AX_HIST_LINHA, CANVAS_HIST_LINHA, FIG_HIST_GANTT, AX_HIST_GANTT, CANVAS_HIST_GANTT
 
-    ALTURA_FRAME_CIMA = 300   
-    ALTURA_FRAME_BAIXO = 750 
-    LARGURA_FORCADA = 1600    
+    # Largura total - 40 (menu) - 300 (lista) - 15 
+    LARGURA_GRAFICOS = largura_total - 40 - 300 - 15
     
-    # CONFIGURACAO DO GRID
-    aba.grid_columnconfigure(0, weight=1) 
-    aba.grid_columnconfigure(1, weight=20) # Peso maior para a direita
+    # Altura útil descontando margens pequenas
+    ALTURA_UTIL = altura_total - 10 
     
-    # Garante que as linhas estiquem
+    # Altura: 30% Cima / 70% Baixo
+    ALTURA_FRAME_CIMA = int(ALTURA_UTIL * 0.30)
+    ALTURA_FRAME_BAIXO = int(ALTURA_UTIL * 0.70) 
+
+    # Coluna 0 (Esquerda): Fixo
+    aba.grid_columnconfigure(0, weight=0) 
+    # Coluna 1 (Direita): Peso TOTAL para crescer
+    aba.grid_columnconfigure(1, weight=1) 
+    # Row 0: Peso total para crescer até o chão
     aba.grid_rowconfigure(0, weight=1)
 
-    # Esquerda -lista-
-    frame_esq = ctk.CTkFrame(aba, fg_color="transparent")
-    frame_esq.grid(row=0, column=0, rowspan=10, sticky="nsew", padx=(5, 2), pady=5)
+    # ESQUERDA 
+    frame_esq = ctk.CTkFrame(aba, fg_color="transparent", width=300)
+    # rowspan=10 garante que ele ocupe todas as linhas da malha base
+    frame_esq.grid(row=0, column=0, rowspan=10, sticky="nsew", padx=(5, 5), pady=(5, 5))
+    frame_esq.grid_propagate(False) # Mantém largura fixa de 300
     frame_esq.grid_rowconfigure(1, weight=1); frame_esq.grid_columnconfigure(0, weight=1)
 
-    ctk.CTkLabel(frame_esq, text="FINISHED JOBS", font=("Roboto", 16, "bold"), text_color=CORES["destaque"]).grid(row=0, column=0, pady=(0, 10), padx=10, sticky="ew")
+    ctk.CTkLabel(frame_esq, text="FINISHED JOBS", font=("Roboto", 16, "bold"), text_color=CORES["destaque"]).grid(row=0, column=0, pady=(0, 5), padx=5, sticky="ew")
     
     FRAME_LISTA_HISTORICO = ctk.CTkScrollableFrame(frame_esq, width=280, fg_color=CORES["fundo_cartao"], corner_radius=10)
-    FRAME_LISTA_HISTORICO.grid(row=1, column=0, sticky="nsew", padx=0)
-    FRAME_LISTA_HISTORICO.grid_columnconfigure(0, weight=1)
-
-    # DIREITA  (graficos)
+    FRAME_LISTA_HISTORICO.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
+    
+    # DIREITA 
     frame_dir = ctk.CTkFrame(aba, fg_color="transparent")
-    frame_dir.grid(row=0, column=1, rowspan=10, columnspan=9, sticky="nsew", padx=(2, 5), pady=(5, 0))
+    
+    # Ele vai ocupar da linha 0 até a 10 e da coluna 1 até a 9 (o fim da tela)
+    frame_dir.grid(row=0, column=1, rowspan=10, columnspan=9, sticky="nsew", padx=(0, 5), pady=(5, 5))
+    
+    # Grid interno da direita
     frame_dir.grid_columnconfigure(0, weight=1)
-    frame_dir.grid_rowconfigure(0, weight=1) 
-    frame_dir.grid_rowconfigure(1, weight=30) 
+    frame_dir.grid_rowconfigure(0, weight=3) # Peso 3 para Cima
+    frame_dir.grid_rowconfigure(1, weight=7) # Peso 7 para Baixo 
 
-    # GRAFICO 1 acima
+    # GRAFICO 1 
     frame_top = ctk.CTkFrame(
         frame_dir, fg_color="#242424", corner_radius=10, 
         border_width=2, border_color="#333333",
-        height=ALTURA_FRAME_CIMA, width=LARGURA_FORCADA
+        height=ALTURA_FRAME_CIMA, width=LARGURA_GRAFICOS
     )
-    frame_top.grid(row=0, column=0, sticky="ew", pady=(0, 5), padx=0)
+    # Sticky NSEW estica ele para preencher o buraco da row 0
+    frame_top.grid(row=0, column=0, sticky="nsew", pady=(0, 5))
+
     frame_top.grid_propagate(False) 
-    frame_top.grid_rowconfigure(0, weight=1)
-    frame_top.grid_columnconfigure(0, weight=1)
     
     FIG_HIST_LINHA, AX_HIST_LINHA = plt.subplots(figsize=(15, 3), dpi=100) 
-    FIG_HIST_LINHA.patch.set_facecolor('#242424')
-    AX_HIST_LINHA.set_facecolor('#2b2b2b')
+    FIG_HIST_LINHA.patch.set_facecolor('#242424'); AX_HIST_LINHA.set_facecolor('#2b2b2b')
     AX_HIST_LINHA.set_title("Convergência", color="white", fontsize=11)
     AX_HIST_LINHA.tick_params(colors='white', labelsize=9)
     for s in AX_HIST_LINHA.spines.values(): s.set_color('white')
+    # Margens apertadas para ocupar tudo
     FIG_HIST_LINHA.subplots_adjust(left=0.04, right=0.99, top=0.90, bottom=0.15)
 
     CANVAS_HIST_LINHA = FigureCanvasTkAgg(FIG_HIST_LINHA, master=frame_top)
     CANVAS_HIST_LINHA.draw()
     CANVAS_HIST_LINHA.get_tk_widget().pack(fill="both", expand=True)
 
-    # GRAFICO 2 abaixo
+    # GRAFICO 2 
     frame_bot = ctk.CTkFrame(
         frame_dir, fg_color="#242424", corner_radius=10, 
         border_width=2, border_color="#333333",
-        height=ALTURA_FRAME_BAIXO, width=LARGURA_FORCADA
+        height=ALTURA_FRAME_BAIXO, width=LARGURA_GRAFICOS
     )
-    
-    frame_bot.grid(row=1, column=0, sticky="nsew", pady=(5, 5), padx=0)
-    
+    # Sticky NSEW estica ele para preencher o buraco da row 1 até o chão
+    frame_bot.grid(row=1, column=0, sticky="nsew", pady=0)
     frame_bot.grid_propagate(False)
-
-    frame_bot.grid_rowconfigure(0, weight=1)
-
-    frame_bot.grid_columnconfigure(0, weight=1)
     
     FIG_HIST_GANTT, AX_HIST_GANTT = plt.subplots(figsize=(15, 8), dpi=100)
-    FIG_HIST_GANTT.patch.set_facecolor('#242424')
-    AX_HIST_GANTT.set_facecolor('#212121')
+    FIG_HIST_GANTT.patch.set_facecolor('#242424'); AX_HIST_GANTT.set_facecolor('#212121')
     AX_HIST_GANTT.set_title("Cronograma Final", color="white", fontsize=11)
     AX_HIST_GANTT.tick_params(colors='white', labelsize=9)
-
     for s in AX_HIST_GANTT.spines.values(): s.set_color('white')
-
-    FIG_HIST_GANTT.subplots_adjust(left=0.04, right=0.99, top=0.95, bottom=0.08)
+    # Margens apertadas
+    FIG_HIST_GANTT.subplots_adjust(left=0.04, right=0.99, top=0.95, bottom=0.05)
     
     CANVAS_HIST_GANTT = FigureCanvasTkAgg(FIG_HIST_GANTT, master=frame_bot)
     CANVAS_HIST_GANTT.draw()
@@ -573,8 +577,65 @@ def coletar_dados_interface(aba_p, aba_a, aba_io):
     return data
 
 def construir_aplicacao():
-    janela = ctk.CTk(); janela.title("RKO-SOLVER"); centralizar_janela(janela, LARGURA_JANELA, ALTURA_JANELA)
-    janela.resizable(False, False); ctk.set_appearance_mode('dark')
+    janela = ctk.CTk()
+    janela.title("RKO-SOLVER")
+    
+    # --- MUDANÇA 1: RESOLUÇÃO FIXA PADRÃO (1600x900) ---
+    LARGURA_FIXA = 1600
+    ALTURA_FIXA = 900
+    
+    # Centraliza
+    ws = janela.winfo_screenwidth()
+    hs = janela.winfo_screenheight()
+    x = (ws - LARGURA_FIXA) // 2
+    y = (hs - ALTURA_FIXA) // 2
+    janela.geometry(f"{LARGURA_FIXA}x{ALTURA_FIXA}+{x}+{y}")
+    
+    # --- MUDANÇA 2: TRAVAR REDIMENSIONAMENTO ---
+    janela.resizable(False, False) # O usuário NÃO pode maximizar nem esticar
+    
+    ctk.set_appearance_mode('dark')
+
+    # Grid principal
+    for i in range(10): 
+        janela.grid_rowconfigure(i, minsize=0, weight=0) # Tira pesos globais
+        janela.grid_columnconfigure(i, minsize=0, weight=0)
+    
+    # Frame Principal ocupa TUDO
+    janela.grid_rowconfigure(2, weight=1)
+    janela.grid_columnconfigure(2, weight=1)
+
+    frame_main = ctk.CTkFrame(janela, fg_color=CORES["fundo_principal"], corner_radius=0)
+    # padx=0, pady=0 para não desperdiçar nenhum pixel
+    frame_main.grid(row=2, column=2, columnspan=20, sticky="nsew", padx=0, pady=0)
+    frame_main.grid_rowconfigure(0, weight=1); frame_main.grid_columnconfigure(0, weight=1); frame_main.grid_propagate(False)
+
+    abas = [criar_aba_base(frame_main) for _ in range(7)]
+    aba_p, aba_a, aba_io, aba_exe, aba_gra, aba_gan, aba_hist = abas
+
+    def show(a_sel):
+        for a in abas: a.grid_forget()
+        a_sel.grid(row=0, column=0, sticky="nsew")
+
+    # Configurações das abas
+    configurar_aba_parametros(aba_p)
+    configurar_aba_agentes(aba_a)
+    configurar_aba_entrada_saida(aba_io)
+    configurar_aba_execucao(aba_exe, aba_p, aba_a, aba_io)
+    configurar_aba_grafico(aba_gra)
+    configurar_aba_gantt_live(aba_gan)
+    
+    # AQUI ESTÁ A MÁGICA DOS WIDGETS PREENCHIDOS
+    configurar_aba_historico(aba_hist, largura_total=1600, altura_total=900)
+
+    show(aba_p)
+    janela.protocol("WM_DELETE_WINDOW", lambda: (janela.destroy(), sys.exit(0)))
+    
+    return janela, show, aba_p, aba_a, aba_io, aba_exe, aba_gra, aba_gan, aba_hist
+    janela = ctk.CTk(); janela.title("RKO-SOLVER")
+    centralizar_janela(janela, LARGURA_JANELA, ALTURA_JANELA)
+    janela.resizable(True, True)
+    ctk.set_appearance_mode('dark')
     for i in range(10): janela.grid_rowconfigure(i, minsize=20); janela.grid_columnconfigure(i, minsize=20)
 
     frame_main = ctk.CTkFrame(janela, fg_color=CORES["fundo_principal"], width=1200, height=900, border_width=5, border_color=CORES["borda"])
