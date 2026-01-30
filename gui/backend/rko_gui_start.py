@@ -1,5 +1,6 @@
 import threading
 import os
+import time
 import traceback
 from datetime import datetime
 from queue import Queue, Empty
@@ -24,7 +25,7 @@ def solver_callback(dados: dict):
     try:
         LOG_QUEUE.put_nowait(dados)
     except Exception:
-        pass  # nunca bloquear o solver
+        pass 
 
 def logger_worker(gui_callback):
     """Thread dedicada a consumir a fila e atualizar a GUI."""
@@ -35,7 +36,7 @@ def logger_worker(gui_callback):
             continue
 
         if dados is None:
-            break  # sinal de encerramento
+            break
 
         if gui_callback:
             gui_callback(dados)
@@ -44,7 +45,6 @@ def logger_worker(gui_callback):
 def iniciar_resolucao(dados_dict, callback_interface):
     global SOLVER_THREAD
 
-    # Se jA existe uma thread e ela esta viva, NaO inicia outra.
     if SOLVER_THREAD is not None and SOLVER_THREAD.is_alive():
         callback_interface({
             "status": "error",
@@ -52,16 +52,12 @@ def iniciar_resolucao(dados_dict, callback_interface):
         })
         return
 
-    # Remove lixo de execuções anteriores para evitar logs fantasmas
     while not LOG_QUEUE.empty():
-        try:
-            LOG_QUEUE.get_nowait()
-        except Empty:
-            break
+        try: LOG_QUEUE.get_nowait()
+        except Empty: break
 
     STOP_EVENT.clear()
     
-    #CRIACAO E REGISTRO DA THREAD
     SOLVER_THREAD = threading.Thread(
         target=_executar_solver, 
         args=(dados_dict, callback_interface), 
@@ -72,154 +68,105 @@ def iniciar_resolucao(dados_dict, callback_interface):
 # LOGICA DO GERENTE DE EXECUCAO
 def _executar_solver(dados, callback_interface):
 
-    # CAPTURA DOS CAMINHOS DE IO
     output_path = dados.get('io', {}).get('output_path', '').strip()
     gantt_path = dados.get('io', {}).get('gantt_path', '').strip()
 
     try:
         if run_rko is None:
-            callback_interface({
-                "status": "error",
-                "message": "run_rko não disponível (Erro de importação)."
-            })
+            callback_interface({"status": "error", "message": "run_rko não disponível."})
             return
 
-        # inicia logger thread
-        logger = threading.Thread(
-            target=logger_worker,
-            args=(callback_interface,),
-            daemon=True
-        )
+        logger = threading.Thread(target=logger_worker, args=(callback_interface,), daemon=True)
         logger.start()
 
         data_inicio = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        
-        LOG_QUEUE.put({
-            "status": "log",
-            "message": f"Começando os testes em: {data_inicio}"
-        })
+        LOG_QUEUE.put({"status": "log", "message": f"Começando os testes em: {data_inicio}"})
 
-        # CAPTURA DE PARAMETROS
         instance_path = dados.get('io', {}).get('instance_path', '').strip()
         decoder = str(dados.get('hyper_parameters', {}).get('decoder', 'ect')).lower()
         time_limit = int(dados.get('hyper_parameters', {}).get('time_limit', 60))
         execution_times = int(dados.get('hyper_parameters', {}).get('execution_times', 1))
         agents = dados.get('agents', {})
 
-        if execution_times < 1:
-            execution_times = 1
+        if execution_times < 1: execution_times = 1
 
-        # LISTAGEM DE ARQUIVOS
         if os.path.isdir(instance_path):
-            arquivos = [
-                os.path.join(instance_path, f)
-                for f in sorted(os.listdir(instance_path))
-                if f.endswith(".txt")
-            ]
+            arquivos = [os.path.join(instance_path, f) for f in sorted(os.listdir(instance_path)) if f.endswith(".txt")]
         elif os.path.isfile(instance_path):
             arquivos = [instance_path]
         else:
-            callback_interface({
-                "status": "error",
-                "message": "Caminho de instância inválido."
-            })
+            callback_interface({"status": "error", "message": "Caminho de instância inválido."})
             LOG_QUEUE.put(None)
             return
 
         total = len(arquivos) * execution_times
         atual = 0
         
-        LOG_QUEUE.put({
-            "status": "log",
-            "message": f"Instâncias encontradas: {len(arquivos)} | Execuções/instância: {execution_times}"
-        })
-        LOG_QUEUE.put({
-            "status": "log",
-            "message": "=" * 50
-        })
+        LOG_QUEUE.put({"status": "log", "message": f"Instâncias encontradas: {len(arquivos)} | Execuções/instância: {execution_times}"})
+        LOG_QUEUE.put({"status": "log", "message": "=" * 50})
 
-        # LOOP PRINCIPAL COM VERIFICACAO DE PARADA
         for arquivo in arquivos:
-            
-            # Checa se usuario clicou em STOP antes de iniciar novo arquivo
-            if STOP_EVENT.is_set():
-                break
-
+            if STOP_EVENT.is_set(): break
             nome = os.path.basename(arquivo)
 
             for run_idx in range(1, execution_times + 1):
-                
-                # Checa se usuario clicou em STOP antes de iniciar nova rodada
                 if STOP_EVENT.is_set():
-                    LOG_QUEUE.put({
-                        "status": "error", 
-                        "message": ">>> INTERROMPIDO PELO USUÁRIO <<<"
-                    })
+                    LOG_QUEUE.put({"status": "error", "message": ">>> INTERROMPIDO PELO USUÁRIO <<<"})
                     break
 
                 atual += 1
+                
+                # ENVIA NOME DA INSTANCIA EM CADA MENSAGEM CRITICA
                 LOG_QUEUE.put({
                     "status": "running",
-                    "message": f"Processando ({atual}/{total}): {nome} [Run {run_idx}]"
+                    "message": f"Processando ({atual}/{total}): {nome} [Run {run_idx}]",
+                    "instancia": nome
                 })
 
                 try:
-                    # Chama o Solver passando todos os caminhos
                     resultado = run_rko(
-                        instance_path=arquivo,
-                        decoder=decoder,
-                        time_limit=time_limit,
-                        agents=agents,
-                        callback=solver_callback,
-                        save_path=output_path,  # CSV
-                        gantt_path=gantt_path   # Grafico
+                        instance_path=arquivo, decoder=decoder, time_limit=time_limit,
+                        agents=agents, callback=solver_callback, save_path=output_path, gantt_path=gantt_path
                     )
 
+                    # Update visual 
                     LOG_QUEUE.put({
                         "status": "update",
                         "makespan": resultado["makespan"],
-                        "instancia": nome
+                        "instancia": nome,
+                        "gantt_data": resultado.get("gantt_data")
                     })
 
+                    # Envia a curva completa e o gantt final diretamente.
                     LOG_QUEUE.put({
-                        "status": "log",
-                        "message": f"Concluído: {nome} [Run {run_idx}]",
+                        "status": "instancia_concluida",
+                        "instancia": nome,
+                        "makespan": resultado["makespan"],
+                        "history_curve": resultado.get("history_data", []), # Lista [(tempo, custo), ...]
+                        "gantt_data": resultado.get("gantt_data")
                     })
+
+                    LOG_QUEUE.put({"status": "log", "message": f"Concluído: {nome} [Run {run_idx}]"})
+                    
+                    # Pausa para UI 
+                    time.sleep(0.3)
 
                 except Exception as e:
                     tb = traceback.format_exc()
-                    LOG_QUEUE.put({
-                        "status": "error",
-                        "message": f"Erro na instância {nome} (run {run_idx}): {e}\n{tb}"
-                    })
+                    LOG_QUEUE.put({"status": "error", "message": f"Erro na instância {nome}: {e}\n{tb}"})
             
-            # Quebra o loop externo tambem se o stop foi acionado
-            if STOP_EVENT.is_set():
-                break
+            if STOP_EVENT.is_set(): break
 
-        #FINALIZAÇÃO
         if STOP_EVENT.is_set():
-             LOG_QUEUE.put({
-                "status": "finished",
-                "message": "PROCESSO ABORTADO MANUALMENTE."
-            })
+             LOG_QUEUE.put({"status": "finished", "message": "PROCESSO ABORTADO MANUALMENTE."})
         else:
-             # Captura o momento atual para o log de sucesso
              agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-             LOG_QUEUE.put({
-                "status": "finished",
-                "message": f"Execução finalizada em: {agora}"
-            })
+             LOG_QUEUE.put({"status": "finished", "message": f"Execução finalizada em: {agora}"})
 
-        # encerra logger
         LOG_QUEUE.put(None)
 
     except Exception as e:
         tb = traceback.format_exc()
         try:
-            callback_interface({
-                "status": "error",
-                "message": f"Erro no gerenciador: {e}\n{tb}"
-            })
-        except Exception:
-            pass
+            callback_interface({"status": "error", "message": f"Erro no gerenciador: {e}\n{tb}"})
+        except Exception: pass

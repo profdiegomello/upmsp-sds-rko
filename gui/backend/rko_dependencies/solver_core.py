@@ -6,18 +6,12 @@ import re
 from typing import Callable, Optional
 from multiprocessing import Queue
 
-# --- IMPORTS DO PROJETO ---
 from backend.rko_dependencies.rkolib.RKO import RKO
 from backend.rko_dependencies.problem_upmspsds import UPMSPSDSProblem
 import backend.rko_dependencies.input_output.output_writer as output_writer
 
-
-
 # PARSER DE LOGS (Para capturar dados de convergencia do texto)
 def _parse_and_store(text: str, history_list: list):
-    """
-    Lê uma linha de log e, se for uma melhoria, salva em history_list.
-    """
     try:
         match = re.search(r"BEST: (\d+\.?\d*) .* Time: (\d+\.?\d*)", text)
         if match:
@@ -38,9 +32,7 @@ class StdoutProxy:
 
     def write(self, text: str):
         if not text.strip(): return
-        
         _parse_and_store(text, self.history_list)
-
         self._buffer += text
         now = time.time()
         if now - self._last_emit >= self.min_interval:
@@ -58,10 +50,8 @@ class StdoutProxy:
         if self.callback:
             self.callback({"status": "log", "message": msg.rstrip()})
 
-
-# QUEUE READER (Consome dados dos Processos Filhos)
+# QUEUE READER
 def _queue_reader(q: Queue, callback: Optional[Callable[[dict], None]], history_list: list, stop_event: threading.Event):
-    # Se nao tiver callback, apenas esvazia a fila
     if callback is None:
         while not stop_event.is_set():
             try: _ = q.get(timeout=0.2)
@@ -71,23 +61,17 @@ def _queue_reader(q: Queue, callback: Optional[Callable[[dict], None]], history_
     while not stop_event.is_set() or not q.empty():
         try: 
             msg = q.get(timeout=0.2)
-        except Exception: 
-            continue
+        except Exception: continue
         
         try:
-            # Se for dict repassa direto
             if isinstance(msg, dict):
                 callback(msg)
-            
-            #Se for STRING (Texto/Log), processa como log
             else:
                 texto_msg = str(msg).rstrip()
                 if texto_msg:
                     _parse_and_store(texto_msg, history_list)
                     callback({"status": "log", "message": texto_msg})
-                    
-        except Exception: 
-            continue
+        except Exception: continue
 
 def run_rko(
     instance_path: str,
@@ -108,15 +92,13 @@ def run_rko(
         time_limit=time_limit
     )
     env.ui_callback = callback
-    env.agent_config = agents # Anexa config para os workers lerem
+    env.agent_config = agents 
 
-    # Configura Interceptação de Logs (Pai)
     old_stdout = sys.stdout
     if callback:
         sys.stdout = StdoutProxy(callback, history_list=execution_history, min_interval=0.25)
         sys.stdout.env = env
 
-    # Configura Fila de Logs (Filhos)
     log_queue = None
     reader_thread = None
     stop_event = None
@@ -135,20 +117,12 @@ def run_rko(
             log_queue = None
 
     try:
-        #Instancia e Roda o Solver
-        solver = RKO(
-            env,
-            print_best=True,
-            save_directory=None, 
-            log_queue=log_queue
-        )
-
+        solver = RKO(env, print_best=True, save_directory=None, log_queue=log_queue)
         start_time = time.time()
 
         active_agents = [k for k, v in agents.items() if v]
         str_parameters = "+".join(active_agents) if active_agents else "RKO_DEFAULT"
 
-        # Chama o solve com os parametros mapeados corretamente
         final_cost, final_solution_keys, time_to_best = solver.solve(
             time_total=time_limit,
             runs=1,
@@ -162,10 +136,10 @@ def run_rko(
         )
 
         runtime = time.time() - start_time
+        # Adiciona ponto final no historico
         execution_history.append((runtime, final_cost))
 
     finally:
-        # Limpeza
         sys.stdout = old_stdout
         if stop_event is not None:
             try:
@@ -177,7 +151,21 @@ def run_rko(
                 while not log_queue.empty(): _ = log_queue.get_nowait()
             except Exception: pass
 
-    # 5. SALVAR RESULTADOS 
+    # PREPARA DADOS COMPLETOS PARA O RETORNO (Gantt + History)
+    raw_gantt_data = None
+    try:
+        M = env.dados["M"]
+        p = env.dados["p"]
+        decoded = env.decoder(final_solution_keys)
+        X, C = env.convert_schedule_to_gantt_format(decoded)
+        
+        raw_gantt_data = {
+            "M": M, "p": p, "X": X, "C": C
+        }
+    except Exception as e:
+        print(f"[WARN] Erro ao preparar Gantt Data: {e}")
+
+    # SALVAR RESULTADOS EM DISCO
     if save_path:
         try:
             path_limpo = save_path.strip()
@@ -197,7 +185,6 @@ def run_rko(
                     base_dir = "."
                 csv_filename = path_limpo
             
-            # Salvar Curva
             nome_arq_curva = f"{env.instance_name}_timeXmksp.txt"
             caminho_curva = os.path.join(base_dir, nome_arq_curva)
             
@@ -210,7 +197,6 @@ def run_rko(
                 print(f"[IO] Curva salva em: {nome_arq_curva}")
             except Exception: pass
 
-            # Salvar CSV Geral
             model_name = f"RKO-{env.decoder_name.upper()}"
             n_jobs = len(env.dados.get("N", []))
             n_machines = len(env.dados.get("M", []))
@@ -235,26 +221,20 @@ def run_rko(
         except Exception as e:
             print(f"[ERROR] Falha ao salvar resultados: {e}")
 
-    # GERAR GANTT
-    if gantt_path:
+    # GERAR IMAGEM DO GANTT EM DISCO
+    if gantt_path and raw_gantt_data:
         try:
             if not os.path.exists(gantt_path):
                 os.makedirs(gantt_path, exist_ok=True)
             
-            M = env.dados["M"]
+            nome_base_gantt = os.path.join(gantt_path, f"gantt_{env.instance_name}")
             N = env.dados["N"]
             N0 = [0] + list(N)
-            p = env.dados["p"]
             s = env.dados["S"]
-            
-            decoded = env.decoder(final_solution_keys)
-            X, C = env.convert_schedule_to_gantt_format(decoded)
-            
-            nome_base_gantt = os.path.join(gantt_path, f"gantt_{env.instance_name}")
-            
+
             output_writer.gantt_chart(
-                M=M, N=N, N0=N0, p=p, s=s, 
-                X=X, C=C, 
+                M=raw_gantt_data["M"], N=N, N0=N0, p=raw_gantt_data["p"], s=s, 
+                X=raw_gantt_data["X"], C=raw_gantt_data["C"], 
                 arq_gantt=nome_base_gantt, 
                 instancia=env.instance_name, 
                 makespan=final_cost, 
@@ -266,11 +246,15 @@ def run_rko(
             print(f"[ERROR] Falha ao gerar Gantt Final: {e}")
 
     final_schedule = env.decoder(final_solution_keys)
+    
+    # RETORNA O PACOTE COMPLETO
     return {
         "makespan": final_cost,
         "schedule": final_schedule,
         "time_to_best": time_to_best,
         "runtime": runtime,
         "instance": env.instance_name,
-        "decoder": env.decoder_name
+        "decoder": env.decoder_name,
+        "history_data": execution_history, 
+        "gantt_data": raw_gantt_data       
     }
