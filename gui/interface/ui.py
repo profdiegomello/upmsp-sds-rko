@@ -580,7 +580,6 @@ def construir_aplicacao():
     janela = ctk.CTk()
     janela.title("RKO-SOLVER")
     
-    # --- MUDANÇA 1: RESOLUÇÃO FIXA PADRÃO (1600x900) ---
     LARGURA_FIXA = 1600
     ALTURA_FIXA = 900
     
@@ -591,8 +590,7 @@ def construir_aplicacao():
     y = (hs - ALTURA_FIXA) // 2
     janela.geometry(f"{LARGURA_FIXA}x{ALTURA_FIXA}+{x}+{y}")
     
-    # --- MUDANÇA 2: TRAVAR REDIMENSIONAMENTO ---
-    janela.resizable(False, False) # O usuário NÃO pode maximizar nem esticar
+    janela.resizable(False, False) 
     
     ctk.set_appearance_mode('dark')
 
@@ -606,7 +604,7 @@ def construir_aplicacao():
     janela.grid_columnconfigure(2, weight=1)
 
     frame_main = ctk.CTkFrame(janela, fg_color=CORES["fundo_principal"], corner_radius=0)
-    # padx=0, pady=0 para não desperdiçar nenhum pixel
+    
     frame_main.grid(row=2, column=2, columnspan=20, sticky="nsew", padx=0, pady=0)
     frame_main.grid_rowconfigure(0, weight=1); frame_main.grid_columnconfigure(0, weight=1); frame_main.grid_propagate(False)
 
@@ -617,7 +615,6 @@ def construir_aplicacao():
         for a in abas: a.grid_forget()
         a_sel.grid(row=0, column=0, sticky="nsew")
 
-    # Configurações das abas
     configurar_aba_parametros(aba_p)
     configurar_aba_agentes(aba_a)
     configurar_aba_entrada_saida(aba_io)
@@ -625,37 +622,7 @@ def construir_aplicacao():
     configurar_aba_grafico(aba_gra)
     configurar_aba_gantt_live(aba_gan)
     
-    # AQUI ESTÁ A MÁGICA DOS WIDGETS PREENCHIDOS
     configurar_aba_historico(aba_hist, largura_total=1600, altura_total=900)
-
-    show(aba_p)
-    janela.protocol("WM_DELETE_WINDOW", lambda: (janela.destroy(), sys.exit(0)))
-    
-    return janela, show, aba_p, aba_a, aba_io, aba_exe, aba_gra, aba_gan, aba_hist
-    janela = ctk.CTk(); janela.title("RKO-SOLVER")
-    centralizar_janela(janela, LARGURA_JANELA, ALTURA_JANELA)
-    janela.resizable(True, True)
-    ctk.set_appearance_mode('dark')
-    for i in range(10): janela.grid_rowconfigure(i, minsize=20); janela.grid_columnconfigure(i, minsize=20)
-
-    frame_main = ctk.CTkFrame(janela, fg_color=CORES["fundo_principal"], width=1200, height=900, border_width=5, border_color=CORES["borda"])
-    frame_main.grid(row=2, column=2, columnspan=20, sticky="nsew", padx=10)
-    frame_main.grid_rowconfigure(0, weight=1); frame_main.grid_columnconfigure(0, weight=1); frame_main.grid_propagate(False)
-
-    abas = [criar_aba_base(frame_main) for _ in range(7)]
-    aba_p, aba_a, aba_io, aba_exe, aba_gra, aba_gan, aba_hist = abas
-
-    def show(a_sel):
-        for a in abas: a.grid_forget()
-        a_sel.grid(row=0, column=0, sticky="nsew")
-
-    configurar_aba_parametros(aba_p)
-    configurar_aba_agentes(aba_a)
-    configurar_aba_entrada_saida(aba_io)
-    configurar_aba_execucao(aba_exe, aba_p, aba_a, aba_io)
-    configurar_aba_grafico(aba_gra)
-    configurar_aba_gantt_live(aba_gan)
-    configurar_aba_historico(aba_hist) # <--- Agora chama a nova
 
     show(aba_p)
     janela.protocol("WM_DELETE_WINDOW", lambda: (janela.destroy(), sys.exit(0)))
