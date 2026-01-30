@@ -170,54 +170,87 @@ def configurar_aba_gantt_live(aba):
 def configurar_aba_historico(aba):
     global FRAME_LISTA_HISTORICO, FIG_HIST_LINHA, AX_HIST_LINHA, CANVAS_HIST_LINHA, FIG_HIST_GANTT, AX_HIST_GANTT, CANVAS_HIST_GANTT
 
+    ALTURA_FRAME_CIMA = 300   
+    ALTURA_FRAME_BAIXO = 750 
+    LARGURA_FORCADA = 1600    
+    
+    # CONFIGURACAO DO GRID
     aba.grid_columnconfigure(0, weight=1) 
-    aba.grid_columnconfigure(1, weight=6) 
+    aba.grid_columnconfigure(1, weight=20) # Peso maior para a direita
+    
+    # Garante que as linhas estiquem
     aba.grid_rowconfigure(0, weight=1)
 
-    # Esquerda 
+    # Esquerda -lista-
     frame_esq = ctk.CTkFrame(aba, fg_color="transparent")
-    frame_esq.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+    frame_esq.grid(row=0, column=0, rowspan=10, sticky="nsew", padx=(5, 2), pady=5)
     frame_esq.grid_rowconfigure(1, weight=1); frame_esq.grid_columnconfigure(0, weight=1)
 
-    ctk.CTkLabel(frame_esq, text="FINISHED JOBS", font=("Roboto", 16, "bold"), text_color=CORES["destaque"]).grid(row=0, column=0, pady=(0, 15), padx=(35,0), sticky="ew")
+    ctk.CTkLabel(frame_esq, text="FINISHED JOBS", font=("Roboto", 16, "bold"), text_color=CORES["destaque"]).grid(row=0, column=0, pady=(0, 10), padx=10, sticky="ew")
     
     FRAME_LISTA_HISTORICO = ctk.CTkScrollableFrame(frame_esq, width=280, fg_color=CORES["fundo_cartao"], corner_radius=10)
-    FRAME_LISTA_HISTORICO.grid(row=1, column=0, sticky="nsew", padx=(30,0))
+    FRAME_LISTA_HISTORICO.grid(row=1, column=0, sticky="nsew", padx=0)
     FRAME_LISTA_HISTORICO.grid_columnconfigure(0, weight=1)
 
-    # Direita 
+    # DIREITA  (graficos)
     frame_dir = ctk.CTkFrame(aba, fg_color="transparent")
-    frame_dir.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
-    frame_dir.grid_rowconfigure(0, weight=1); frame_dir.grid_rowconfigure(1, weight=1); frame_dir.grid_columnconfigure(0, weight=1)
+    frame_dir.grid(row=0, column=1, rowspan=10, columnspan=9, sticky="nsew", padx=(2, 5), pady=(5, 0))
+    frame_dir.grid_columnconfigure(0, weight=1)
+    frame_dir.grid_rowconfigure(0, weight=1) 
+    frame_dir.grid_rowconfigure(1, weight=30) 
 
-    frame_top = ctk.CTkFrame(frame_dir, fg_color="#242424", corner_radius=10, border_width=2, border_color="#333333")
-    frame_top.grid(row=0, column=0, sticky="nsew", pady=(40,10), padx=(40,0))
-    frame_top.grid_rowconfigure(0, weight=1); frame_top.grid_columnconfigure(0, weight=1)
+    # GRAFICO 1 acima
+    frame_top = ctk.CTkFrame(
+        frame_dir, fg_color="#242424", corner_radius=10, 
+        border_width=2, border_color="#333333",
+        height=ALTURA_FRAME_CIMA, width=LARGURA_FORCADA
+    )
+    frame_top.grid(row=0, column=0, sticky="ew", pady=(0, 5), padx=0)
+    frame_top.grid_propagate(False) 
+    frame_top.grid_rowconfigure(0, weight=1)
+    frame_top.grid_columnconfigure(0, weight=1)
     
-    FIG_HIST_LINHA, AX_HIST_LINHA = plt.subplots(figsize=(12, 7), dpi=100)
-    FIG_HIST_LINHA.patch.set_facecolor('#242424'); AX_HIST_LINHA.set_facecolor('#2b2b2b')
+    FIG_HIST_LINHA, AX_HIST_LINHA = plt.subplots(figsize=(15, 3), dpi=100) 
+    FIG_HIST_LINHA.patch.set_facecolor('#242424')
+    AX_HIST_LINHA.set_facecolor('#2b2b2b')
     AX_HIST_LINHA.set_title("Convergência", color="white", fontsize=11)
     AX_HIST_LINHA.tick_params(colors='white', labelsize=9)
     for s in AX_HIST_LINHA.spines.values(): s.set_color('white')
+    FIG_HIST_LINHA.subplots_adjust(left=0.04, right=0.99, top=0.90, bottom=0.15)
+
     CANVAS_HIST_LINHA = FigureCanvasTkAgg(FIG_HIST_LINHA, master=frame_top)
     CANVAS_HIST_LINHA.draw()
-    CANVAS_HIST_LINHA.get_tk_widget().grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+    CANVAS_HIST_LINHA.get_tk_widget().pack(fill="both", expand=True)
 
-    # Grafico 2
-    frame_bot = ctk.CTkFrame(frame_dir, fg_color="#242424", corner_radius=10, border_width=2, border_color="#333333")
-    frame_bot.grid(row=1, column=0, sticky="nsew", pady=(60,0), padx=(60,0))
-    frame_bot.grid_rowconfigure(0, weight=1); frame_bot.grid_columnconfigure(0, weight=1)
+    # GRAFICO 2 abaixo
+    frame_bot = ctk.CTkFrame(
+        frame_dir, fg_color="#242424", corner_radius=10, 
+        border_width=2, border_color="#333333",
+        height=ALTURA_FRAME_BAIXO, width=LARGURA_FORCADA
+    )
     
-    FIG_HIST_GANTT, AX_HIST_GANTT = plt.subplots(figsize=(12, 7), dpi=100)
-    FIG_HIST_GANTT.patch.set_facecolor('#242424'); AX_HIST_GANTT.set_facecolor('#212121')
+    frame_bot.grid(row=1, column=0, sticky="nsew", pady=(5, 5), padx=0)
+    
+    frame_bot.grid_propagate(False)
+
+    frame_bot.grid_rowconfigure(0, weight=1)
+
+    frame_bot.grid_columnconfigure(0, weight=1)
+    
+    FIG_HIST_GANTT, AX_HIST_GANTT = plt.subplots(figsize=(15, 8), dpi=100)
+    FIG_HIST_GANTT.patch.set_facecolor('#242424')
+    AX_HIST_GANTT.set_facecolor('#212121')
     AX_HIST_GANTT.set_title("Cronograma Final", color="white", fontsize=11)
     AX_HIST_GANTT.tick_params(colors='white', labelsize=9)
+
     for s in AX_HIST_GANTT.spines.values(): s.set_color('white')
+
+    FIG_HIST_GANTT.subplots_adjust(left=0.04, right=0.99, top=0.95, bottom=0.08)
+    
     CANVAS_HIST_GANTT = FigureCanvasTkAgg(FIG_HIST_GANTT, master=frame_bot)
     CANVAS_HIST_GANTT.draw()
-    CANVAS_HIST_GANTT.get_tk_widget().grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+    CANVAS_HIST_GANTT.get_tk_widget().pack(fill="both", expand=True)
 
-    # invoca o 'daemon' local
     iniciar_watchdog_historico()
 
 def carregar_instancia_historico(nome_instancia):
@@ -228,7 +261,8 @@ def carregar_instancia_historico(nome_instancia):
     AX_HIST_LINHA.clear()
     AX_HIST_LINHA.plot(dados['x'], dados['y'], color='#00FF00', linewidth=2, marker='o', markersize=4)
     AX_HIST_LINHA.set_title(f"Convergência: {nome_instancia} (Melhor: {min(dados['y']) if dados['y'] else 0})", color="white", fontsize=10)
-    AX_HIST_LINHA.set_facecolor('#2b2b2b'); AX_HIST_LINHA.grid(True, linestyle='--', alpha=0.3)
+    AX_HIST_LINHA.set_facecolor('#2b2b2b')
+    AX_HIST_LINHA.grid(True, linestyle='--', alpha=0.3)
     AX_HIST_LINHA.tick_params(colors='white')
     CANVAS_HIST_LINHA.draw()
 
