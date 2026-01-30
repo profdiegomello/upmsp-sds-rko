@@ -12,7 +12,7 @@ def resource_path(relative_path):
 
     return os.path.join(base_path, relative_path)
 
-def create_buttons(master, show_tab, knight_tab, sliders_tab, scroll_tab, play_tab, chart_tab, gantt_tab):
+def create_buttons(master, show_tab, knight_tab, sliders_tab, scroll_tab, play_tab, chart_tab, gantt_tab, history_tab):
     """
     Cria os botoes laterais (Knight, Sliders, IO, Play, Chart, Gantt).
     """
@@ -28,6 +28,7 @@ def create_buttons(master, show_tab, knight_tab, sliders_tab, scroll_tab, play_t
     play_image = ctk.CTkImage(Image.open(resource_path("assets/play.png")), size=(20, 20))
     chart_image = ctk.CTkImage(Image.open(resource_path("assets/chart.png")), size=(20, 20))
     gantt_image = ctk.CTkImage(Image.open(resource_path("assets/gantt.png")), size=(20, 20)) 
+    history_image = ctk.CTkImage(Image.open(resource_path("assets/history.png")), size=(20, 20))
 
     # BOTOES 
     
@@ -71,12 +72,20 @@ def create_buttons(master, show_tab, knight_tab, sliders_tab, scroll_tab, play_t
     )
     chart_button.grid(row=4, column=0, pady=10, padx=5) 
 
-    # Gantt (Novo Gráfico Ao Vivo) 
+    # Gantt 
     gantt_button = ctk.CTkButton(
         buttons_frame, text="", image=gantt_image,
         width=25, height=25, fg_color="transparent", hover_color="#444444",
         command=lambda: show_tab(gantt_tab) 
     )
     gantt_button.grid(row=5, column=0, pady=10, padx=5)
+
+    # History
+    history_button = ctk.CTkButton(
+        buttons_frame, text="", image=history_image,
+        width=25, height=25, fg_color="transparent", hover_color="#444444",
+        command=lambda: show_tab(history_tab) 
+    )
+    history_button.grid(row=6, column=0, pady=10, padx=5)
 
     return buttons_frame
