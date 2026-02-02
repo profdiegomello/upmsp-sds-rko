@@ -85,43 +85,41 @@ def iniciar_watchdog_historico():
     global FILA_BOTOES_PENDENTES, FRAME_LISTA_HISTORICO, HISTORICO_DATA
     
     if FILA_BOTOES_PENDENTES and FRAME_LISTA_HISTORICO:
-        # Pega o proximo da fila
-        nome_instancia = FILA_BOTOES_PENDENTES.pop(0)
+        chave_unica = FILA_BOTOES_PENDENTES.pop(0)
         
-        if nome_instancia in HISTORICO_DATA:
+        if chave_unica in HISTORICO_DATA:
             try:
-                dados = HISTORICO_DATA[nome_instancia]
+                dados = HISTORICO_DATA[chave_unica]
                 melhor_mksp = min(dados['y']) if dados['y'] else "?"
-                texto_atualizado = f"{nome_instancia}\n(Make: {melhor_mksp})"
                 
-                # Procura se o botão já existe
-                botao_existente = None
-                for widget in FRAME_LISTA_HISTORICO.winfo_children():
-                    if isinstance(widget, ctk.CTkButton):
-                        # Pega a primeira linha do texto do botão (o nome da instância)
-                        nome_botao = widget.cget("text").split('\n')[0]
-                        if nome_botao == nome_instancia:
-                            botao_existente = widget
-                            break
+                # --- FORMATAÇÃO DO TEXTO DO BOTÃO ---
+                nome_arq = dados.get('meta_nome', 'Instancia')
+                dec = dados.get('meta_decoder', 'Dec')
+                ags = dados.get('meta_agentes', 'Agents')
                 
-                if botao_existente:
-                    # ATUALIZA O TEXTO 
-                    botao_existente.configure(text=texto_atualizado)
-                else:
-                    # CRIA NOVO
-                    btn = ctk.CTkButton(
-                        FRAME_LISTA_HISTORICO, 
-                        text=texto_atualizado,
-                        fg_color="#333333",
-                        hover_color=CORES["destaque"],
-                        height=50,
-                        command=lambda n=nome_instancia: carregar_instancia_historico(n)
-                    )
-                    btn.grid(sticky="ew", pady=5, padx=5)
+                # Linha 1: Nome curto do arquivo + Decoder
+                # Linha 2: Agentes
+                # Linha 3: Valor do Makespan
+                texto_display = f"{nome_arq} | {dec}\n[{ags}]\nMake: {melhor_mksp}"
+                
+                # Procura botão existente (pela chave única interna, não pelo texto)
+                # Como o texto muda, usamos um atributo 'name' ou comparamos chaves se fosse complexo.
+                # Simplificação: Como a chave é única agora, dificilmente haverá colisão visual.
+                
+                btn = ctk.CTkButton(
+                    FRAME_LISTA_HISTORICO, 
+                    text=texto_display,
+                    font=("Roboto", 11), # Fonte um pouco menor para caber tudo
+                    fg_color="#333333",
+                    hover_color=CORES["destaque"],
+                    height=60, # Um pouco mais alto para 3 linhas
+                    command=lambda k=chave_unica: carregar_instancia_historico(k)
+                )
+                btn.grid(sticky="ew", pady=5, padx=5)
+
             except Exception as e:
                 print(f"Erro Watchdog: {e}")
 
-    # Reagendar verificacao
     if FRAME_LISTA_HISTORICO:
         FRAME_LISTA_HISTORICO.after(500, iniciar_watchdog_historico)
 
@@ -337,86 +335,79 @@ def manipulador_retorno_interface(dados):
     texto_log = dados.get("message", "")
     nome_pacote = dados.get("instancia") 
 
-    # INICIO DE JOB 
+    # INICIO DE JOB
     if tipo_status == "running":
         if nome_pacote: NOME_INSTANCIA_ATUAL = nome_pacote
         MELHOR_MAKESPAN_ATUAL = float('inf'); TEMPO_INICIO_BATERIA = time.time(); DADOS_X.clear(); DADOS_Y.clear()
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
         
-        # Limpa Visual
         if CANVAS_GLOBAL:
-            LINHA_GLOBAL.set_data([], [])
-            AX_GLOBAL.set_title(f"{NOME_INSTANCIA_ATUAL}...", fontsize=10, color="white")
-            AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view(); CANVAS_GLOBAL.draw()
+            LINHA_GLOBAL.set_data([], []); AX_GLOBAL.set_title(f"{NOME_INSTANCIA_ATUAL}...", fontsize=10, color="white"); AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view(); CANVAS_GLOBAL.draw()
         if AX_GANTT: AX_GANTT.clear(); CANVAS_GANTT.draw()
 
-    # UPDATE VISUAL 
+    # UPDATE VISUAL
     elif tipo_status == "update":
         makespan = dados.get("makespan"); gantt_data = dados.get("gantt_data")
-        
         if nome_pacote == NOME_INSTANCIA_ATUAL:
-            
-            # So atualiza se for melhor ou igual
             if makespan <= MELHOR_MAKESPAN_ATUAL:
                 tempo_atual = time.time() - TEMPO_INICIO_BATERIA
-                
-                # Atualiza dados da linha
                 if makespan < MELHOR_MAKESPAN_ATUAL:
                     MELHOR_MAKESPAN_ATUAL = makespan
-                    DADOS_X.append(tempo_atual)
-                    DADOS_Y.append(makespan)
-
+                    DADOS_X.append(tempo_atual); DADOS_Y.append(makespan)
                     if CANVAS_GLOBAL: 
                         LINHA_GLOBAL.set_data(DADOS_X, DADOS_Y)
                         AX_GLOBAL.set_title(f"{NOME_INSTANCIA_ATUAL}  |  Melhor: {MELHOR_MAKESPAN_ATUAL}", fontsize=10, color="#00FF00", fontweight="bold")
-                        AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view(); CANVAS_GLOBAL.draw()
-
-                # Atualiza Gantt Visual
+                        AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view()
+                        CANVAS_GLOBAL.draw()
                 if gantt_data and CANVAS_GANTT: 
                     CANVAS_GANTT.get_tk_widget().after(0, lambda: atualizar_desenho_gantt(gantt_data, nome_pacote, tempo_atual))
 
-    # 3. PACOTE BLINDADO DE HISTORICO
+    # INSTANCIA CONCLUIDA SALVAR NO HISTORICO
     elif tipo_status == "instancia_concluida":
-        nome_final = dados.get("instancia")
+        nome_base = dados.get("instancia")
         hist_curve = dados.get("history_curve", []) 
         gantt_final = dados.get("gantt_data")
+        
+        # Captura parametros para a chave unica
+        decoder_usado = dados.get("decoder", "Dec")
+        agentes_usados = dados.get("agentes", ["Agentes"]) 
+        if isinstance(agentes_usados, list): str_agentes = "-".join(agentes_usados)
+        else: str_agentes = str(agentes_usados)
 
-        if nome_final:
-            lista_x = [p[0] for p in hist_curve]
-            lista_y = [p[1] for p in hist_curve]
-            
-            HISTORICO_DATA[nome_final] = {
-                'x': lista_x, 'y': lista_y, 'gantt': gantt_final
+        chave_unica = f"{nome_base} [{decoder_usado}] ({str_agentes})"
+
+        if nome_base:
+            HISTORICO_DATA[chave_unica] = {
+                'x': [p[0] for p in hist_curve], 'y': [p[1] for p in hist_curve], 
+                'gantt': gantt_final,
+                'meta_nome': nome_base, 'meta_decoder': decoder_usado, 'meta_agentes': str_agentes
             }
-            # Sempre joga na fila, o Watchdog decide se cria ou atualiza
-            if nome_final not in FILA_BOTOES_PENDENTES:
-                FILA_BOTOES_PENDENTES.append(nome_final)
+            if chave_unica not in FILA_BOTOES_PENDENTES:
+                FILA_BOTOES_PENDENTES.append(chave_unica)
 
-    # 4. LOGS E ERROS
+    # FINALIZACAO E ERROS 
     elif tipo_status == "finished": 
         ESCRITOR_TERMINAL_GLOBAL.write(f"\n{'='*40}\n{texto_log}\n{'='*40}\n")
-        if "ABORTADO" in texto_log:
-             try: START_BUTTON_GLOBAL.resetar_estado()
-             except: pass
+        # SEMPRE Reseta, independente da mensagem
+        try: START_BUTTON_GLOBAL.resetar_estado()
+        except: pass
 
-    elif tipo_status == "log": ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
-    
     elif tipo_status == "error": 
         ESCRITOR_TERMINAL_GLOBAL.write(f"ERRO: {texto_log}\n")
+        # SEMPRE Reseta em caso de erro
         try: START_BUTTON_GLOBAL.resetar_estado()
         except: pass
         
     elif tipo_status == "completed_all":
         ESCRITOR_TERMINAL_GLOBAL.write(f"\n>>> {texto_log} <<<\n")
+        # SEMPRE Reseta ao completar tudo
         try: START_BUTTON_GLOBAL.resetar_estado()
         except: pass
 
-    if tipo_status == "finished" and "Execução finalizada" in texto_log:
-         try: START_BUTTON_GLOBAL.resetar_estado()
-         except: pass
+    elif tipo_status == "log": 
+        ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
 
 #  CONFIGURAÇOES DAS ABAS DE PARAMETROS E EXECUCAO
-
 def configurar_aba_parametros(aba):
     aba.widgets_armazenados = {} 
     

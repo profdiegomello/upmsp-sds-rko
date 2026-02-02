@@ -136,6 +136,8 @@ def _executar_solver(dados, callback_interface):
                         "instancia": nome,
                         "gantt_data": resultado.get("gantt_data")
                     })
+                    
+                    lista_agentes_ativos = [k for k, v in agents.items() if v] if agents else ["Padrão"]
 
                     # Envia a curva completa e o gantt final diretamente.
                     LOG_QUEUE.put({
@@ -143,7 +145,9 @@ def _executar_solver(dados, callback_interface):
                         "instancia": nome,
                         "makespan": resultado["makespan"],
                         "history_curve": resultado.get("history_data", []), # Lista [(tempo, custo), ...]
-                        "gantt_data": resultado.get("gantt_data")
+                        "gantt_data": resultado.get("gantt_data"),
+                        "decoder": decoder,            
+                        "agentes": lista_agentes_ativos
                     })
 
                     LOG_QUEUE.put({"status": "log", "message": f"Concluído: {nome} [Run {run_idx}]"})
