@@ -7,6 +7,7 @@ import sys
 import os
 import re
 import time
+import json
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -14,12 +15,14 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 # Garante que o Matplotlib use o backend correto para Tkinter
 matplotlib.use("TkAgg")
 
-# Tenta importar o backend
 try:
     import backend.rko_gui_start as rko_gui_start
+    pasta_backend_real = os.path.dirname(os.path.abspath(rko_gui_start.__file__))
+    CAMINHO_CACHE_IO = os.path.join(pasta_backend_real, "temp_io_paths.txt")
 except ImportError:
     print("ERRO: 'rko_gui_start.py' não encontrado.")
     rko_gui_start = None
+    CAMINHO_CACHE_IO = "temp_io_paths.txt"
 
 def resource_path(relative_path):
     """Obtem o caminho absoluto para recursos (imagens/assets)"""
@@ -51,6 +54,11 @@ ALTURA_JANELA = 975
 LARGURA_CARTAO_AGENTE = 360
 ALTURA_CARTAO_AGENTE = 300
 
+# Pega o diretório onde este arquivo (ui.py) está salvo
+DIRETORIO_BASE = os.path.dirname(os.path.abspath(__file__))
+
+# Monta o caminho apontando para a pasta backend vizinha
+
 ESCRITOR_TERMINAL_GLOBAL = None
 START_BUTTON_GLOBAL = None
 
@@ -78,6 +86,29 @@ FRAME_LISTA_HISTORICO = None
 # Graficos da Aba historico
 FIG_HIST_LINHA, AX_HIST_LINHA, CANVAS_HIST_LINHA = None, None, None
 FIG_HIST_GANTT, AX_HIST_GANTT, CANVAS_HIST_GANTT = None, None, None
+
+def carregar_cache_caminhos():
+    """Lê o arquivo temp e retorna um dicionário com os caminhos salvos."""
+    if os.path.exists(CAMINHO_CACHE_IO):
+        try:
+            with open(CAMINHO_CACHE_IO, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Erro ao ler cache IO: {e}")
+    return {}
+
+def salvar_cache_caminhos(inst_path, out_path, gantt_path):
+    """Salva os caminhos atuais no arquivo temp dentro da pasta backend existente."""
+    dados = {
+        "instance_path": inst_path,
+        "output_path": out_path,
+        "gantt_path": gantt_path
+    }
+    try:
+        with open(CAMINHO_CACHE_IO, "w", encoding="utf-8") as f:
+            json.dump(dados, f, indent=4)
+    except Exception as e:
+        print(f"Aviso (Cache IO): {e}")
 
 # Cria os botoes do historico 
 # Daemon (watchdog) responsavel por verificar constantemente
@@ -250,27 +281,35 @@ def configurar_aba_historico(aba, largura_total=1600, altura_total=900):
     iniciar_watchdog_historico()
 
 def carregar_instancia_historico(chave_unica):
-    # Recupera os dados usando a chave única (Nome + Parametros)
+    # Recupera dados
     dados = HISTORICO_DATA.get(chave_unica)
     if not dados: return
 
-    # DESTAQUE VISUAL NA LISTA 
     try:
         for widget in FRAME_LISTA_HISTORICO.winfo_children():
             if isinstance(widget, ctk.CTkButton):
-                # Se o botão tiver a chave igual a que clicamos, pinta de verde
                 if hasattr(widget, 'chave_privada') and widget.chave_privada == chave_unica:
                     widget.configure(fg_color=CORES["destaque"])
                 else:
                     widget.configure(fg_color="#333333")
-    except Exception: 
-        pass
+    except Exception: pass
 
-    #  PLOTAGEM ORIGINAL DO GRAFICO DE ConverGENCIA
+    raw_x = dados['x']
+    raw_y = dados['y']
+
+    # pares (x,y) para ordenar pelo tempo (eixo X)
+    if raw_x and raw_y:
+        pares_ordenados = sorted(zip(raw_x, raw_y), key=lambda pair: pair[0])
+        eixo_x, eixo_y = zip(*pares_ordenados)
+    else:
+        eixo_x, eixo_y = [], []
+
     AX_HIST_LINHA.clear()
-    AX_HIST_LINHA.plot(dados['x'], dados['y'], color='#00FF00', linewidth=2, marker='o', markersize=4)
+
+    # Usa as listas ordenadas (eixo_x, eixo_y) agora
+    AX_HIST_LINHA.plot(eixo_x, eixo_y, color='#00FF00', linewidth=2, marker='o', markersize=4)
     
-    melhor_val = min(dados['y']) if dados['y'] else 0
+    melhor_val = min(eixo_y) if eixo_y else 0
     nome_display = dados.get('meta_nome', chave_unica)
     
     AX_HIST_LINHA.set_title(f"Convergência: {nome_display} (Melhor: {melhor_val})", color="white", fontsize=10)
@@ -280,16 +319,18 @@ def carregar_instancia_historico(chave_unica):
     for s in AX_HIST_LINHA.spines.values(): s.set_color('white')
     CANVAS_HIST_LINHA.draw()
 
+    # =========================================================
+    # 3. GANTT (Mantido Intacto conforme seu pedido)
+    # =========================================================
     AX_HIST_GANTT.clear()
     gantt = dados['gantt']
     
-    max_makespan = 0 # Inicializa para garantir escopo
+    max_makespan = 0
 
     if gantt:
         M, p, X, C = gantt["M"], gantt["p"], gantt["X"], gantt["C"]
         import matplotlib.cm as cm
         
-        # Protecao caso C esteja vazio
         max_id = max([k[1] for k in C.keys()]) if C else 10
         colors = cm.get_cmap("tab20", max_id + 1)
         
@@ -297,21 +338,12 @@ def carregar_instancia_historico(chave_unica):
         for i in M:
             jobs = [j for (m, k, j), v in X.items() if m == i and v > 0.5]
             for j in jobs:
-                comp = C.get((i, j), 0)
-                proc = p.get((i, j), 0)
-                start = comp - proc
-                
+                comp = C.get((i, j), 0); proc = p.get((i, j), 0); start = comp - proc
                 if comp > max_makespan: max_makespan = comp
-                
-                # Desenha a barra
                 AX_HIST_GANTT.barh(y=f'M{i}', width=proc, left=start, height=0.6, color=colors(j), edgecolor='black')
-                
-                # Texto dentro da barra
-                if proc > 0: 
-                    AX_HIST_GANTT.text(start + proc/2, f'M{i}', f'{j}', ha='center', va='center', color='white', fontsize=6, fontweight='bold')
+                if proc > 0: AX_HIST_GANTT.text(start + proc/2, f'M{i}', f'{j}', ha='center', va='center', color='white', fontsize=6, fontweight='bold')
     
-    AX_HIST_GANTT.set_facecolor('#212121')
-    AX_HIST_GANTT.invert_yaxis()
+    AX_HIST_GANTT.set_facecolor('#212121'); AX_HIST_GANTT.invert_yaxis()
     AX_HIST_GANTT.set_title(f"Cronograma | Makespan: {max_makespan}", color="white", fontsize=10)
     AX_HIST_GANTT.tick_params(colors='white')
     for s in AX_HIST_GANTT.spines.values(): s.set_color('white')
@@ -507,26 +539,51 @@ def criar_cartao_agente(conteiner_pai, config):
     return widgets
 
 def configurar_aba_entrada_saida(aba):
+    cache = carregar_cache_caminhos()
+
     aba.widgets_armazenados = {} 
+    
     def sel_dir(w):
         p = filedialog.askdirectory()
-        if p: w.delete(0, "end"); w.insert(0, p)
+        if p: 
+            w.delete(0, "end")
+            w.insert(0, p)
             
     ctk.CTkLabel(aba, text="IO CONFIGURATION", text_color=CORES["destaque"], font=FONTES["titulo"]).grid(row=0, column=1, columnspan=10, sticky="w", pady=(8,12), padx=70)
+    
     try: img = ctk.CTkImage(Image.open(resource_path("assets/dots.png")), size=(16, 16))
     except: img = None 
         
-    for k, txt, row in [("output_path", "Output Path", 1), ("instance_path", "Instance Folder Path", 2), ("gantt_path", "Gantt Chart Path", 3)]:
+    # Mapeamento das chaves do cache
+    lista_campos = [
+        ("output_path", "Output Path", 1), 
+        ("instance_path", "Instance Folder Path", 2), 
+        ("gantt_path", "Gantt Chart Path", 3)
+    ]
+
+    for k, txt, row in lista_campos:
         fr = ctk.CTkFrame(aba, fg_color="transparent")
         fr.grid(row=row, column=0, padx=8, pady=8, sticky="n")
+        
         ctk.CTkLabel(fr, text=txt, font=FONTES["subtitulo"]).grid(row=0, column=0, padx=8, sticky="w")
+        
         ent = ctk.CTkEntry(fr, border_color=CORES["primaria"], border_width=2, width=350)
         ent.grid(row=1, column=0, padx=10, pady=3)
+        
+        # --- A CORREÇÃO ESTÁ AQUI ---
+        # Se existir valor no cache para esta chave 'k', inserimos na caixa
+        valor_cache = cache.get(k, "")
+        if valor_cache:
+            ent.insert(0, valor_cache)
+        # ----------------------------
+
         aba.widgets_armazenados[k] = ent 
+        
         ctk.CTkButton(fr, text="" if img else "...", width=30, image=img, fg_color="transparent", hover_color=CORES["destaque"], command=lambda e=ent: sel_dir(e)).grid(row=1, column=1, pady=10)
 
 def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
     global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL
+    
     estado_execucao = {"rodando": False}
 
     def resetar_botao():
@@ -541,11 +598,31 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
 
     def acao():
         if rko_gui_start is None: print("ERRO: Middleware ausente."); return
+        
         if not estado_execucao["rodando"]:
+            # --- SALVAMENTO ROBUSTO DO CACHE ---
+            try:
+                # Acessamos diretamente os widgets guardados na aba IO
+                # O .get() aqui pega o texto que está VISÍVEL na caixa
+                w_inst = aba_io.widgets_armazenados.get("instance_path")
+                w_out = aba_io.widgets_armazenados.get("output_path")
+                w_gantt = aba_io.widgets_armazenados.get("gantt_path")
+
+                c_inst = w_inst.get() if w_inst else ""
+                c_out = w_out.get() if w_out else ""
+                c_gantt = w_gantt.get() if w_gantt else ""
+                
+                salvar_cache_caminhos(c_inst, c_out, c_gantt)
+            except Exception as e:
+                print(f"Aviso: Não foi possível salvar cache IO: {e}")
+            # -----------------------------------
+
             data = coletar_dados_interface(aba_p, aba_a, aba_io)
             if not data: return 
+            
             if ESCRITOR_TERMINAL_GLOBAL:
                 ESCRITOR_TERMINAL_GLOBAL.widget_texto.configure(state="normal"); ESCRITOR_TERMINAL_GLOBAL.widget_texto.delete("1.0", "end"); ESCRITOR_TERMINAL_GLOBAL.widget_texto.configure(state="disabled")
+            
             estado_execucao["rodando"] = True
             START_BUTTON_GLOBAL.configure(text="Running...", fg_color="#555555", border_width=2, border_color="#555555", text_color=("gray10", "gray90"))
             rko_gui_start.iniciar_resolucao(data, manipulador_retorno_interface)
