@@ -1,8 +1,7 @@
 #!/bin/bash
 
-PYTHON_VERSION="python3.12"
-# PYTHON_VERSION="python3"
-# PYTHON_VERSION="python"
+# PYTHON_VERSION="python3.12"
+PYTHON_VERSION="python3"
 VERSION="${PYTHON_VERSION#python}"
 
 VENV_DIR=".venv"
