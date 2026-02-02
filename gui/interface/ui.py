@@ -198,11 +198,11 @@ def configurar_aba_historico(aba, largura_total=1600, altura_total=900):
     
     FRAME_LISTA_HISTORICO = ctk.CTkScrollableFrame(frame_esq, width=280, fg_color=CORES["fundo_cartao"], corner_radius=10)
     FRAME_LISTA_HISTORICO.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
+    FRAME_LISTA_HISTORICO.grid_columnconfigure(0, weight=1)
     
     # DIREITA 
     frame_dir = ctk.CTkFrame(aba, fg_color="transparent")
     
-    # Ele vai ocupar da linha 0 até a 10 e da coluna 1 até a 9 (o fim da tela)
     frame_dir.grid(row=0, column=1, rowspan=10, columnspan=9, sticky="nsew", padx=(0, 5), pady=(5, 5))
     
     # Grid interno da direita
@@ -239,7 +239,6 @@ def configurar_aba_historico(aba, largura_total=1600, altura_total=900):
         border_width=2, border_color="#333333",
         height=ALTURA_FRAME_BAIXO, width=LARGURA_GRAFICOS
     )
-    # Sticky NSEW estica ele para preencher o buraco da row 1 até o chão
     frame_bot.grid(row=1, column=0, sticky="nsew", pady=0)
     frame_bot.grid_propagate(False)
     
