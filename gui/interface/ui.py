@@ -92,29 +92,24 @@ def iniciar_watchdog_historico():
                 dados = HISTORICO_DATA[chave_unica]
                 melhor_mksp = min(dados['y']) if dados['y'] else "?"
                 
-                # --- FORMATAÇÃO DO TEXTO DO BOTÃO ---
                 nome_arq = dados.get('meta_nome', 'Instancia')
                 dec = dados.get('meta_decoder', 'Dec')
                 ags = dados.get('meta_agentes', 'Agents')
                 
-                # Linha 1: Nome curto do arquivo + Decoder
-                # Linha 2: Agentes
-                # Linha 3: Valor do Makespan
                 texto_display = f"{nome_arq} | {dec}\n[{ags}]\nMake: {melhor_mksp}"
                 
-                # Procura botão existente (pela chave única interna, não pelo texto)
-                # Como o texto muda, usamos um atributo 'name' ou comparamos chaves se fosse complexo.
-                # Simplificação: Como a chave é única agora, dificilmente haverá colisão visual.
-                
+                # Cria o botao
                 btn = ctk.CTkButton(
                     FRAME_LISTA_HISTORICO, 
                     text=texto_display,
-                    font=("Roboto", 11), # Fonte um pouco menor para caber tudo
-                    fg_color="#333333",
-                    hover_color=CORES["destaque"],
-                    height=60, # Um pouco mais alto para 3 linhas
+                    font=("Roboto", 11),
+                    fg_color="#333333", 
+                    hover_color= "#689EAD",
+                    height=60,
                     command=lambda k=chave_unica: carregar_instancia_historico(k)
                 )
+                
+                btn.chave_privada = chave_unica 
                 btn.grid(sticky="ew", pady=5, padx=5)
 
             except Exception as e:
@@ -254,37 +249,69 @@ def configurar_aba_historico(aba, largura_total=1600, altura_total=900):
 
     iniciar_watchdog_historico()
 
-def carregar_instancia_historico(nome_instancia):
-    dados = HISTORICO_DATA.get(nome_instancia)
+def carregar_instancia_historico(chave_unica):
+    # Recupera os dados usando a chave única (Nome + Parametros)
+    dados = HISTORICO_DATA.get(chave_unica)
     if not dados: return
 
-    # Plota Linha
+    # DESTAQUE VISUAL NA LISTA 
+    try:
+        for widget in FRAME_LISTA_HISTORICO.winfo_children():
+            if isinstance(widget, ctk.CTkButton):
+                # Se o botão tiver a chave igual a que clicamos, pinta de verde
+                if hasattr(widget, 'chave_privada') and widget.chave_privada == chave_unica:
+                    widget.configure(fg_color=CORES["destaque"])
+                else:
+                    widget.configure(fg_color="#333333")
+    except Exception: 
+        pass
+
+    #  PLOTAGEM ORIGINAL DO GRAFICO DE ConverGENCIA
     AX_HIST_LINHA.clear()
     AX_HIST_LINHA.plot(dados['x'], dados['y'], color='#00FF00', linewidth=2, marker='o', markersize=4)
-    AX_HIST_LINHA.set_title(f"Convergência: {nome_instancia} (Melhor: {min(dados['y']) if dados['y'] else 0})", color="white", fontsize=10)
+    
+    melhor_val = min(dados['y']) if dados['y'] else 0
+    nome_display = dados.get('meta_nome', chave_unica)
+    
+    AX_HIST_LINHA.set_title(f"Convergência: {nome_display} (Melhor: {melhor_val})", color="white", fontsize=10)
     AX_HIST_LINHA.set_facecolor('#2b2b2b')
     AX_HIST_LINHA.grid(True, linestyle='--', alpha=0.3)
     AX_HIST_LINHA.tick_params(colors='white')
+    for s in AX_HIST_LINHA.spines.values(): s.set_color('white')
     CANVAS_HIST_LINHA.draw()
 
-    # Plota Gantt
     AX_HIST_GANTT.clear()
     gantt = dados['gantt']
+    
+    max_makespan = 0 # Inicializa para garantir escopo
+
     if gantt:
         M, p, X, C = gantt["M"], gantt["p"], gantt["X"], gantt["C"]
         import matplotlib.cm as cm
+        
+        # Protecao caso C esteja vazio
         max_id = max([k[1] for k in C.keys()]) if C else 10
         colors = cm.get_cmap("tab20", max_id + 1)
+        
         max_makespan = 0
         for i in M:
             jobs = [j for (m, k, j), v in X.items() if m == i and v > 0.5]
             for j in jobs:
-                comp = C.get((i, j), 0); proc = p.get((i, j), 0); start = comp - proc
+                comp = C.get((i, j), 0)
+                proc = p.get((i, j), 0)
+                start = comp - proc
+                
                 if comp > max_makespan: max_makespan = comp
+                
+                # Desenha a barra
                 AX_HIST_GANTT.barh(y=f'M{i}', width=proc, left=start, height=0.6, color=colors(j), edgecolor='black')
-                if proc > 0: AX_HIST_GANTT.text(start + proc/2, f'M{i}', f'{j}', ha='center', va='center', color='white', fontsize=6, fontweight='bold')
+                
+                # Texto dentro da barra
+                if proc > 0: 
+                    AX_HIST_GANTT.text(start + proc/2, f'M{i}', f'{j}', ha='center', va='center', color='white', fontsize=6, fontweight='bold')
     
-    AX_HIST_GANTT.set_facecolor('#212121'); AX_HIST_GANTT.invert_yaxis()
+    AX_HIST_GANTT.set_facecolor('#212121')
+    AX_HIST_GANTT.invert_yaxis()
     AX_HIST_GANTT.set_title(f"Cronograma | Makespan: {max_makespan}", color="white", fontsize=10)
     AX_HIST_GANTT.tick_params(colors='white')
     for s in AX_HIST_GANTT.spines.values(): s.set_color('white')
@@ -407,7 +434,7 @@ def manipulador_retorno_interface(dados):
     elif tipo_status == "log": 
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
 
-#  CONFIGURAÇOES DAS ABAS DE PARAMETROS E EXECUCAO
+#  CONFIGURAcOES DAS ABAS DE PARAMETROS E EXECUCAO
 def configurar_aba_parametros(aba):
     aba.widgets_armazenados = {} 
     
