@@ -1,16 +1,15 @@
 import pandas as pd
 import numpy as np
 
-# --- Carregamento dos Dados ---
-# Lê o arquivo DAT original. O delimitador é tabulação
+FILENAME = 'report-rko.dat'
+# FILENAME = 'report-all-unified.dat'
+
 try:
-    # df = pd.read_csv('../ject-2025/graficos/report-small.csv', sep=';', decimal='.', header=0)
-    # df = pd.read_csv('report-rko-unified.dat', sep='\t', decimal='.', header=0)
-    df = pd.read_csv('report-all-unified.dat', sep='\t', decimal='.', header=0)
+    df = pd.read_csv(FILENAME, sep='\t', decimal='.', header=0)
 
     # keep only columns of interest: JOBS, MACHINES, MODEL, OBJECTIVE, RUNTIME
     df = df[['JOBS', 'MACHINES', 'MODEL', 'OBJECTIVE', 'RUNTIME']]
-    print("\n[DEBUG] Amostra de dados do arquivo 'report-brkga-rko-unified.dat':")
+    print(f"\n[DEBUG] Amostra de dados do arquivo {FILENAME}:")
     print(df)
 
     #count how many times each combination of JOBS, MACHINES, MODEL appears
@@ -19,7 +18,7 @@ try:
     print(counts)
 
 except FileNotFoundError:
-    print("Erro: O arquivo 'report-rko-unified.dat' não foi encontrado.")
+    print(f"Erro: O arquivo '{FILENAME}' não foi encontrado.")
     exit()
 
 # --- Função para Bootstrap do Intervalo de Confiança (sem alterações) ---
