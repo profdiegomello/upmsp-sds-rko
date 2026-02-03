@@ -126,10 +126,14 @@ def iniciar_watchdog_historico():
                 nome_arq = dados.get('meta_nome', 'Instancia')
                 dec = dados.get('meta_decoder', 'Dec')
                 ags = dados.get('meta_agentes', 'Agents')
+                hora = dados.get('meta_hora', '') # Recupera a hora
                 
-                texto_display = f"{nome_arq} | {dec}\n[{ags}]\nMake: {melhor_mksp}"
+                # --- NOVO LAYOUT DO TEXTO DO BOTÃO ---
+                # Linha 1: Nome + Hora (Pequena)
+                # Linha 2: Agentes
+                # Linha 3: Makespan
+                texto_display = f"{nome_arq} ({hora})\n{dec} [{ags}]\nMake: {melhor_mksp}"
                 
-                # Cria o botao
                 btn = ctk.CTkButton(
                     FRAME_LISTA_HISTORICO, 
                     text=texto_display,
@@ -140,6 +144,8 @@ def iniciar_watchdog_historico():
                     command=lambda k=chave_unica: carregar_instancia_historico(k)
                 )
                 
+                # A chave privada agora é única com o timestamp, 
+                # então o highlight vai funcionar perfeitamente apenas neste botão.
                 btn.chave_privada = chave_unica 
                 btn.grid(sticky="ew", pady=5, padx=5)
 
@@ -427,20 +433,26 @@ def manipulador_retorno_interface(dados):
         hist_curve = dados.get("history_curve", []) 
         gantt_final = dados.get("gantt_data")
         
-        # Captura parametros para a chave unica
         decoder_usado = dados.get("decoder", "Dec")
         agentes_usados = dados.get("agentes", ["Agentes"]) 
         if isinstance(agentes_usados, list): str_agentes = "-".join(agentes_usados)
         else: str_agentes = str(agentes_usados)
 
-        chave_unica = f"{nome_base} [{decoder_usado}] ({str_agentes})"
+        hora_termino = time.strftime("%d/%m/%y %H:%M:%S")
+        
+        chave_unica = f"{nome_base} [{decoder_usado}] ({str_agentes}) @{hora_termino}"
 
         if nome_base:
             HISTORICO_DATA[chave_unica] = {
-                'x': [p[0] for p in hist_curve], 'y': [p[1] for p in hist_curve], 
+                'x': [p[0] for p in hist_curve], 
+                'y': [p[1] for p in hist_curve], 
                 'gantt': gantt_final,
-                'meta_nome': nome_base, 'meta_decoder': decoder_usado, 'meta_agentes': str_agentes
+                'meta_nome': nome_base, 
+                'meta_decoder': decoder_usado, 
+                'meta_agentes': str_agentes,
+                'meta_hora': hora_termino 
             }
+            
             if chave_unica not in FILA_BOTOES_PENDENTES:
                 FILA_BOTOES_PENDENTES.append(chave_unica)
 
