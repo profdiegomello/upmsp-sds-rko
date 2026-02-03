@@ -1,0 +1,5 @@
+{
+    "instance_path": "/home/user2041/Documentos/upmsp-sds-rko/bench/rsdst/large",
+    "output_path": "/home/user2041/Documentos/Meustestes",
+    "gantt_path": "/home/user2041/Documentos/Meustestes"
+}

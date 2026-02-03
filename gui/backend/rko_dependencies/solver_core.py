@@ -135,6 +135,14 @@ def run_rko(
             lns=1 if agents.get("LNS") else 0
         )
 
+        if execution_history:
+            # Varre o historico que foi capturado em tempo real 
+            melhor_via_log = min([p[1] for p in execution_history])
+            # Se o log viu um numero menor que o retorno oficial
+            if melhor_via_log < final_cost:
+                #debug: print(f"Solver retornou {final_cost}, mas o  Log registrou: {melhor_via_log}.")
+                final_cost = melhor_via_log
+
         runtime = time.time() - start_time
         # Adiciona ponto final no historico
         execution_history.append((runtime, final_cost))
