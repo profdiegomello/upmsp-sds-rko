@@ -738,8 +738,8 @@ class RKO:
                 for p in processes: 
                     if p.is_alive(): p.terminate()
 
-            cost, solution, time_elapsed = shared.pool.best_pair[0], shared.pool.best_pair[1], shared.pool.best_pair[2]
-            solutions.append(solution); costs.append(round(cost, 2)); times.append(round(-1 * time_elapsed, 2))
+            cost, solution, time_to_best = shared.pool.best_pair[0], shared.pool.best_pair[1], shared.pool.best_pair[2]
+            solutions.append(solution); costs.append(round(cost, 2)); times.append(round(-1 * time_to_best, 2))
             
         if self.save_directory:
             directory = os.path.dirname(self.save_directory)
@@ -747,7 +747,7 @@ class RKO:
             with open(self.save_directory, 'a', newline='') as f:
                 f.write(f'{time_total}, {self.env.instance_name}, {round(sum(costs)/len(costs),2)}, {costs}, {round(sum(times)/len(times),2)}, {times}\n')
 
-        return cost, solution, time_elapsed
+        return cost, solution, time_to_best
 
 # WORKERS 
 def _setup_worker_env(env, log_queue):
@@ -757,16 +757,16 @@ def _setup_worker_env(env, log_queue):
     2. Reconecta o callback do env para usar a mesma Queue (Isso conserta o Gantt).
     """
     if log_queue is not None:
-        # 1. Arruma o print (Texto)
+        # Arruma o print 
         sys.stdout = QueueWriter(log_queue)
         
-        # 2. Arruma o Callback (Gráfico)
-        # Criamos uma função local que sabe enviar para a fila deste processo
+        # Arruma o Callback 
+        #  funcaao local que sabe enviar para a fila deste processo
         def callback_processo_filho(dados):
             try:
                 log_queue.put(dados)
             except Exception:
-                pass # Evita travar o cálculo se a fila encher
+                pass # Evita travar o calculo se a fila encher
         
         # Substitui o callback quebrado pelo novo
         env.ui_callback = callback_processo_filho
@@ -801,55 +801,55 @@ def _injetar_parametros_gui(env, agente_nome):
             except: pass
 
 def _brkga_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) # <--- AQUI ESTÁ A CORREÇÃO
+    _setup_worker_env(env, log_queue) 
     _injetar_parametros_gui(env, 'BRKGA')
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time
     runner.BRKGA(tag, pool)
     
 def _MS_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) # <--- AQUI ESTÁ A CORREÇÃO
+    _setup_worker_env(env, log_queue) 
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time
     runner.MultiStart(tag, pool)
     
 def _VNS_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) # <--- AQUI ESTÁ A CORREÇÃO
+    _setup_worker_env(env, log_queue) 
     _injetar_parametros_gui(env, 'VNS')
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time 
     runner.VNS(limit_time, tag, pool)
     
 def _ILS_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) # <--- AQUI ESTÁ A CORREÇÃO
+    _setup_worker_env(env, log_queue) 
     _injetar_parametros_gui(env, 'ILS')
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time
     runner.ILS(limit_time, tag, pool)
     
 def _SA_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) # <--- AQUI ESTÁ A CORREÇÃO
+    _setup_worker_env(env, log_queue) 
     _injetar_parametros_gui(env, 'SA')
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time
     runner.SimulatedAnnealing(tag=tag, pool=pool)
     
 def _LNS_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) # <--- AQUI ESTÁ A CORREÇÃO
+    _setup_worker_env(env, log_queue) 
     _injetar_parametros_gui(env, 'LNS')
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time
     runner.LNS(limit_time=limit_time, tag=tag, pool=pool)
     
 def _PSO_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) # <--- AQUI ESTÁ A CORREÇÃO
+    _setup_worker_env(env, log_queue) 
     _injetar_parametros_gui(env, 'PSO')
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time
     runner.PSO(tag=tag, pool=pool)
     
 def _GA_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) # <--- AQUI ESTÁ A CORREÇÃO
+    _setup_worker_env(env, log_queue) 
     _injetar_parametros_gui(env, 'GA')
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time

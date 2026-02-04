@@ -15,6 +15,9 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 # Garante que o Matplotlib use o backend correto para Tkinter
 matplotlib.use("TkAgg")
 
+# Captura: [Agente] NEW BEST: Valor - Time: Tempo
+RE_NEW_BEST = re.compile(r"\[(.*?)\] NEW BEST: (\d+\.\d+).*?Time: (\d+\.\d+)")
+
 try:
     import backend.rko_gui_start as rko_gui_start
     pasta_backend_real = os.path.dirname(os.path.abspath(rko_gui_start.__file__))
@@ -128,7 +131,7 @@ def iniciar_watchdog_historico():
         # Atualiza a lista de Instancias no ComboBox 
         if VAR_FILTRO_INSTANCIA:
             instancias_unicas = sorted(list(set([v['meta_nome'] for v in HISTORICO_DATA.values()])))
-            valores_combo = ["all"] + instancias_unicas
+            # valores_combo = ["all"] + instancias_unicas # (Lógica movida para o aplicar_filtros para ser mais robusta)
             pass 
         
         aplicar_filtros_historico()
@@ -439,7 +442,7 @@ def manipulador_retorno_interface(dados):
     texto_log = dados.get("message", "")
     nome_pacote = dados.get("instancia") 
 
-    # INICIO DE JOB
+    # --- INICIO DE JOB ---
     if tipo_status == "running":
         if nome_pacote: NOME_INSTANCIA_ATUAL = nome_pacote
         MELHOR_MAKESPAN_ATUAL = float('inf'); TEMPO_INICIO_BATERIA = time.time(); DADOS_X.clear(); DADOS_Y.clear()
@@ -449,30 +452,48 @@ def manipulador_retorno_interface(dados):
             LINHA_GLOBAL.set_data([], []); AX_GLOBAL.set_title(f"{NOME_INSTANCIA_ATUAL}...", fontsize=10, color="white"); AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view(); CANVAS_GLOBAL.draw()
         if AX_GANTT: AX_GANTT.clear(); CANVAS_GANTT.draw()
 
-    # UPDATE VISUAL
+    # --- UPDATE VISUAL (GRÁFICOS) ---
     elif tipo_status == "update":
         makespan = dados.get("makespan"); gantt_data = dados.get("gantt_data")
+        
         if nome_pacote == NOME_INSTANCIA_ATUAL:
             if makespan <= MELHOR_MAKESPAN_ATUAL:
+                
+                # 1. Tenta pegar o tempo exato vindo do Backend (Enviado pelo rko_gui_start)
+                time_to_best = dados.get("time_to_best")
 
-                tempo_atual = time.time() - TEMPO_INICIO_BATERIA
-                time_to_best = dados.get("time_to_best", None); #NOTE Tentativa 1) aparentemente no dicionário dados ainda não há a chave "time_to_best"
-                if time_to_best is None: 
-                    time_to_best = tempo_atual 
+                # 2. Se não veio no pacote de dados, tenta extrair do texto do log (se houver)
+                if time_to_best is None and texto_log:
+                    match = RE_NEW_BEST.search(texto_log)
+                    if match:
+                        try: time_to_best = float(match.group(3))
+                        except: pass
+                
+                # 3. FALLBACK: Se falhar tudo, calcula localmente (evita Crash)
+                if time_to_best is None:
+                    time_to_best = time.time() - TEMPO_INICIO_BATERIA
 
+                # Atualiza gráficos se houver melhoria
                 if makespan < MELHOR_MAKESPAN_ATUAL:
                     MELHOR_MAKESPAN_ATUAL = makespan
-                    # DADOS_X.append(tempo_atual); DADOS_Y.append(makespan) #BUG está pegando o tempo_atual (local) da GUI e não o time_to_best informado pelo RKO para o novo makespan
-                    DADOS_X.append(time_to_best); DADOS_Y.append(makespan) #NEEDFIX deveria existir time_to_best para não ter que pegar tempo_atual
+                    DADOS_X.append(time_to_best); DADOS_Y.append(makespan) 
+                    
                     if CANVAS_GLOBAL: 
                         LINHA_GLOBAL.set_data(DADOS_X, DADOS_Y)
-                        AX_GLOBAL.set_title(f"Instance: {NOME_INSTANCIA_ATUAL}  |  Best: {MELHOR_MAKESPAN_ATUAL}  |  Elapsed Time: {tempo_atual:.2f}s", fontsize=10, color="#00FF00", fontweight="bold")
+                        AX_GLOBAL.set_title(f"Instance: {NOME_INSTANCIA_ATUAL}  |  Best: {MELHOR_MAKESPAN_ATUAL}  |  Elapsed Time: {time_to_best:.2f}s", fontsize=10, color="#00FF00", fontweight="bold")
                         AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view()
                         CANVAS_GLOBAL.draw()
-                if gantt_data and CANVAS_GANTT: 
-                    CANVAS_GANTT.get_tk_widget().after(0, lambda: atualizar_desenho_gantt(gantt_data, nome_pacote, tempo_atual))
+                    
+                    #imprime no output o update que nao veio
+                    #if "NEW BEST" not in texto_log:
+                    #    log_extra = f"[GUI UPDATE] NEW BEST: {MELHOR_MAKESPAN_ATUAL:.4f} - Time: {time_to_best:.2f}s"
+                    #    ESCRITOR   _TERMINAL_GLOBAL.write(f"{log_extra}\n")
+                    
 
-    # INSTANCIA CONCLUIDA SALVAR NO HISTORICO
+                if gantt_data and CANVAS_GANTT: 
+                    CANVAS_GANTT.get_tk_widget().after(0, lambda: atualizar_desenho_gantt(gantt_data, nome_pacote, time_to_best))
+
+    # --- INSTANCIA CONCLUIDA ---
     elif tipo_status == "instancia_concluida":
         nome_base = dados.get("instancia")
         hist_curve = dados.get("history_curve", []) 
@@ -484,7 +505,6 @@ def manipulador_retorno_interface(dados):
         else: str_agentes = str(agentes_usados)
 
         hora_termino = time.strftime("%d/%m/%y %H:%M:%S")
-        
         chave_unica = f"{nome_base} [{decoder_usado}] ({str_agentes}) @{hora_termino}"
 
         if nome_base:
@@ -497,26 +517,22 @@ def manipulador_retorno_interface(dados):
                 'meta_agentes': str_agentes,
                 'meta_hora': hora_termino 
             }
-            
             if chave_unica not in FILA_BOTOES_PENDENTES:
                 FILA_BOTOES_PENDENTES.append(chave_unica)
 
-    # FINALIZACAO E ERROS 
+    # --- LOGS E FIM ---
     elif tipo_status == "finished": 
         ESCRITOR_TERMINAL_GLOBAL.write(f"\n{'='*40}\n{texto_log}\n{'='*40}\n")
-        # SEMPRE Reseta, independente da mensagem
         try: START_BUTTON_GLOBAL.resetar_estado()
         except: pass
 
     elif tipo_status == "error": 
         ESCRITOR_TERMINAL_GLOBAL.write(f"ERRO: {texto_log}\n")
-        # SEMPRE Reseta em caso de erro
         try: START_BUTTON_GLOBAL.resetar_estado()
         except: pass
         
     elif tipo_status == "completed_all":
         ESCRITOR_TERMINAL_GLOBAL.write(f"\n>>> {texto_log} <<<\n")
-        # SEMPRE Reseta ao completar tudo
         try: START_BUTTON_GLOBAL.resetar_estado()
         except: pass
 
@@ -631,12 +647,10 @@ def configurar_aba_entrada_saida(aba):
         ent = ctk.CTkEntry(fr, border_color=CORES["primaria"], border_width=2, width=350)
         ent.grid(row=1, column=0, padx=10, pady=3)
         
-        # --- A CORREÇÃO ESTÁ AQUI ---
         # Se existir valor no cache para esta chave 'k', inserimos na caixa
         valor_cache = cache.get(k, "")
         if valor_cache:
             ent.insert(0, valor_cache)
-        # ----------------------------
 
         aba.widgets_armazenados[k] = ent 
         

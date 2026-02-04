@@ -134,7 +134,8 @@ def _executar_solver(dados, callback_interface):
                         "status": "update",
                         "makespan": resultado["makespan"],
                         "instancia": nome,
-                        "gantt_data": resultado.get("gantt_data")
+                        "gantt_data": resultado.get("gantt_data"),
+                        "time_to_best": resultado.get("time_to_best")
                     })
                     
                     lista_agentes_ativos = [k for k, v in agents.items() if v] if agents else ["Padrão"]
@@ -147,7 +148,7 @@ def _executar_solver(dados, callback_interface):
                         "history_curve": resultado.get("history_data", []), # Lista [(tempo, custo), ...]
                         "gantt_data": resultado.get("gantt_data"),
                         "decoder": decoder,            
-                        "agentes": lista_agentes_ativos
+                        "agentes": lista_agentes_ativos,
                     })
 
                     LOG_QUEUE.put({"status": "log", "message": f"Concluído: {nome} [Run {run_idx}]"})

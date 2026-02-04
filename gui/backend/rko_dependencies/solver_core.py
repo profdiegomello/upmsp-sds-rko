@@ -123,7 +123,7 @@ def run_rko(
         active_agents = [k for k, v in agents.items() if v]
         str_parameters = "+".join(active_agents) if active_agents else "RKO_DEFAULT"
 
-        final_cost, final_solution_keys, time_to_best = solver.solve(
+        final_cost, final_solution_keys, solver_time_to_best = solver.solve(
             time_total=time_limit,
             runs=1,
             brkga=1 if agents.get("BRKGA") else 0,
@@ -134,27 +134,29 @@ def run_rko(
             ga=1 if agents.get("GA") else 0, 
             lns=1 if agents.get("LNS") else 0
         )
+        
+        # O runtime total eh calculado aqui fora
+        runtime = time.time() - start_time
+        
+        # valor que veio do RKO
+        final_time_to_best = solver_time_to_best
 
+        #SINCRONIA COM LOGS 
         if stdout_execution_history:
-            # Varre o historico que foi capturado em tempo real 
             melhor_via_log = min([p[1] for p in stdout_execution_history])
-            # Se o log viu um numero menor que o retorno oficial
+            
+            # Se o log capturou algo melhor , atualizamos
             if melhor_via_log < final_cost:
-                #debug: print(f"Solver retornou {final_cost}, mas o  Log registrou: {melhor_via_log}.")
                 final_cost = melhor_via_log
-
-                # TODO: encontrar o valor de makespan em p[1] de hist_curve e retornar o p[0] para a variável time_melhor_via_log
-                for p in reversed(stdout_execution_history):
-                    if p[1] == melhor_via_log:
-                        time_melhor_via_log = abs(p[0])
-                        stdout_execution_history.append((time_melhor_via_log, melhor_via_log))   #TODO: verifique se deveria utilizar pro Y melhor_via_log o time_to_best 
+                # Buscamos o tempo desse log especifico
+                for t, v in stdout_execution_history:
+                    if v == melhor_via_log:
+                        final_time_to_best = t
                         break
-            else :
-                runtime = time.time() - start_time
-                # Adiciona ponto final no historico
-                # stdout_execution_history.append((runtime, final_cost))   #BUG: verifique se deveria utilizar pro Y melhor_via_log o runtime 
-                stdout_execution_history.append((abs(time_to_best), final_cost))
-
+            
+            # Adiciona ponto final no historico para o grafico fechar corretamente
+            stdout_execution_history.append((abs(final_time_to_best), final_cost))
+            stdout_execution_history.sort(key=lambda x: x[0])
 
     finally:
         sys.stdout = old_stdout
@@ -168,7 +170,7 @@ def run_rko(
                 while not log_queue.empty(): _ = log_queue.get_nowait()
             except Exception: pass
 
-    # PREPARA DADOS COMPLETOS PARA O RETORNO (Gantt + History)
+    # PREPARA DADOS COMPLETOS PARA O RETORNO
     raw_gantt_data = None
     try:
         M = env.dados["M"]
@@ -182,7 +184,7 @@ def run_rko(
     except Exception as e:
         print(f"[WARN] Erro ao preparar Gantt Data: {e}")
 
-    # SALVAR EM DISCO OS RESULTADOS DA CURVA DE CONVERGENCIA 
+    # SALVAR EM DISCO
     if save_path:
         try:
             path_limpo = save_path.strip()
@@ -195,18 +197,14 @@ def run_rko(
                 base_dir = path_limpo
             else:
                 directory = os.path.dirname(path_limpo)
-                if directory:
-                    os.makedirs(directory, exist_ok=True)
-                    base_dir = directory
-                else:
-                    base_dir = "."
+                if directory: os.makedirs(directory, exist_ok=True)
+                base_dir = directory if directory else "."
                 csv_filename = path_limpo
             
             nome_arq_curva = f"{env.instance_name}_timeXmksp.txt"
             caminho_curva = os.path.join(base_dir, nome_arq_curva)
             
             try:
-                stdout_execution_history.sort(key=lambda x: x[0])
                 with open(caminho_curva, "w") as f_curva:
                     f_curva.write("TEMPO\tMAKESPAN\n")
                     for t, mksp in stdout_execution_history:
@@ -225,7 +223,7 @@ def run_rko(
                 objetivo=final_cost,
                 lowerbound=None,
                 gap=None,
-                runtime=runtime,
+                runtime=runtime, # Tempo total de execução
                 constraints=0,
                 variables=0,
                 parameters=str_parameters,
@@ -238,16 +236,12 @@ def run_rko(
         except Exception as e:
             print(f"[ERROR] Falha ao salvar resultados: {e}")
 
-    # GERAR EM DISCO IMAGEM DO GANTT (SCHEDULE)
+    # GERAR GANTT EM DISCO
     if gantt_path and raw_gantt_data:
         try:
-            if not os.path.exists(gantt_path):
-                os.makedirs(gantt_path, exist_ok=True)
-            
+            if not os.path.exists(gantt_path): os.makedirs(gantt_path, exist_ok=True)
             nome_base_gantt = os.path.join(gantt_path, f"gantt_{env.instance_name}")
-            N = env.dados["N"]
-            N0 = [0] + list(N)
-            s = env.dados["S"]
+            N = env.dados["N"]; N0 = [0] + list(N); s = env.dados["S"]
 
             output_writer.gantt_chart(
                 M=raw_gantt_data["M"], N=N, N0=N0, p=raw_gantt_data["p"], s=s, 
@@ -258,20 +252,18 @@ def run_rko(
                 str_metodo=f"RKO-{env.decoder_name.upper()}"
             )
             print(f"[IO] Gantt final salvo em: {gantt_path}")
-
         except Exception as e:
             print(f"[ERROR] Falha ao gerar Gantt Final: {e}")
 
     final_schedule = env.decoder(final_solution_keys)
     
-    # RETORNA O PACOTE COMPLETO
     return {
         "makespan": final_cost,
         "schedule": final_schedule,
-        "time_to_best": time_to_best,
-        "runtime": runtime,
+        "time_to_best": final_time_to_best, 
+        "runtime": runtime,                 
         "instance": env.instance_name,
         "decoder": env.decoder_name,
         "history_data": stdout_execution_history, 
-        "gantt_data": raw_gantt_data       
+        "gantt_data": raw_gantt_data        
     }
