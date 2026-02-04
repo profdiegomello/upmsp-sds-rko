@@ -330,7 +330,7 @@ def aplicar_filtros_historico(evento=None):
 
         # Se nao for a selecionada, desenha cinza fraquinho
         if chave != CHAVE_SELECIONADA_ATUAL:
-            AX_HIST_LINHA.plot(eixo_x, eixo_y, color='white', alpha=0.4, linewidth=1)
+            AX_HIST_LINHA.plot(eixo_x, eixo_y, color='white', alpha=0.7, linewidth=1.5)
 
         # Recria o Botao com  as informacoes
         melhor_mksp = min(eixo_y) if eixo_y else "?"
