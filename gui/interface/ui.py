@@ -45,14 +45,14 @@ CORES = {
 FONTES = {
     "titulo": ("Roboto", 20, "bold"),
     "subtitulo": ("Roboto", 17, "bold"),
-    "corpo_negrito": ("Roboto", 12, "bold"),
+    "corpo_negrito": ("Roboto", 10, "bold"),
     "pequena": ("Roboto", 11)
 }
 
 LARGURA_JANELA = 1375
 ALTURA_JANELA = 975
 LARGURA_CARTAO_AGENTE = 360
-ALTURA_CARTAO_AGENTE = 300
+ALTURA_CARTAO_AGENTE = 260
 
 DIRETORIO_BASE = os.path.dirname(os.path.abspath(__file__))
 
@@ -215,7 +215,7 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     
     ctk.CTkLabel(frame_filtros, text="Filter by Decoder:", font=("Roboto", 10)).pack(anchor="w", padx=5)
     VAR_FILTRO_DECODER = ctk.StringVar(value="all")
-    combo_dec = ctk.CTkComboBox(frame_filtros, variable=VAR_FILTRO_DECODER, values=["all", "ECT", "KSTS", "M3LAW", "INCREMENTAL", "CHEAPEST"], state="readonly", height=22, font=("Roboto", 11), command=aplicar_filtros_historico)
+    combo_dec = ctk.CTkComboBox(frame_filtros, variable=VAR_FILTRO_DECODER, values=["all", "CHEAPEST", "M3LAW", "ECT", "INCREMENTAL", "KSTS"], state="readonly", height=22, font=("Roboto", 11), command=aplicar_filtros_historico)
     combo_dec.pack(fill="x", padx=5, pady=(0, 5))
 
     ctk.CTkLabel(frame_filtros, text="Select RKO Agents:", font=("Roboto", 10)).pack(anchor="w", padx=5)
@@ -528,7 +528,7 @@ def configurar_aba_parametros(aba):
     rotulo_decoder.grid(row=1, column=1, padx=10, sticky="s")
     
     combo_decoder = ctk.CTkComboBox(
-        aba, values=["ECT", "KSTS", "M3LAW", "INCREMENTAL", "CHEAPEST"], 
+        aba, values=["CHEAPEST", "M3LAW", "ECT", "INCREMENTAL", "KSTS"], 
         border_color=CORES["primaria"], border_width=2, corner_radius=0, 
         dropdown_fg_color="lavender", dropdown_text_color=CORES["texto_escuro"], dropdown_hover_color=CORES["destaque"]
     )
@@ -554,19 +554,19 @@ def configurar_aba_parametros(aba):
 def configurar_aba_agentes(aba):
     area_rolagem = ctk.CTkScrollableFrame(aba, width=1160, height=860, fg_color="transparent")
     area_rolagem.grid(row=0, column=0, columnspan=10, rowspan=10, padx=10, pady=10, sticky="nsew")
-    for i in range(3): area_rolagem.grid_columnconfigure(i, weight=1, minsize=360)
+    for i in range(3): area_rolagem.grid_columnconfigure(i, weight=1, minsize=400)
     aba.parametros_agentes = {} 
     
     ctk.CTkLabel(area_rolagem, text="AGENTS PARAMETERS", font=FONTES["titulo"], text_color=CORES["destaque"]).grid(row=0, column=0, columnspan=3, sticky="ew", padx=12, pady=(8,12))
     
     configuracao_agentes = {
         "BRKGA": {"linha": 1, "coluna": 0, "titulo": "BIASED RANDOM KEY GENETIC ALGORITHM (BRKGA)", "campos": [("Population", "100"), ("Elite set %", "0.20"), ("Mutant set %", "0.10"), ("Inheritance Prob", "0.70")]},
-        "SA": {"linha": 1, "coluna": 1, "titulo": "SIMULATED ANNEALING (SA)", "campos": [("Iterations", "50"), ("alphaSA", "0.99"), ("betaMin", "0.05"), ("betaMax", "0.25"), ("Initial Temperature", "10000")]},
-        "ILS": {"linha": 1, "coluna": 2, "titulo": "ITERATED LOCAL SEARCH (ILS)", "campos": [("betaMin", "0.1"), ("betaMax", "0.20")]},
-        "VNS": {"linha": 2, "coluna": 0, "titulo": "VARIABLE NEIGHBORHOOD SEARCH (VNS)", "campos": [("kMax", "5"), ("betaMin", "0.05")]},
-        "PSO": {"linha": 2, "coluna": 1, "titulo": "PARTICLE SWARM OPTIMIZATION (PSO)", "campos": [("PSize", "100"), ("c1", "2.05"), ("c2", "2.05"), ("w", "0.73")]},
-        "GA": {"linha": 3, "coluna": 0, "titulo": "GENETIC ALGORITHM (GA)", "campos": [("Population", "100"), ("CrosProb", "0.98"), ("MutProb", "0.005")]},
-        "LNS": {"linha": 3, "coluna": 1, "titulo": "LARGE NEIGHBORHOOD SEARCH (LNS)", "campos": [("betaMin", "0.10"), ("betaMax", "0.30"), ("T0", "1000"), ("alphaLNS", "0.95")]},
+        "SA":    {"linha": 1, "coluna": 1, "titulo": "SIMULATED ANNEALING (SA)", "campos": [("Iterations", "50"), ("alphaSA", "0.99"), ("betaMin", "0.05"), ("betaMax", "0.25"), ("Initial Temperature", "10000")]},
+        "PSO":   {"linha": 2, "coluna": 0, "titulo": "PARTICLE SWARM OPTIMIZATION (PSO)", "campos": [("PSize", "100"), ("c1", "2.05"), ("c2", "2.05"), ("w", "0.73")]},
+        "GA":    {"linha": 2, "coluna": 1, "titulo": "GENETIC ALGORITHM (GA)", "campos": [("Population", "100"), ("CrosProb", "0.98"), ("MutProb", "0.005")]},
+        "LNS":   {"linha": 1, "coluna": 2, "titulo": "LARGE NEIGHBORHOOD SEARCH (LNS)", "campos": [("betaMin", "0.10"), ("betaMax", "0.30"), ("T0", "1000"), ("alphaLNS", "0.95")]},
+        "VNS":   {"linha": 2, "coluna": 2, "titulo": "VARIABLE NEIGHBORHOOD SEARCH (VNS)", "campos": [("kMax", "5"), ("betaMin", "0.05")]},
+        "ILS":   {"linha": 3, "coluna": 2, "titulo": "ITERATED LOCAL SEARCH (ILS)", "campos": [("betaMin", "0.1"), ("betaMax", "0.20")]},
     }
     for nome, config in configuracao_agentes.items():
         aba.parametros_agentes[nome] = criar_cartao_agente(area_rolagem, config)
@@ -574,18 +574,22 @@ def configurar_aba_agentes(aba):
 def criar_cartao_agente(conteiner_pai, config):
     frame = ctk.CTkFrame(conteiner_pai, fg_color=CORES["fundo_cartao"], width=LARGURA_CARTAO_AGENTE, height=ALTURA_CARTAO_AGENTE, border_width=1, border_color=CORES["borda"])
     frame.grid(row=config["linha"], column=config["coluna"], padx=8, pady=8, sticky="n")
-    frame.grid_propagate(False)
+    
+    frame.grid_propagate(False) # cada card utiliza o mesmo tamanho dos demais
+    # frame.grid_propagate(True) # cada card usa somente o tamanho mínimo necessário
     
     ctk.CTkLabel(frame, text=config["titulo"], font=FONTES["corpo_negrito"], text_color=CORES["destaque"]).grid(row=0, column=0, sticky="w", padx=10, pady=(8,4))
     var_chk = tk.BooleanVar(value=True)
     ctk.CTkCheckBox(frame, text="", variable=var_chk).grid(row=0, column=1, sticky="e", padx=10, pady=(8,4))
     
-    widgets = {"frame_conteiner": frame, "variavel_controle": var_chk}
+    widgets = {"frame_conteiner": frame , "variavel_controle": var_chk}
     for i, (txt, val) in enumerate(config["campos"], start=1):
-        ctk.CTkLabel(frame, text=txt, anchor="w", font=FONTES["pequena"]).grid(row=i, column=0, sticky="w", padx=10, pady=6)
-        ent = ctk.CTkEntry(frame, width=90); ent.insert(0, val)
-        col = 1 if config.get("coluna", 0) != 0 else 0
-        ent.grid(row=i, column=col, sticky="e", padx=10 if config.get("coluna",0) != 0 else 0, pady=6)
+        ctk.CTkLabel(frame, text=txt, anchor="w", font=FONTES["pequena"]).grid(row=i, column=0, sticky="w", padx=70+20, pady=6)
+        
+        ent = ctk.CTkEntry(frame, width=70); ent.insert(0, val)
+        # col = 1 if config.get("coluna", 0) != 0 else 0
+        ent.grid(row=i, column=0, sticky="w", padx=10 if config.get("coluna",0) != 0 else 0, pady=6)
+        
         widgets[txt] = ent
     return widgets
 
