@@ -54,11 +54,9 @@ ALTURA_JANELA = 975
 LARGURA_CARTAO_AGENTE = 360
 ALTURA_CARTAO_AGENTE = 300
 
-# Pega o diretório onde este arquivo (ui.py) está salvo
 DIRETORIO_BASE = os.path.dirname(os.path.abspath(__file__))
 
 # Monta o caminho apontando para a pasta backend vizinha
-
 ESCRITOR_TERMINAL_GLOBAL = None
 START_BUTTON_GLOBAL = None
 
@@ -128,7 +126,6 @@ def iniciar_watchdog_historico():
                 ags = dados.get('meta_agentes', 'Agents')
                 hora = dados.get('meta_hora', '') # Recupera a hora
                 
-                # --- NOVO LAYOUT DO TEXTO DO BOTÃO ---
                 # Linha 1: Nome + Hora (Pequena)
                 # Linha 2: Agentes
                 # Linha 3: Makespan
@@ -144,8 +141,7 @@ def iniciar_watchdog_historico():
                     command=lambda k=chave_unica: carregar_instancia_historico(k)
                 )
                 
-                # A chave privada agora é única com o timestamp, 
-                # então o highlight vai funcionar perfeitamente apenas neste botão.
+                # A chave privada agora e única com o timestamp, 
                 btn.chave_privada = chave_unica 
                 btn.grid(sticky="ew", pady=5, padx=5)
 
@@ -197,7 +193,7 @@ def configurar_aba_gantt_live(aba):
     NavigationToolbar2Tk(CANVAS_GANTT, frame).pack(side="bottom", fill="x")
     return frame
 
-def configurar_aba_historico(aba, largura_total=1600, altura_total=900):
+def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     global FRAME_LISTA_HISTORICO, FIG_HIST_LINHA, AX_HIST_LINHA, CANVAS_HIST_LINHA, FIG_HIST_GANTT, AX_HIST_GANTT, CANVAS_HIST_GANTT
 
     # Largura total - 40 (menu) - 300 (lista) - 15 
@@ -686,8 +682,8 @@ def construir_aplicacao():
     janela = ctk.CTk()
     janela.title("RKO-SOLVER")
     
-    LARGURA_FIXA = 1600
-    ALTURA_FIXA = 900
+    LARGURA_FIXA = 1280
+    ALTURA_FIXA = 810
     
     # Centraliza
     ws = janela.winfo_screenwidth()
@@ -728,7 +724,7 @@ def construir_aplicacao():
     configurar_aba_grafico(aba_gra)
     configurar_aba_gantt_live(aba_gan)
     
-    configurar_aba_historico(aba_hist, largura_total=1600, altura_total=900)
+    configurar_aba_historico(aba_hist, largura_total=1280, altura_total=810)
 
     show(aba_p)
     janela.protocol("WM_DELETE_WINDOW", lambda: (janela.destroy(), sys.exit(0)))
