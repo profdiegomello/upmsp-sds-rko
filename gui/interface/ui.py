@@ -20,7 +20,7 @@ try:
     pasta_backend_real = os.path.dirname(os.path.abspath(rko_gui_start.__file__))
     CAMINHO_CACHE_IO = os.path.join(pasta_backend_real, "temp_io_paths.txt")
 except ImportError:
-    print("ERRO: 'rko_gui_start.py' não encontrado.")
+    print("[ERROR] 'rko_gui_start.py' not found in PATH.")
     rko_gui_start = None
     CAMINHO_CACHE_IO = "temp_io_paths.txt"
 
@@ -67,7 +67,7 @@ CANVAS_GLOBAL = None
 LINHA_GLOBAL = None
 DADOS_X = []
 DADOS_Y = []
-NOME_INSTANCIA_ATUAL = "Aguardando..."
+NOME_INSTANCIA_ATUAL = "Waiting..."
 
 # Gantt (dinamico)
 FIG_GANTT = None
@@ -99,7 +99,7 @@ def carregar_cache_caminhos():
             with open(CAMINHO_CACHE_IO, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            print(f"Erro ao ler cache IO: {e}")
+            print(f"[ERROR] reading IO cache: {e}")
     return {}
 
 def salvar_cache_caminhos(inst_path, out_path, gantt_path):
@@ -113,7 +113,7 @@ def salvar_cache_caminhos(inst_path, out_path, gantt_path):
         with open(CAMINHO_CACHE_IO, "w", encoding="utf-8") as f:
             json.dump(dados, f, indent=4)
     except Exception as e:
-        print(f"Aviso (Cache IO): {e}")
+        print(f"[WARN] writing IO cache: {e}")
 
 # Cria os botoes do historico 
 # Daemon (watchdog) responsavel por verificar constantemente
@@ -128,7 +128,7 @@ def iniciar_watchdog_historico():
         # Atualiza a lista de Instancias no ComboBox 
         if VAR_FILTRO_INSTANCIA:
             instancias_unicas = sorted(list(set([v['meta_nome'] for v in HISTORICO_DATA.values()])))
-            valores_combo = ["Todas"] + instancias_unicas
+            valores_combo = ["all"] + instancias_unicas
             pass 
         
         aplicar_filtros_historico()
@@ -146,9 +146,9 @@ def configurar_aba_grafico(aba):
     FIG_GLOBAL, AX_GLOBAL = plt.subplots(figsize=(5, 4), dpi=100)
     FIG_GLOBAL.patch.set_facecolor('#242424') 
     AX_GLOBAL.set_facecolor('#2b2b2b')
-    AX_GLOBAL.set_title("Evolução do Makespan (Tempo Real)", fontsize=10, color="white")
-    AX_GLOBAL.set_xlabel("Tempo (s)", fontsize=9, color="white")
-    AX_GLOBAL.set_ylabel("Makespan (Custo)", fontsize=9, color="white")
+    AX_GLOBAL.set_title("Convergence of Makespan (updated in real time)", fontsize=10, color="white")
+    AX_GLOBAL.set_xlabel("Time (sec)", fontsize=9, color="white")
+    AX_GLOBAL.set_ylabel("Makespan (cost)", fontsize=9, color="white")
     AX_GLOBAL.grid(True, linestyle='--', alpha=0.3)
     
     LINHA_GLOBAL, = AX_GLOBAL.plot([], [], color='#00FF00', linewidth=2, marker='o', markersize=4)
@@ -168,9 +168,9 @@ def configurar_aba_gantt_live(aba):
     FIG_GANTT, AX_GANTT = plt.subplots(figsize=(5, 4), dpi=100)
     FIG_GANTT.patch.set_facecolor('#242424') 
     AX_GANTT.set_facecolor('#212121')
-    AX_GANTT.set_title("Gantt Dinâmico", fontsize=10, color="white")
-    AX_GANTT.set_xlabel("Horizonte", fontsize=9, color="white")
-    AX_GANTT.set_ylabel("Máquinas", fontsize=9, color="white")
+    AX_GANTT.set_title("Current Schedule (updated in real time)", fontsize=10, color="white")
+    AX_GANTT.set_xlabel("Horizon", fontsize=9, color="white")
+    AX_GANTT.set_ylabel("Machines", fontsize=9, color="white")
     AX_GANTT.grid(True, linestyle='--', alpha=0.1, color='white')
 
     CANVAS_GANTT = FigureCanvasTkAgg(FIG_GANTT, master=frame)
@@ -208,17 +208,17 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     frame_filtros = ctk.CTkFrame(frame_esq, fg_color="#242424", corner_radius=8)
     frame_filtros.grid(row=1, column=0, sticky="ew", pady=(0, 10), padx=2)
     
-    ctk.CTkLabel(frame_filtros, text="Filter Instance:", font=("Roboto", 10)).pack(anchor="w", padx=5, pady=(5,0))
-    VAR_FILTRO_INSTANCIA = ctk.StringVar(value="Todas")
-    COMBO_INSTANCIAS = ctk.CTkComboBox(frame_filtros, variable=VAR_FILTRO_INSTANCIA, values=["Todas"], state="readonly", height=22, font=("Roboto", 11), command=aplicar_filtros_historico)
+    ctk.CTkLabel(frame_filtros, text="Filter by Instance:", font=("Roboto", 10)).pack(anchor="w", padx=5, pady=(5,0))
+    VAR_FILTRO_INSTANCIA = ctk.StringVar(value="all")
+    COMBO_INSTANCIAS = ctk.CTkComboBox(frame_filtros, variable=VAR_FILTRO_INSTANCIA, values=["all"], state="readonly", height=22, font=("Roboto", 11), command=aplicar_filtros_historico)
     COMBO_INSTANCIAS.pack(fill="x", padx=5, pady=(0, 5))
     
-    ctk.CTkLabel(frame_filtros, text="Filter Decoder:", font=("Roboto", 10)).pack(anchor="w", padx=5)
-    VAR_FILTRO_DECODER = ctk.StringVar(value="Todos")
-    combo_dec = ctk.CTkComboBox(frame_filtros, variable=VAR_FILTRO_DECODER, values=["Todos", "ECT", "KSTS", "M3LAW", "INCREMENTAL", "CHEAPEST"], state="readonly", height=22, font=("Roboto", 11), command=aplicar_filtros_historico)
+    ctk.CTkLabel(frame_filtros, text="Filter by Decoder:", font=("Roboto", 10)).pack(anchor="w", padx=5)
+    VAR_FILTRO_DECODER = ctk.StringVar(value="all")
+    combo_dec = ctk.CTkComboBox(frame_filtros, variable=VAR_FILTRO_DECODER, values=["all", "ECT", "KSTS", "M3LAW", "INCREMENTAL", "CHEAPEST"], state="readonly", height=22, font=("Roboto", 11), command=aplicar_filtros_historico)
     combo_dec.pack(fill="x", padx=5, pady=(0, 5))
 
-    ctk.CTkLabel(frame_filtros, text="Select Agents:", font=("Roboto", 10)).pack(anchor="w", padx=5)
+    ctk.CTkLabel(frame_filtros, text="Select RKO Agents:", font=("Roboto", 10)).pack(anchor="w", padx=5)
     frame_checks = ctk.CTkFrame(frame_filtros, fg_color="transparent")
     frame_checks.pack(fill="x", padx=2, pady=2)
     
@@ -247,7 +247,7 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     
     FIG_HIST_LINHA, AX_HIST_LINHA = plt.subplots(dpi=100) 
     FIG_HIST_LINHA.patch.set_facecolor('#242424'); AX_HIST_LINHA.set_facecolor('#2b2b2b')
-    AX_HIST_LINHA.set_title("Convergência Comparativa", color="white", fontsize=10)
+    AX_HIST_LINHA.set_title("Convergence Curves", color="white", fontsize=10)
     AX_HIST_LINHA.tick_params(colors='white', labelsize=8)
     for s in AX_HIST_LINHA.spines.values(): s.set_color('white')
     FIG_HIST_LINHA.subplots_adjust(left=0.05, right=0.98, top=0.92, bottom=0.10)
@@ -263,7 +263,7 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     
     FIG_HIST_GANTT, AX_HIST_GANTT = plt.subplots(dpi=100)
     FIG_HIST_GANTT.patch.set_facecolor('#242424'); AX_HIST_GANTT.set_facecolor('#212121')
-    AX_HIST_GANTT.set_title("Cronograma Selecionado", color="white", fontsize=10)
+    AX_HIST_GANTT.set_title("Current Schedule", color="white", fontsize=10)
     AX_HIST_GANTT.tick_params(colors='white', labelsize=8)
     for s in AX_HIST_GANTT.spines.values(): s.set_color('white')
     FIG_HIST_GANTT.subplots_adjust(left=0.05, right=0.98, top=0.95, bottom=0.05)
@@ -294,14 +294,14 @@ def aplicar_filtros_historico(evento=None):
     # Atualiza a lista do ComboBox para garantir que tenha todas as instancias 
     if COMBO_INSTANCIAS and HISTORICO_DATA:
         nomes_unicos = sorted(list(set([v['meta_nome'] for v in HISTORICO_DATA.values()])))
-        COMBO_INSTANCIAS.configure(values=["Todas"] + nomes_unicos)
+        COMBO_INSTANCIAS.configure(values=["all"] + nomes_unicos)
 
     for chave, dados in HISTORICO_DATA.items():
         # Filtro de Nome da Instâacia
-        if f_inst != "Todas" and dados['meta_nome'] != f_inst: continue
+        if f_inst != "all" and dados['meta_nome'] != f_inst: continue
         
         # Filtro de Decoder
-        if f_dec != "Todos" and dados['meta_decoder'].lower() != f_dec.lower(): continue
+        if f_dec != "all" and dados['meta_decoder'].lower() != f_dec.lower(): continue
             
         # Filtro de Agentes 
         str_agentes_run = dados['meta_agentes']
@@ -337,7 +337,7 @@ def aplicar_filtros_historico(evento=None):
         hora = dados.get('meta_hora', '')
         
         # Texto completo
-        txt_btn = f"{dados['meta_nome']}\nData: {hora}\n{dados['meta_decoder']} [{dados['meta_agentes']}]\nMake: {melhor_mksp}"
+        txt_btn = f"{dados['meta_nome']}\nData: {hora}\nDecoder: {dados['meta_decoder']}\nAgents: [{dados['meta_agentes']}]\nMakespan: {melhor_mksp}"
         
         cor_btn = CORES["destaque"] if chave == CHAVE_SELECIONADA_ATUAL else "#333333"
         
@@ -354,10 +354,10 @@ def aplicar_filtros_historico(evento=None):
         dados = HISTORICO_DATA[CHAVE_SELECIONADA_ATUAL]
         eixo_x, eixo_y = zip(*sorted(zip(dados['x'], dados['y']), key=lambda p: p[0]))
         
-        AX_HIST_LINHA.plot(eixo_x, eixo_y, color='#00FF00', linewidth=2.5, marker='o', markersize=4, label="Selecionado")
-        AX_HIST_LINHA.set_title(f"Convergência Comparativa | Destaque: {dados['meta_nome']} (Melhor: {min(eixo_y)})", color="white", fontsize=10)
+        AX_HIST_LINHA.plot(eixo_x, eixo_y, color='#00FF00', linewidth=2.5, marker='o', markersize=4, label="Selected")
+        AX_HIST_LINHA.set_title(f"Convergence Curves | Selected: {dados['meta_nome']} (Makespan: {min(eixo_y)})", color="white", fontsize=10)
     else:
-        AX_HIST_LINHA.set_title(f"Convergência Comparativa (Exibindo {len(chaves_filtradas)} execuções)", color="white", fontsize=10)
+        AX_HIST_LINHA.set_title(f"Convergence Curves (filtered {len(chaves_filtradas)} executions)", color="white", fontsize=10)
 
     AX_HIST_LINHA.grid(True, linestyle='--', alpha=0.3)
     CANVAS_HIST_LINHA.draw()
@@ -389,7 +389,7 @@ def carregar_instancia_historico(chave_unica):
                 if proc > 0: AX_HIST_GANTT.text(start + proc/2, f'M{i}', f'{j}', ha='center', va='center', color='white', fontsize=6, fontweight='bold')
     
     AX_HIST_GANTT.set_facecolor('#212121'); AX_HIST_GANTT.invert_yaxis()
-    AX_HIST_GANTT.set_title(f"Cronograma Selecionado | Makespan: {max_makespan}", color="white", fontsize=10)
+    AX_HIST_GANTT.set_title(f"Current Schedule | Makespan: {max_makespan}", color="white", fontsize=10)
     AX_HIST_GANTT.tick_params(colors='white')
     for s in AX_HIST_GANTT.spines.values(): s.set_color('white')
     CANVAS_HIST_GANTT.draw()
@@ -410,9 +410,9 @@ def atualizar_desenho_gantt(dados_gantt, nome_instancia, tempo_decorrido):
             AX_GANTT.barh(y=f'M{i}', width=proc, left=start, height=0.6, color=colors(j), edgecolor='black', alpha=0.9)
             if proc > 0: AX_GANTT.text(start + proc/2, f'M{i}', f'{j}', ha='center', va='center', color='white', fontsize=7, fontweight='bold')
     AX_GANTT.set_facecolor('#212121'); AX_GANTT.invert_yaxis()
-    AX_GANTT.set_title(f"Instância: {nome_instancia}  |  Makespan: {max_completion_time}  |  Tempo: {tempo_decorrido:.2f}s", color="white", fontsize=11, fontweight="bold")
-    AX_GANTT.set_xlabel("Horizonte", fontsize=9, color="white")
-    AX_GANTT.set_ylabel("Máquinas", fontsize=9, color="white")
+    AX_GANTT.set_title(f"Instance: {nome_instancia}  |  Makespan: {max_completion_time}  |  Elapsed Time: {tempo_decorrido:.2f}s", color="white", fontsize=11, fontweight="bold")
+    AX_GANTT.set_xlabel("Horizon", fontsize=9, color="white")
+    AX_GANTT.set_ylabel("Machines", fontsize=9, color="white")
     AX_GANTT.tick_params(axis='x', colors='white', labelsize=8); AX_GANTT.tick_params(axis='y', colors='white', labelsize=8)
     for s in AX_GANTT.spines.values(): s.set_color('white')
     AX_GANTT.grid(axis='x', linestyle='--', alpha=0.2, color='white')
@@ -460,7 +460,7 @@ def manipulador_retorno_interface(dados):
                     DADOS_X.append(tempo_atual); DADOS_Y.append(makespan)
                     if CANVAS_GLOBAL: 
                         LINHA_GLOBAL.set_data(DADOS_X, DADOS_Y)
-                        AX_GLOBAL.set_title(f"{NOME_INSTANCIA_ATUAL}  |  Melhor: {MELHOR_MAKESPAN_ATUAL}", fontsize=10, color="#00FF00", fontweight="bold")
+                        AX_GLOBAL.set_title(f"Instance: {NOME_INSTANCIA_ATUAL}  |  Best: {MELHOR_MAKESPAN_ATUAL}  |  Elapsed Time: {tempo_atual:.2f}s", fontsize=10, color="#00FF00", fontweight="bold")
                         AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view()
                         CANVAS_GLOBAL.draw()
                 if gantt_data and CANVAS_GANTT: 

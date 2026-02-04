@@ -20,6 +20,10 @@ bench/rsdstruiz-upmsp-sds.zip
 token.txt
 .env
 
+temp_io_paths.txt
+gui/backend/temp_io_paths.txt
+app/gui/backend/temp_io_paths.txt
+
 # Ignorar plots do rko-tsp
 Synthetic-solution.png
 src/original/rko-tsp/*-solution.png
@@ -27,3 +31,6 @@ src/original/rko-tsp/*-solution.png
 # Ignorar plots do analysis_rko-tsp
 src/original/analysis_rko-tsp/*/*.png
 src/original/analysis_rko-tsp/*/*.log
+
+# Ignorar plots do exp/results
+exp/results/graficos/*.png
