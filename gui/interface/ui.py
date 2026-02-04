@@ -85,6 +85,13 @@ FRAME_LISTA_HISTORICO = None
 FIG_HIST_LINHA, AX_HIST_LINHA, CANVAS_HIST_LINHA = None, None, None
 FIG_HIST_GANTT, AX_HIST_GANTT, CANVAS_HIST_GANTT = None, None, None
 
+# GLOBAIS PARA FILTROS DO HISTORICO 
+VAR_FILTRO_INSTANCIA = None
+VAR_FILTRO_DECODER = None
+VARS_FILTRO_AGENTES = {} # Dict {'BRKGA': BooleanVar, ...}
+CHAVE_SELECIONADA_ATUAL = None # Para saber qual pintar de verde
+COMBO_INSTANCIAS = None
+
 def carregar_cache_caminhos():
     """Lê o arquivo temp e retorna um dicionário com os caminhos salvos."""
     if os.path.exists(CAMINHO_CACHE_IO):
@@ -111,45 +118,24 @@ def salvar_cache_caminhos(inst_path, out_path, gantt_path):
 # Cria os botoes do historico 
 # Daemon (watchdog) responsavel por verificar constantemente
 def iniciar_watchdog_historico():
-    global FILA_BOTOES_PENDENTES, FRAME_LISTA_HISTORICO, HISTORICO_DATA
+    global FILA_BOTOES_PENDENTES, VAR_FILTRO_INSTANCIA
     
-    if FILA_BOTOES_PENDENTES and FRAME_LISTA_HISTORICO:
-        chave_unica = FILA_BOTOES_PENDENTES.pop(0)
+    # Se houver novos itens na fila
+    if FILA_BOTOES_PENDENTES:
+        # Esvazia a fila (pois o aplicar_filtros vai ler tudo do HISTORICO_DATA direto)
+        FILA_BOTOES_PENDENTES.clear()
         
-        if chave_unica in HISTORICO_DATA:
-            try:
-                dados = HISTORICO_DATA[chave_unica]
-                melhor_mksp = min(dados['y']) if dados['y'] else "?"
-                
-                nome_arq = dados.get('meta_nome', 'Instancia')
-                dec = dados.get('meta_decoder', 'Dec')
-                ags = dados.get('meta_agentes', 'Agents')
-                hora = dados.get('meta_hora', '') # Recupera a hora
-                
-                # Linha 1: Nome + Hora (Pequena)
-                # Linha 2: Agentes
-                # Linha 3: Makespan
-                texto_display = f"{nome_arq} ({hora})\n{dec} [{ags}]\nMake: {melhor_mksp}"
-                
-                btn = ctk.CTkButton(
-                    FRAME_LISTA_HISTORICO, 
-                    text=texto_display,
-                    font=("Roboto", 11),
-                    fg_color="#333333", 
-                    hover_color= "#689EAD",
-                    height=60,
-                    command=lambda k=chave_unica: carregar_instancia_historico(k)
-                )
-                
-                # A chave privada agora e única com o timestamp, 
-                btn.chave_privada = chave_unica 
-                btn.grid(sticky="ew", pady=5, padx=5)
+        # Atualiza a lista de Instancias no ComboBox 
+        if VAR_FILTRO_INSTANCIA:
+            instancias_unicas = sorted(list(set([v['meta_nome'] for v in HISTORICO_DATA.values()])))
+            valores_combo = ["Todas"] + instancias_unicas
+            pass 
+        
+        aplicar_filtros_historico()
 
-            except Exception as e:
-                print(f"Erro Watchdog: {e}")
-
+    # Roda a cada 1 segundo
     if FRAME_LISTA_HISTORICO:
-        FRAME_LISTA_HISTORICO.after(500, iniciar_watchdog_historico)
+        FRAME_LISTA_HISTORICO.after(1000, iniciar_watchdog_historico)
 
 def configurar_aba_grafico(aba):
     global FIG_GLOBAL, AX_GLOBAL, CANVAS_GLOBAL, LINHA_GLOBAL
@@ -195,86 +181,92 @@ def configurar_aba_gantt_live(aba):
 
 def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     global FRAME_LISTA_HISTORICO, FIG_HIST_LINHA, AX_HIST_LINHA, CANVAS_HIST_LINHA, FIG_HIST_GANTT, AX_HIST_GANTT, CANVAS_HIST_GANTT
+    global VAR_FILTRO_INSTANCIA, VAR_FILTRO_DECODER, VARS_FILTRO_AGENTES, COMBO_INSTANCIAS
 
-    # Largura total - 40 (menu) - 300 (lista) - 15 
-    LARGURA_GRAFICOS = largura_total - 40 - 300 - 15
-    
-    # Altura útil descontando margens pequenas
-    ALTURA_UTIL = altura_total - 10 
-    
-    # Altura: 30% Cima / 70% Baixo
-    ALTURA_FRAME_CIMA = int(ALTURA_UTIL * 0.30)
-    ALTURA_FRAME_BAIXO = int(ALTURA_UTIL * 0.70) 
+    for i in range(2, 20):
+        aba.grid_columnconfigure(i, weight=0, minsize=0)
+        aba.grid_rowconfigure(i, weight=0, minsize=0)
 
-    # Coluna 0 (Esquerda): Fixo
-    aba.grid_columnconfigure(0, weight=0) 
-    # Coluna 1 (Direita): Peso TOTAL para crescer
+    # Coluna 0: Menu Esquerdo
+    aba.grid_columnconfigure(0, weight=0, minsize=280) 
+    # Coluna 1: Graficos 
     aba.grid_columnconfigure(1, weight=1) 
-    # Row 0: Peso total para crescer até o chão
+    # Linha 0: Altura total
     aba.grid_rowconfigure(0, weight=1)
 
-    # ESQUERDA 
-    frame_esq = ctk.CTkFrame(aba, fg_color="transparent", width=300)
-    # rowspan=10 garante que ele ocupe todas as linhas da malha base
+    # ESQUERDA
+    frame_esq = ctk.CTkFrame(aba, fg_color="transparent", width=270)
     frame_esq.grid(row=0, column=0, rowspan=10, sticky="nsew", padx=(5, 5), pady=(5, 5))
-    frame_esq.grid_propagate(False) # Mantém largura fixa de 300
-    frame_esq.grid_rowconfigure(1, weight=1); frame_esq.grid_columnconfigure(0, weight=1)
-
-    ctk.CTkLabel(frame_esq, text="FINISHED JOBS", font=("Roboto", 16, "bold"), text_color=CORES["destaque"]).grid(row=0, column=0, pady=(0, 5), padx=5, sticky="ew")
     
-    FRAME_LISTA_HISTORICO = ctk.CTkScrollableFrame(frame_esq, width=280, fg_color=CORES["fundo_cartao"], corner_radius=10)
-    FRAME_LISTA_HISTORICO.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
+    frame_esq.grid_rowconfigure(2, weight=1) 
+    frame_esq.grid_columnconfigure(0, weight=1)
+
+    # Titulo
+    ctk.CTkLabel(frame_esq, text="FINISHED JOBS", font=("Roboto", 16, "bold"), text_color=CORES["destaque"]).grid(row=0, column=0, pady=(0, 5), sticky="ew")
+
+    # filtros
+    frame_filtros = ctk.CTkFrame(frame_esq, fg_color="#242424", corner_radius=8)
+    frame_filtros.grid(row=1, column=0, sticky="ew", pady=(0, 10), padx=2)
+    
+    ctk.CTkLabel(frame_filtros, text="Filter Instance:", font=("Roboto", 10)).pack(anchor="w", padx=5, pady=(5,0))
+    VAR_FILTRO_INSTANCIA = ctk.StringVar(value="Todas")
+    COMBO_INSTANCIAS = ctk.CTkComboBox(frame_filtros, variable=VAR_FILTRO_INSTANCIA, values=["Todas"], state="readonly", height=22, font=("Roboto", 11), command=aplicar_filtros_historico)
+    COMBO_INSTANCIAS.pack(fill="x", padx=5, pady=(0, 5))
+    
+    ctk.CTkLabel(frame_filtros, text="Filter Decoder:", font=("Roboto", 10)).pack(anchor="w", padx=5)
+    VAR_FILTRO_DECODER = ctk.StringVar(value="Todos")
+    combo_dec = ctk.CTkComboBox(frame_filtros, variable=VAR_FILTRO_DECODER, values=["Todos", "ECT", "KSTS", "M3LAW", "INCREMENTAL", "CHEAPEST"], state="readonly", height=22, font=("Roboto", 11), command=aplicar_filtros_historico)
+    combo_dec.pack(fill="x", padx=5, pady=(0, 5))
+
+    ctk.CTkLabel(frame_filtros, text="Select Agents:", font=("Roboto", 10)).pack(anchor="w", padx=5)
+    frame_checks = ctk.CTkFrame(frame_filtros, fg_color="transparent")
+    frame_checks.pack(fill="x", padx=2, pady=2)
+    
+    lista_agentes = ["BRKGA", "SA", "ILS", "VNS", "PSO", "GA", "LNS"]
+    VARS_FILTRO_AGENTES = {}
+    for i, ag in enumerate(lista_agentes):
+        var = ctk.BooleanVar(value=False)
+        chk = ctk.CTkCheckBox(frame_checks, text=ag, variable=var, font=("Roboto", 9), height=16, width=16, checkbox_width=16, checkbox_height=16, command=aplicar_filtros_historico)
+        chk.grid(row=i//3, column=i%3, sticky="w", padx=2, pady=2)
+        VARS_FILTRO_AGENTES[ag] = var
+
+    # Lista
+    FRAME_LISTA_HISTORICO = ctk.CTkScrollableFrame(frame_esq, width=250, fg_color=CORES["fundo_cartao"], corner_radius=10)
+    FRAME_LISTA_HISTORICO.grid(row=2, column=0, sticky="nsew", padx=0, pady=0)
     FRAME_LISTA_HISTORICO.grid_columnconfigure(0, weight=1)
-    
-    # DIREITA 
-    frame_dir = ctk.CTkFrame(aba, fg_color="transparent")
-    
-    frame_dir.grid(row=0, column=1, rowspan=10, columnspan=9, sticky="nsew", padx=(0, 5), pady=(5, 5))
-    
-    # Grid interno da direita
-    frame_dir.grid_columnconfigure(0, weight=1)
-    frame_dir.grid_rowconfigure(0, weight=3) # Peso 3 para Cima
-    frame_dir.grid_rowconfigure(1, weight=7) # Peso 7 para Baixo 
 
-    # GRAFICO 1 
-    frame_top = ctk.CTkFrame(
-        frame_dir, fg_color="#242424", corner_radius=10, 
-        border_width=2, border_color="#333333",
-        height=ALTURA_FRAME_CIMA, width=LARGURA_GRAFICOS
-    )
-    # Sticky NSEW estica ele para preencher o buraco da row 0
-    frame_top.grid(row=0, column=0, sticky="nsew", pady=(0, 5))
+    #  DIREITA: scrolling
+    frame_dir = ctk.CTkScrollableFrame(aba, fg_color="transparent")
+    frame_dir.grid(row=0, column=1, rowspan=10, sticky="nsew", padx=(5, 5), pady=5)
+    frame_dir.grid_columnconfigure(0, weight=1) 
 
-    frame_top.grid_propagate(False) 
+    # GRAFICO 1
+    frame_top = ctk.CTkFrame(frame_dir, fg_color="#242424", corner_radius=10, height=450) 
+    frame_top.pack(fill="x", pady=(0, 20)) 
+    frame_top.pack_propagate(False) 
     
-    FIG_HIST_LINHA, AX_HIST_LINHA = plt.subplots(figsize=(15, 3), dpi=100) 
+    FIG_HIST_LINHA, AX_HIST_LINHA = plt.subplots(dpi=100) 
     FIG_HIST_LINHA.patch.set_facecolor('#242424'); AX_HIST_LINHA.set_facecolor('#2b2b2b')
-    AX_HIST_LINHA.set_title("Convergência", color="white", fontsize=11)
-    AX_HIST_LINHA.tick_params(colors='white', labelsize=9)
+    AX_HIST_LINHA.set_title("Convergência Comparativa", color="white", fontsize=10)
+    AX_HIST_LINHA.tick_params(colors='white', labelsize=8)
     for s in AX_HIST_LINHA.spines.values(): s.set_color('white')
-    # Margens apertadas para ocupar tudo
-    FIG_HIST_LINHA.subplots_adjust(left=0.04, right=0.99, top=0.90, bottom=0.15)
+    FIG_HIST_LINHA.subplots_adjust(left=0.05, right=0.98, top=0.92, bottom=0.10)
 
     CANVAS_HIST_LINHA = FigureCanvasTkAgg(FIG_HIST_LINHA, master=frame_top)
     CANVAS_HIST_LINHA.draw()
     CANVAS_HIST_LINHA.get_tk_widget().pack(fill="both", expand=True)
 
-    # GRAFICO 2 
-    frame_bot = ctk.CTkFrame(
-        frame_dir, fg_color="#242424", corner_radius=10, 
-        border_width=2, border_color="#333333",
-        height=ALTURA_FRAME_BAIXO, width=LARGURA_GRAFICOS
-    )
-    frame_bot.grid(row=1, column=0, sticky="nsew", pady=0)
-    frame_bot.grid_propagate(False)
+    # GRAFICO 2
+    frame_bot = ctk.CTkFrame(frame_dir, fg_color="#242424", corner_radius=10, height=650)
+    frame_bot.pack(fill="x", pady=0)
+    frame_bot.pack_propagate(False)
     
-    FIG_HIST_GANTT, AX_HIST_GANTT = plt.subplots(figsize=(15, 8), dpi=100)
+    FIG_HIST_GANTT, AX_HIST_GANTT = plt.subplots(dpi=100)
     FIG_HIST_GANTT.patch.set_facecolor('#242424'); AX_HIST_GANTT.set_facecolor('#212121')
-    AX_HIST_GANTT.set_title("Cronograma Final", color="white", fontsize=11)
-    AX_HIST_GANTT.tick_params(colors='white', labelsize=9)
+    AX_HIST_GANTT.set_title("Cronograma Selecionado", color="white", fontsize=10)
+    AX_HIST_GANTT.tick_params(colors='white', labelsize=8)
     for s in AX_HIST_GANTT.spines.values(): s.set_color('white')
-    # Margens apertadas
-    FIG_HIST_GANTT.subplots_adjust(left=0.04, right=0.99, top=0.95, bottom=0.05)
+    FIG_HIST_GANTT.subplots_adjust(left=0.05, right=0.98, top=0.95, bottom=0.05)
     
     CANVAS_HIST_GANTT = FigureCanvasTkAgg(FIG_HIST_GANTT, master=frame_bot)
     CANVAS_HIST_GANTT.draw()
@@ -282,61 +274,112 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
 
     iniciar_watchdog_historico()
 
+def aplicar_filtros_historico(evento=None):
+    global FRAME_LISTA_HISTORICO, HISTORICO_DATA, VAR_FILTRO_INSTANCIA, VAR_FILTRO_DECODER, VARS_FILTRO_AGENTES, CHAVE_SELECIONADA_ATUAL, COMBO_INSTANCIAS
+
+    # Limpa visualmente a lista
+    for widget in FRAME_LISTA_HISTORICO.winfo_children():
+        widget.destroy()
+
+    # Pega o estado dos filtros
+    f_inst = VAR_FILTRO_INSTANCIA.get()
+    f_dec = VAR_FILTRO_DECODER.get()
+    
+    # Lista de agentes marcados nos checkboxes
+    agentes_requeridos = [nome for nome, var in VARS_FILTRO_AGENTES.items() if var.get()]
+
+    # Filtra o dicionario
+    chaves_filtradas = []
+    
+    # Atualiza a lista do ComboBox para garantir que tenha todas as instancias 
+    if COMBO_INSTANCIAS and HISTORICO_DATA:
+        nomes_unicos = sorted(list(set([v['meta_nome'] for v in HISTORICO_DATA.values()])))
+        COMBO_INSTANCIAS.configure(values=["Todas"] + nomes_unicos)
+
+    for chave, dados in HISTORICO_DATA.items():
+        # Filtro de Nome da Instâacia
+        if f_inst != "Todas" and dados['meta_nome'] != f_inst: continue
+        
+        # Filtro de Decoder
+        if f_dec != "Todos" and dados['meta_decoder'].lower() != f_dec.lower(): continue
+            
+        # Filtro de Agentes 
+        str_agentes_run = dados['meta_agentes']
+        
+        # Transforma "BRKGA-SA" em ['BRKGA', 'SA'] para evitar que 'GA' case com 'BRKGA'
+        lista_agentes_na_run = str_agentes_run.split("-")
+
+        # Verifica se os requeridos estao na lista
+        if not all(ag in lista_agentes_na_run for ag in agentes_requeridos): continue
+            
+        chaves_filtradas.append(chave)
+
+    # Ordena cronologicamente ou alfabeticamente
+    chaves_filtradas.sort()
+
+    AX_HIST_LINHA.clear()
+    
+    # Desenha as linhas de fundo 
+    for chave in chaves_filtradas:
+        dados = HISTORICO_DATA[chave]
+        raw_x, raw_y = dados['x'], dados['y']
+        if not raw_x: continue
+        
+        # Ordena X para evitar "time travel"
+        eixo_x, eixo_y = zip(*sorted(zip(raw_x, raw_y), key=lambda p: p[0]))
+
+        # Se nao for a selecionada, desenha cinza fraquinho
+        if chave != CHAVE_SELECIONADA_ATUAL:
+            AX_HIST_LINHA.plot(eixo_x, eixo_y, color='white', alpha=0.4, linewidth=1)
+
+        # Recria o Botao com  as informacoes
+        melhor_mksp = min(eixo_y) if eixo_y else "?"
+        hora = dados.get('meta_hora', '')
+        
+        # Texto completo
+        txt_btn = f"{dados['meta_nome']}\nData: {hora}\n{dados['meta_decoder']} [{dados['meta_agentes']}]\nMake: {melhor_mksp}"
+        
+        cor_btn = CORES["destaque"] if chave == CHAVE_SELECIONADA_ATUAL else "#333333"
+        
+        btn = ctk.CTkButton(
+            FRAME_LISTA_HISTORICO, text=txt_btn, font=("Roboto", 11),
+            fg_color=cor_btn, hover_color="#689EAD", height=70, 
+            anchor="w",
+            command=lambda k=chave: carregar_instancia_historico(k)
+        )
+        btn.chave_privada = chave
+        btn.grid(sticky="ew", pady=5, padx=5)
+
+    if CHAVE_SELECIONADA_ATUAL and CHAVE_SELECIONADA_ATUAL in chaves_filtradas:
+        dados = HISTORICO_DATA[CHAVE_SELECIONADA_ATUAL]
+        eixo_x, eixo_y = zip(*sorted(zip(dados['x'], dados['y']), key=lambda p: p[0]))
+        
+        AX_HIST_LINHA.plot(eixo_x, eixo_y, color='#00FF00', linewidth=2.5, marker='o', markersize=4, label="Selecionado")
+        AX_HIST_LINHA.set_title(f"Convergência Comparativa | Destaque: {dados['meta_nome']} (Melhor: {min(eixo_y)})", color="white", fontsize=10)
+    else:
+        AX_HIST_LINHA.set_title(f"Convergência Comparativa (Exibindo {len(chaves_filtradas)} execuções)", color="white", fontsize=10)
+
+    AX_HIST_LINHA.grid(True, linestyle='--', alpha=0.3)
+    CANVAS_HIST_LINHA.draw()
+
 def carregar_instancia_historico(chave_unica):
-    # Recupera dados
+    global CHAVE_SELECIONADA_ATUAL
+    
+    CHAVE_SELECIONADA_ATUAL = chave_unica    
+    aplicar_filtros_historico()
+    
     dados = HISTORICO_DATA.get(chave_unica)
     if not dados: return
 
-    try:
-        for widget in FRAME_LISTA_HISTORICO.winfo_children():
-            if isinstance(widget, ctk.CTkButton):
-                if hasattr(widget, 'chave_privada') and widget.chave_privada == chave_unica:
-                    widget.configure(fg_color=CORES["destaque"])
-                else:
-                    widget.configure(fg_color="#333333")
-    except Exception: pass
-
-    raw_x = dados['x']
-    raw_y = dados['y']
-
-    # pares (x,y) para ordenar pelo tempo (eixo X)
-    if raw_x and raw_y:
-        pares_ordenados = sorted(zip(raw_x, raw_y), key=lambda pair: pair[0])
-        eixo_x, eixo_y = zip(*pares_ordenados)
-    else:
-        eixo_x, eixo_y = [], []
-
-    AX_HIST_LINHA.clear()
-
-    # Usa as listas ordenadas (eixo_x, eixo_y) agora
-    AX_HIST_LINHA.plot(eixo_x, eixo_y, color='#00FF00', linewidth=2, marker='o', markersize=4)
-    
-    melhor_val = min(eixo_y) if eixo_y else 0
-    nome_display = dados.get('meta_nome', chave_unica)
-    
-    AX_HIST_LINHA.set_title(f"Convergência: {nome_display} (Melhor: {melhor_val})", color="white", fontsize=10)
-    AX_HIST_LINHA.set_facecolor('#2b2b2b')
-    AX_HIST_LINHA.grid(True, linestyle='--', alpha=0.3)
-    AX_HIST_LINHA.tick_params(colors='white')
-    for s in AX_HIST_LINHA.spines.values(): s.set_color('white')
-    CANVAS_HIST_LINHA.draw()
-
-    # =========================================================
-    # 3. GANTT (Mantido Intacto conforme seu pedido)
-    # =========================================================
     AX_HIST_GANTT.clear()
     gantt = dados['gantt']
     
     max_makespan = 0
-
     if gantt:
         M, p, X, C = gantt["M"], gantt["p"], gantt["X"], gantt["C"]
         import matplotlib.cm as cm
-        
         max_id = max([k[1] for k in C.keys()]) if C else 10
         colors = cm.get_cmap("tab20", max_id + 1)
-        
-        max_makespan = 0
         for i in M:
             jobs = [j for (m, k, j), v in X.items() if m == i and v > 0.5]
             for j in jobs:
@@ -346,7 +389,7 @@ def carregar_instancia_historico(chave_unica):
                 if proc > 0: AX_HIST_GANTT.text(start + proc/2, f'M{i}', f'{j}', ha='center', va='center', color='white', fontsize=6, fontweight='bold')
     
     AX_HIST_GANTT.set_facecolor('#212121'); AX_HIST_GANTT.invert_yaxis()
-    AX_HIST_GANTT.set_title(f"Cronograma | Makespan: {max_makespan}", color="white", fontsize=10)
+    AX_HIST_GANTT.set_title(f"Cronograma Selecionado | Makespan: {max_makespan}", color="white", fontsize=10)
     AX_HIST_GANTT.tick_params(colors='white')
     for s in AX_HIST_GANTT.spines.values(): s.set_color('white')
     CANVAS_HIST_GANTT.draw()
