@@ -85,7 +85,7 @@ def _executar_solver(dados, callback_interface):
         instance_path = dados.get('io', {}).get('instance_path', '').strip()
         decoder = str(dados.get('hyper_parameters', {}).get('decoder', 'ect')).lower()
         time_limit = int(dados.get('hyper_parameters', {}).get('time_limit', 60))
-        execution_times = int(dados.get('hyper_parameters', {}).get('execution_times', 1))
+        execution_times = int(dados.get('hyper_parameters', {}).get('execution_times', 1))  #TODO: considere renomear execution_times para execution_repetitions
         agents = dados.get('agents', {})
 
         if execution_times < 1: execution_times = 1

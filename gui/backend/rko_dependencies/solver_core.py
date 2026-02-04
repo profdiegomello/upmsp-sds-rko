@@ -83,7 +83,7 @@ def run_rko(
     gantt_path: str = None
 ) -> dict:
 
-    execution_history = [] 
+    stdout_execution_history = [] 
 
     # Cria Ambiente
     env = UPMSPSDSProblem(
@@ -96,7 +96,7 @@ def run_rko(
 
     old_stdout = sys.stdout
     if callback:
-        sys.stdout = StdoutProxy(callback, history_list=execution_history, min_interval=0.25)
+        sys.stdout = StdoutProxy(callback, history_list=stdout_execution_history, min_interval=0.25)
         sys.stdout.env = env
 
     log_queue = None
@@ -109,7 +109,7 @@ def run_rko(
             stop_event = threading.Event()
             reader_thread = threading.Thread(
                 target=_queue_reader, 
-                args=(log_queue, callback, execution_history, stop_event), 
+                args=(log_queue, callback, stdout_execution_history, stop_event), 
                 daemon=True
             )
             reader_thread.start()
@@ -135,17 +135,26 @@ def run_rko(
             lns=1 if agents.get("LNS") else 0
         )
 
-        if execution_history:
+        if stdout_execution_history:
             # Varre o historico que foi capturado em tempo real 
-            melhor_via_log = min([p[1] for p in execution_history])
+            melhor_via_log = min([p[1] for p in stdout_execution_history])
             # Se o log viu um numero menor que o retorno oficial
             if melhor_via_log < final_cost:
                 #debug: print(f"Solver retornou {final_cost}, mas o  Log registrou: {melhor_via_log}.")
                 final_cost = melhor_via_log
 
-        runtime = time.time() - start_time
-        # Adiciona ponto final no historico
-        execution_history.append((runtime, final_cost))
+                # TODO: encontrar o valor de makespan em p[1] de hist_curve e retornar o p[0] para a variável time_melhor_via_log
+                for p in reversed(stdout_execution_history):
+                    if p[1] == melhor_via_log:
+                        time_melhor_via_log = abs(p[0])
+                        stdout_execution_history.append((time_melhor_via_log, melhor_via_log))   #TODO: verifique se deveria utilizar pro Y melhor_via_log o time_to_best 
+                        break
+            else :
+                runtime = time.time() - start_time
+                # Adiciona ponto final no historico
+                # stdout_execution_history.append((runtime, final_cost))   #BUG: verifique se deveria utilizar pro Y melhor_via_log o runtime 
+                stdout_execution_history.append((abs(time_to_best), final_cost))
+
 
     finally:
         sys.stdout = old_stdout
@@ -173,7 +182,7 @@ def run_rko(
     except Exception as e:
         print(f"[WARN] Erro ao preparar Gantt Data: {e}")
 
-    # SALVAR RESULTADOS EM DISCO
+    # SALVAR EM DISCO OS RESULTADOS DA CURVA DE CONVERGENCIA 
     if save_path:
         try:
             path_limpo = save_path.strip()
@@ -197,11 +206,11 @@ def run_rko(
             caminho_curva = os.path.join(base_dir, nome_arq_curva)
             
             try:
-                execution_history.sort(key=lambda x: x[0])
+                stdout_execution_history.sort(key=lambda x: x[0])
                 with open(caminho_curva, "w") as f_curva:
                     f_curva.write("TEMPO\tMAKESPAN\n")
-                    for t, mksp in execution_history:
-                        f_curva.write(f"{t:.4f}\t{mksp:.4f}\n")
+                    for t, mksp in stdout_execution_history:
+                        f_curva.write(f"{t:.2f}\t{mksp:.4f}\n")
                 print(f"[IO] Curva salva em: {nome_arq_curva}")
             except Exception: pass
 
@@ -229,7 +238,7 @@ def run_rko(
         except Exception as e:
             print(f"[ERROR] Falha ao salvar resultados: {e}")
 
-    # GERAR IMAGEM DO GANTT EM DISCO
+    # GERAR EM DISCO IMAGEM DO GANTT (SCHEDULE)
     if gantt_path and raw_gantt_data:
         try:
             if not os.path.exists(gantt_path):
@@ -263,6 +272,6 @@ def run_rko(
         "runtime": runtime,
         "instance": env.instance_name,
         "decoder": env.decoder_name,
-        "history_data": execution_history, 
+        "history_data": stdout_execution_history, 
         "gantt_data": raw_gantt_data       
     }

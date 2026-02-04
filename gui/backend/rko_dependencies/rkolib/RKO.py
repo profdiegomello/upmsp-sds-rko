@@ -36,6 +36,8 @@ class SolutionPool:
         self.env = env
 
     def insert(self, entry_tuple, metaheuristic_name, tag):
+        insertion_time = time.time()
+
         fitness = entry_tuple[0]
         keys = entry_tuple[1]
 
@@ -43,10 +45,10 @@ class SolutionPool:
             if fitness < self.best_pair[0]:
                 self.best_pair[0] = fitness
                 self.best_pair[1] = list(keys)
-                self.best_pair[2] = round(self.start_time - time.time(), 2)
+                self.best_pair[2] = round(self.start_time - insertion_time, 2)
 
                 if self.print_flag:
-                    tempo = abs(round(self.start_time - time.time(), 2))
+                    tempo = abs(self.best_pair[2])
                     if self.best_possible is not None:
                         print(f"[{metaheuristic_name}] NEW BEST: {fitness:.4f} (Target: {self.best_possible}) - Time: {tempo}s")
                     else:

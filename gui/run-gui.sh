@@ -41,8 +41,8 @@ source $VENV_DIR/bin/activate
 # 3. Instala dependências
 if [ -f "$REQ_FILE" ]; then
     echo "[+] Instalando/Atualizando dependências do $REQ_FILE..."
-    $PYTHON_VERSION -m pip install --upgrade pip
-    $PYTHON_VERSION -m pip install -r $REQ_FILE
+    $PYTHON_VERSION -m pip install --upgrade pip #1>/dev/null
+    $PYTHON_VERSION -m pip install -r $REQ_FILE  #1>/dev/null
 else
     echo "[!] Alerta: $REQ_FILE não encontrado. Pulando instalação."
 fi

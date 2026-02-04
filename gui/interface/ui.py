@@ -454,10 +454,16 @@ def manipulador_retorno_interface(dados):
         makespan = dados.get("makespan"); gantt_data = dados.get("gantt_data")
         if nome_pacote == NOME_INSTANCIA_ATUAL:
             if makespan <= MELHOR_MAKESPAN_ATUAL:
+
                 tempo_atual = time.time() - TEMPO_INICIO_BATERIA
+                time_to_best = dados.get("time_to_best", None); #NOTE Tentativa 1) aparentemente no dicionário dados ainda não há a chave "time_to_best"
+                if time_to_best is None: 
+                    time_to_best = tempo_atual 
+
                 if makespan < MELHOR_MAKESPAN_ATUAL:
                     MELHOR_MAKESPAN_ATUAL = makespan
-                    DADOS_X.append(tempo_atual); DADOS_Y.append(makespan)
+                    # DADOS_X.append(tempo_atual); DADOS_Y.append(makespan) #BUG está pegando o tempo_atual (local) da GUI e não o time_to_best informado pelo RKO para o novo makespan
+                    DADOS_X.append(time_to_best); DADOS_Y.append(makespan) #NEEDFIX deveria existir time_to_best para não ter que pegar tempo_atual
                     if CANVAS_GLOBAL: 
                         LINHA_GLOBAL.set_data(DADOS_X, DADOS_Y)
                         AX_GLOBAL.set_title(f"Instance: {NOME_INSTANCIA_ATUAL}  |  Best: {MELHOR_MAKESPAN_ATUAL}  |  Elapsed Time: {tempo_atual:.2f}s", fontsize=10, color="#00FF00", fontweight="bold")
