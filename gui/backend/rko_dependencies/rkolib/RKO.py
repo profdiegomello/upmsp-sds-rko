@@ -25,7 +25,7 @@ class QueueWriter:
         pass
 
 class SolutionPool:
-    def __init__(self, size, pool, best_pair, lock=None, print_flag=False, Best=None, env=None):
+    def __init__(self, size, pool, best_pair, lock=None, print_flag=False, Best=None, env=None, log_queue=None):
         self.size = size
         self.pool = pool
         self.best_pair = best_pair
@@ -34,10 +34,10 @@ class SolutionPool:
         self.print_flag = print_flag 
         self.best_possible = Best
         self.env = env
+        self.log_queue = log_queue # Guarda a referencia
 
     def insert(self, entry_tuple, metaheuristic_name, tag):
         insertion_time = time.time()
-
         fitness = entry_tuple[0]
         keys = entry_tuple[1]
 
@@ -45,7 +45,24 @@ class SolutionPool:
             if fitness < self.best_pair[0]:
                 self.best_pair[0] = fitness
                 self.best_pair[1] = list(keys)
-                self.best_pair[2] = round(self.start_time - insertion_time, 2)
+
+                # Tempo exato da descoberta
+                tempo_decorrido = round(self.start_time - insertion_time, 2)
+                self.best_pair[2] = tempo_decorrido
+                tempo_abs = abs(tempo_decorrido)
+
+                if self.log_queue is not None:
+                    try:
+                        self.log_queue.put({
+                            "status": "update",
+                            "makespan": fitness,
+                            "time_to_best": tempo_abs,
+                            "instancia": self.env.instance_name if self.env else "Unknown",
+                            "origin": "SolutionPool", # origem para debug
+                            "gantt_data": None 
+                        })
+                    except Exception:
+                        pass
 
                 if self.print_flag:
                     tempo = abs(self.best_pair[2])
@@ -705,8 +722,16 @@ class RKO:
             shared = manager.Namespace()
             shared.best_pair = manager.list([float('inf'), None, None])
             shared.best_pool = manager.list()
-            shared.pool = SolutionPool(20, shared.best_pool, shared.best_pair, lock=manager.Lock(), print_flag=self.print_best, Best=self.env.dict_best.get(self.env.instance_name), env=self.env)
             
+            #  Passando self.log_queue para o construtor do SolutionPool
+            shared.pool = SolutionPool(
+                20, shared.best_pool, shared.best_pair, 
+                lock=manager.Lock(), print_flag=self.print_best, 
+                Best=self.env.dict_best.get(self.env.instance_name), 
+                env=self.env,
+                log_queue=self.log_queue # !!
+            )
+
             for _ in range(20):
                 keys = self.random_keys()
                 cost = self.env.cost(self.env.decoder(keys))
@@ -761,7 +786,7 @@ def _setup_worker_env(env, log_queue):
         sys.stdout = QueueWriter(log_queue)
         
         # Arruma o Callback 
-        #  funcaao local que sabe enviar para a fila deste processo
+        #  funcao local que sabe enviar para a fila deste processo
         def callback_processo_filho(dados):
             try:
                 log_queue.put(dados)

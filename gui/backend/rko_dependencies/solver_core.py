@@ -4,35 +4,22 @@ import os
 import threading
 import re
 from typing import Callable, Optional
-from multiprocessing import Queue
+from multiprocessing import Queue, Manager
 
 from backend.rko_dependencies.rkolib.RKO import RKO
 from backend.rko_dependencies.problem_upmspsds import UPMSPSDSProblem
 import backend.rko_dependencies.input_output.output_writer as output_writer
 
-# PARSER DE LOGS (Para capturar dados de convergencia do texto)
-def _parse_and_store(text: str, history_list: list):
-    try:
-        match = re.search(r"BEST: (\d+\.?\d*) .* Time: (\d+\.?\d*)", text)
-        if match:
-            makespan = float(match.group(1))
-            tempo = float(match.group(2))
-            history_list.append((tempo, makespan))
-    except Exception:
-        pass
-
-# STDOUT INTERCEPTOR (Processo Pai)
+# STDOUT INTERCEPTOR 
 class StdoutProxy:
-    def __init__(self, callback: Callable[[dict], None], history_list: list, min_interval: float = 0.3):
+    def __init__(self, callback: Callable[[dict], None], min_interval: float = 0.3):
         self.callback = callback
-        self.history_list = history_list
         self.min_interval = min_interval
         self._last_emit = 0.0
         self._buffer = ""
 
     def write(self, text: str):
         if not text.strip(): return
-        _parse_and_store(text, self.history_list)
         self._buffer += text
         now = time.time()
         if now - self._last_emit >= self.min_interval:
@@ -50,26 +37,59 @@ class StdoutProxy:
         if self.callback:
             self.callback({"status": "log", "message": msg.rstrip()})
 
-# QUEUE READER
-def _queue_reader(q: Queue, callback: Optional[Callable[[dict], None]], history_list: list, stop_event: threading.Event):
+# QUEUE READER (Com Filtro de Monotonicidade)
+def _queue_reader(q: Queue, callback: Optional[Callable[[dict], None]], history_list: list, start_time: float):
+    """
+    Lê a fila indefinidamente até encontrar o pacote {'status': 'DONE'}.
+    Grava apenas melhorias estritas (Monotonicidade) para evitar ruído no gráfico.
+    """
+    # Rastreia o melhor makespan visto NESTA thread para filtrar "pioras"
+    local_best_makespan = float('inf')
+
     if callback is None:
-        while not stop_event.is_set():
-            try: _ = q.get(timeout=0.2)
-            except Exception: continue
+        while True:
+            try: 
+                msg = q.get(timeout=1.0)
+                if isinstance(msg, dict) and msg.get("status") == "DONE": break
+            except Exception: continue 
         return
 
-    while not stop_event.is_set() or not q.empty():
+    while True:
         try: 
-            msg = q.get(timeout=0.2)
-        except Exception: continue
+            msg = q.get(timeout=0.5)
+        except Exception: 
+            continue
         
         try:
             if isinstance(msg, dict):
+                # [SENTINELA]
+                if msg.get("status") == "DONE":
+                    break
+
+                # [CAPTURA DE DADOS FILTRADA]
+                if msg.get("status") == "update" and "makespan" in msg:
+                    mksp = float(msg["makespan"])
+                    
+                    # [CORREÇÃO CRÍTICA]
+                    # Só adicionamos ao histórico se for ESTRITAMENTE MELHOR que o último gravado.
+                    # Isso elimina os pontos "ruins" (ex: 250 -> 259) que apareciam no arquivo.
+                    if mksp < local_best_makespan:
+                        local_best_makespan = mksp # Atualiza referência
+                        
+                        # Fallback de tempo
+                        tempo = msg.get("time_to_best")
+                        if tempo is None:
+                            tempo = time.time() - start_time
+                        else:
+                            tempo = float(tempo)
+                        
+                        history_list.append((tempo, mksp))
+                
+                # Para a GUI, mandamos tudo (ela tem seu próprio filtro visual)
                 callback(msg)
             else:
                 texto_msg = str(msg).rstrip()
                 if texto_msg:
-                    _parse_and_store(texto_msg, history_list)
                     callback({"status": "log", "message": texto_msg})
         except Exception: continue
 
@@ -96,33 +116,39 @@ def run_rko(
 
     old_stdout = sys.stdout
     if callback:
-        sys.stdout = StdoutProxy(callback, history_list=stdout_execution_history, min_interval=0.25)
+        sys.stdout = StdoutProxy(callback, min_interval=0.25)
         sys.stdout.env = env
 
     log_queue = None
+    queue_manager = None 
     reader_thread = None
-    stop_event = None
+    
+    start_time_global = time.time()
 
     if callback:
         try:
-            log_queue = Queue()
-            stop_event = threading.Event()
+            queue_manager = Manager()
+            log_queue = queue_manager.Queue()
+            
             reader_thread = threading.Thread(
                 target=_queue_reader, 
-                args=(log_queue, callback, stdout_execution_history, stop_event), 
+                args=(log_queue, callback, stdout_execution_history, start_time_global), 
                 daemon=True
             )
             reader_thread.start()
-        except Exception:
+        except Exception as e:
+            print(f"Erro ao criar fila gerenciada: {e}")
             log_queue = None
 
     try:
         solver = RKO(env, print_best=True, save_directory=None, log_queue=log_queue)
-        start_time = time.time()
+        
+        start_time_solver = time.time()
 
         active_agents = [k for k, v in agents.items() if v]
         str_parameters = "+".join(active_agents) if active_agents else "RKO_DEFAULT"
 
+        # EXECUTA O SOLVER
         final_cost, final_solution_keys, solver_time_to_best = solver.solve(
             time_total=time_limit,
             runs=1,
@@ -135,56 +161,52 @@ def run_rko(
             lns=1 if agents.get("LNS") else 0
         )
         
-        # O runtime total eh calculado aqui fora
-        runtime = time.time() - start_time
-        
-        # valor que veio do RKO
+        runtime = time.time() - start_time_solver
         final_time_to_best = solver_time_to_best
 
-        #SINCRONIA COM LOGS 
+        # 2. [SINCRONIA POR SENTINELA]
+        if log_queue is not None:
+            try: log_queue.put({"status": "DONE"})
+            except: pass
+
+        # ESPERA 
+        if reader_thread is not None:
+            reader_thread.join(timeout=10.0)
+
+        # PREPARA HISTORICO
         if stdout_execution_history:
             melhor_via_log = min([p[1] for p in stdout_execution_history])
             
-            # Se o log capturou algo melhor , atualizamos
             if melhor_via_log < final_cost:
                 final_cost = melhor_via_log
-                # Buscamos o tempo desse log especifico
                 for t, v in stdout_execution_history:
                     if v == melhor_via_log:
                         final_time_to_best = t
                         break
             
-            # Adiciona ponto final no historico para o grafico fechar corretamente
-            stdout_execution_history.append((abs(final_time_to_best), final_cost))
+            # Garante o ponto final
+            if not stdout_execution_history or stdout_execution_history[-1][1] != final_cost:
+                stdout_execution_history.append((abs(final_time_to_best), final_cost))
+            
             stdout_execution_history.sort(key=lambda x: x[0])
 
     finally:
         sys.stdout = old_stdout
-        if stop_event is not None:
-            try:
-                stop_event.set()
-                if reader_thread is not None: reader_thread.join(timeout=1.0)
-            except Exception: pass
-        if log_queue is not None:
-            try:
-                while not log_queue.empty(): _ = log_queue.get_nowait()
-            except Exception: pass
+        if queue_manager is not None:
+            try: queue_manager.shutdown()
+            except: pass
 
-    # PREPARA DADOS COMPLETOS PARA O RETORNO
+    # PREPARA GANTT
     raw_gantt_data = None
     try:
-        M = env.dados["M"]
-        p = env.dados["p"]
+        M = env.dados["M"]; p = env.dados["p"]
         decoded = env.decoder(final_solution_keys)
         X, C = env.convert_schedule_to_gantt_format(decoded)
-        
-        raw_gantt_data = {
-            "M": M, "p": p, "X": X, "C": C
-        }
+        raw_gantt_data = {"M": M, "p": p, "X": X, "C": C}
     except Exception as e:
         print(f"[WARN] Erro ao preparar Gantt Data: {e}")
 
-    # SALVAR EM DISCO
+    # SALVAR ARQUIVOS
     if save_path:
         try:
             path_limpo = save_path.strip()
@@ -201,6 +223,7 @@ def run_rko(
                 base_dir = directory if directory else "."
                 csv_filename = path_limpo
             
+            # SALVA CURVA
             nome_arq_curva = f"{env.instance_name}_timeXmksp.txt"
             caminho_curva = os.path.join(base_dir, nome_arq_curva)
             
@@ -212,6 +235,7 @@ def run_rko(
                 print(f"[IO] Curva salva em: {nome_arq_curva}")
             except Exception: pass
 
+            # SALVA RESULTADO FINAL
             model_name = f"RKO-{env.decoder_name.upper()}"
             n_jobs = len(env.dados.get("N", []))
             n_machines = len(env.dados.get("M", []))
@@ -223,7 +247,7 @@ def run_rko(
                 objetivo=final_cost,
                 lowerbound=None,
                 gap=None,
-                runtime=runtime, # Tempo total de execução
+                runtime=runtime, 
                 constraints=0,
                 variables=0,
                 parameters=str_parameters,
@@ -236,7 +260,7 @@ def run_rko(
         except Exception as e:
             print(f"[ERROR] Falha ao salvar resultados: {e}")
 
-    # GERAR GANTT EM DISCO
+    # SALVA GANTT IMAGEM
     if gantt_path and raw_gantt_data:
         try:
             if not os.path.exists(gantt_path): os.makedirs(gantt_path, exist_ok=True)

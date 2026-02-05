@@ -452,7 +452,6 @@ def manipulador_retorno_interface(dados):
             LINHA_GLOBAL.set_data([], []); AX_GLOBAL.set_title(f"{NOME_INSTANCIA_ATUAL}...", fontsize=10, color="white"); AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view(); CANVAS_GLOBAL.draw()
         if AX_GANTT: AX_GANTT.clear(); CANVAS_GANTT.draw()
 
-    # --- UPDATE VISUAL (GRÁFICOS) ---
     elif tipo_status == "update":
         makespan = dados.get("makespan"); gantt_data = dados.get("gantt_data")
         
@@ -486,19 +485,26 @@ def manipulador_retorno_interface(dados):
                     
                     #imprime no output o update que nao veio
                     #if "NEW BEST" not in texto_log:
-                    #    log_extra = f"[GUI UPDATE] NEW BEST: {MELHOR_MAKESPAN_ATUAL:.4f} - Time: {time_to_best:.2f}s"
-                    #    ESCRITOR   _TERMINAL_GLOBAL.write(f"{log_extra}\n")
+                        #log_extra = f"[GUI UPDATE] NEW BEST: {MELHOR_MAKESPAN_ATUAL:.4f} - Time: {time_to_best:.2f}s"
+                        #ESCRITOR_TERMINAL_GLOBAL.write(f"{log_extra}\n")
                     
 
                 if gantt_data and CANVAS_GANTT: 
                     CANVAS_GANTT.get_tk_widget().after(0, lambda: atualizar_desenho_gantt(gantt_data, nome_pacote, time_to_best))
 
-    # --- INSTANCIA CONCLUIDA ---
+    # INSTANCIA CONCLUIDA
     elif tipo_status == "instancia_concluida":
         nome_base = dados.get("instancia")
-        hist_curve = dados.get("history_curve", []) 
+        hist_curve_backend = dados.get("history_curve", []) 
         gantt_final = dados.get("gantt_data")
-        
+        if nome_base == NOME_INSTANCIA_ATUAL and len(DADOS_X) > 0:
+            eixo_x_final = list(DADOS_X)
+            eixo_y_final = list(DADOS_Y)
+        #else:
+            # usa o que veio do backend (menos preciso) (c)
+            #eixo_x_final = [p[0] for p in hist_curve_backend]
+            #eixo_y_final = [p[1] for p in hist_curve_backend]
+
         decoder_usado = dados.get("decoder", "Dec")
         agentes_usados = dados.get("agentes", ["Agentes"]) 
         if isinstance(agentes_usados, list): str_agentes = "-".join(agentes_usados)
@@ -509,8 +515,8 @@ def manipulador_retorno_interface(dados):
 
         if nome_base:
             HISTORICO_DATA[chave_unica] = {
-                'x': [p[0] for p in hist_curve], 
-                'y': [p[1] for p in hist_curve], 
+                'x': eixo_x_final, 
+                'y': eixo_y_final, 
                 'gantt': gantt_final,
                 'meta_nome': nome_base, 
                 'meta_decoder': decoder_usado, 
@@ -598,7 +604,8 @@ def criar_cartao_agente(conteiner_pai, config):
     frame.grid(row=config["linha"], column=config["coluna"], padx=8, pady=8, sticky="n")
     
     frame.grid_propagate(False) # cada card utiliza o mesmo tamanho dos demais
-    # frame.grid_propagate(True) # cada card usa somente o tamanho mínimo necessário
+    # frame.grid_propagate(True) 
+    # cada card usa somente o tamanho minimo necessario
     
     ctk.CTkLabel(frame, text=config["titulo"], font=FONTES["corpo_negrito"], text_color=CORES["destaque"]).grid(row=0, column=0, sticky="w", padx=10, pady=(8,4))
     var_chk = tk.BooleanVar(value=True)
@@ -675,10 +682,8 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
         if rko_gui_start is None: print("ERRO: Middleware ausente."); return
         
         if not estado_execucao["rodando"]:
-            # --- SALVAMENTO ROBUSTO DO CACHE ---
             try:
-                # Acessamos diretamente os widgets guardados na aba IO
-                # O .get() aqui pega o texto que está VISÍVEL na caixa
+                # O .get() aqui pega o texto que esta visivel na box
                 w_inst = aba_io.widgets_armazenados.get("instance_path")
                 w_out = aba_io.widgets_armazenados.get("output_path")
                 w_gantt = aba_io.widgets_armazenados.get("gantt_path")
@@ -690,7 +695,6 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
                 salvar_cache_caminhos(c_inst, c_out, c_gantt)
             except Exception as e:
                 print(f"Aviso: Não foi possível salvar cache IO: {e}")
-            # -----------------------------------
 
             data = coletar_dados_interface(aba_p, aba_a, aba_io)
             if not data: return 
