@@ -11,7 +11,7 @@ import itertools
 import sys
 from multiprocessing import Manager, Process, Queue
 
-# UTILITARIOS DE IO
+# UTILITARIOS DE IO E SOLUTION POOL
 class QueueWriter:
     """Redireciona sys.stdout para uma multiprocessing.Queue"""
     def __init__(self, queue):
@@ -34,7 +34,7 @@ class SolutionPool:
         self.print_flag = print_flag 
         self.best_possible = Best
         self.env = env
-        self.log_queue = log_queue # Guarda a referencia
+        self.log_queue = log_queue 
 
     def insert(self, entry_tuple, metaheuristic_name, tag):
         insertion_time = time.time()
@@ -46,7 +46,6 @@ class SolutionPool:
                 self.best_pair[0] = fitness
                 self.best_pair[1] = list(keys)
 
-                # Tempo exato da descoberta
                 tempo_decorrido = round(self.start_time - insertion_time, 2)
                 self.best_pair[2] = tempo_decorrido
                 tempo_abs = abs(tempo_decorrido)
@@ -58,7 +57,8 @@ class SolutionPool:
                             "makespan": fitness,
                             "time_to_best": tempo_abs,
                             "instancia": self.env.instance_name if self.env else "Unknown",
-                            "origin": "SolutionPool", # origem para debug
+                            "agent": metaheuristic_name, # Garante o envio do nome correto
+                            "origin": "SolutionPool",
                             "gantt_data": None 
                         })
                     except Exception:
@@ -66,18 +66,15 @@ class SolutionPool:
 
                 if self.print_flag:
                     tempo = abs(self.best_pair[2])
+                    msg = f"[{metaheuristic_name}] NEW BEST: {fitness:.4f}"
                     if self.best_possible is not None:
-                        print(f"[{metaheuristic_name}] NEW BEST: {fitness:.4f} (Target: {self.best_possible}) - Time: {tempo}s")
-                    else:
-                        print(f"[{metaheuristic_name}] NEW BEST: {fitness:.4f} - Time: {tempo}s")
+                        msg += f" (Target: {self.best_possible})"
+                    msg += f" - Time: {tempo}s"
+                    print(msg)
 
             bisect.insort(self.pool, entry_tuple)
             if len(self.pool) > self.size:
                 self.pool.pop()
-
-# =============================================================================
-# CLASSE RKO (CORE)
-# =============================================================================
 
 class RKO:
     def __init__(self, env, print_best=False, save_directory=None, log_queue=None):
@@ -723,13 +720,12 @@ class RKO:
             shared.best_pair = manager.list([float('inf'), None, None])
             shared.best_pool = manager.list()
             
-            #  Passando self.log_queue para o construtor do SolutionPool
             shared.pool = SolutionPool(
                 20, shared.best_pool, shared.best_pair, 
                 lock=manager.Lock(), print_flag=self.print_best, 
                 Best=self.env.dict_best.get(self.env.instance_name), 
                 env=self.env,
-                log_queue=self.log_queue # !!
+                log_queue=self.log_queue 
             )
 
             for _ in range(20):
@@ -775,25 +771,23 @@ class RKO:
         return cost, solution, time_to_best
 
 # WORKERS 
-def _setup_worker_env(env, log_queue):
+def _setup_worker_env(env, log_queue, agent_name_tag="RKO Worker"):
     """
     Configura o ambiente do processo filho:
     1. Redireciona prints para a Queue.
-    2. Reconecta o callback do env para usar a mesma Queue (Isso conserta o Gantt).
+    2. Intercepta o callback do ambiente para INJETAR O NOME DO AGENTE.
     """
     if log_queue is not None:
-        # Arruma o print 
         sys.stdout = QueueWriter(log_queue)
         
-        # Arruma o Callback 
-        #  funcao local que sabe enviar para a fila deste processo
         def callback_processo_filho(dados):
             try:
+                #nome do agente no dict, para enviar ao core
+                if isinstance(dados, dict):
+                    dados["agent"] = agent_name_tag
                 log_queue.put(dados)
-            except Exception:
-                pass # Evita travar o calculo se a fila encher
+            except Exception: pass
         
-        # Substitui o callback quebrado pelo novo
         env.ui_callback = callback_processo_filho
 
 def _injetar_parametros_gui(env, agente_nome):
@@ -826,55 +820,63 @@ def _injetar_parametros_gui(env, agente_nome):
             except: pass
 
 def _brkga_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) 
+    nome = f"BRKGA {tag}"
+    _setup_worker_env(env, log_queue, nome) 
     _injetar_parametros_gui(env, 'BRKGA')
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time
     runner.BRKGA(tag, pool)
     
 def _MS_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) 
+    nome = f"MS {tag}"
+    _setup_worker_env(env, log_queue, nome) 
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time
     runner.MultiStart(tag, pool)
     
 def _VNS_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) 
+    nome = f"VNS {tag}"
+    _setup_worker_env(env, log_queue, nome) 
     _injetar_parametros_gui(env, 'VNS')
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time 
     runner.VNS(limit_time, tag, pool)
     
 def _ILS_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) 
+    nome = f"ILS {tag}"
+    _setup_worker_env(env, log_queue, nome) 
     _injetar_parametros_gui(env, 'ILS')
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time
     runner.ILS(limit_time, tag, pool)
     
 def _SA_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) 
+    nome = f"SA {tag}"
+    _setup_worker_env(env, log_queue, nome) 
     _injetar_parametros_gui(env, 'SA')
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time
     runner.SimulatedAnnealing(tag=tag, pool=pool)
     
 def _LNS_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) 
+    nome = f"LNS {tag}"
+    _setup_worker_env(env, log_queue, nome) 
     _injetar_parametros_gui(env, 'LNS')
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time
     runner.LNS(limit_time=limit_time, tag=tag, pool=pool)
     
 def _PSO_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) 
+    nome = f"PSO {tag}"
+    _setup_worker_env(env, log_queue, nome) 
     _injetar_parametros_gui(env, 'PSO')
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time
     runner.PSO(tag=tag, pool=pool)
     
 def _GA_worker(env, limit_time, pool, tag, print_best, save_directory, log_queue):
-    _setup_worker_env(env, log_queue) 
+    nome = f"GA {tag}"
+    _setup_worker_env(env, log_queue, nome) 
     _injetar_parametros_gui(env, 'GA')
     runner = RKO(env, print_best, save_directory)
     runner.max_time = limit_time

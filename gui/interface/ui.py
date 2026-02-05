@@ -8,15 +8,14 @@ import os
 import re
 import time
 import json
+import threading
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
-# Garante que o Matplotlib use o backend correto para Tkinter
 matplotlib.use("TkAgg")
 
-# Captura: [Agente] NEW BEST: Valor - Time: Tempo
-RE_NEW_BEST = re.compile(r"\[(.*?)\] NEW BEST: (\d+\.\d+).*?Time: (\d+\.\d+)")
+RE_NEW_BEST = re.compile(r"NEW BEST: (\d+\.\d+)")
 
 try:
     import backend.rko_gui_start as rko_gui_start
@@ -28,7 +27,6 @@ except ImportError:
     CAMINHO_CACHE_IO = "temp_io_paths.txt"
 
 def resource_path(relative_path):
-    """Obtem o caminho absoluto para recursos (imagens/assets)"""
     try:
         base_path = sys._MEIPASS
     except Exception:
@@ -59,11 +57,10 @@ ALTURA_CARTAO_AGENTE = 260
 
 DIRETORIO_BASE = os.path.dirname(os.path.abspath(__file__))
 
-# Monta o caminho apontando para a pasta backend vizinha
 ESCRITOR_TERMINAL_GLOBAL = None
 START_BUTTON_GLOBAL = None
+MONOTONIC_FILTER = None 
 
-# Grafico de Linha 
 FIG_GLOBAL = None
 AX_GLOBAL = None
 CANVAS_GLOBAL = None
@@ -72,31 +69,77 @@ DADOS_X = []
 DADOS_Y = []
 NOME_INSTANCIA_ATUAL = "Waiting..."
 
-# Gantt (dinamico)
 FIG_GANTT = None
 AX_GANTT = None
 CANVAS_GANTT = None
 MELHOR_MAKESPAN_ATUAL = float('inf')
 TEMPO_INICIO_BATERIA = 0
 
-# GLOBAIS DO HISTORICO 
-HISTORICO_DATA = {}  # {'NomeInstancia': {'x':[], 'y':[], 'gantt': data}}
-FILA_BOTOES_PENDENTES = [] # Fila para o Watchdog
+HISTORICO_DATA = {}
+FILA_BOTOES_PENDENTES = []
 FRAME_LISTA_HISTORICO = None
 
-# Graficos da Aba historico
 FIG_HIST_LINHA, AX_HIST_LINHA, CANVAS_HIST_LINHA = None, None, None
 FIG_HIST_GANTT, AX_HIST_GANTT, CANVAS_HIST_GANTT = None, None, None
 
-# GLOBAIS PARA FILTROS DO HISTORICO 
 VAR_FILTRO_INSTANCIA = None
 VAR_FILTRO_DECODER = None
-VARS_FILTRO_AGENTES = {} # Dict {'BRKGA': BooleanVar, ...}
-CHAVE_SELECIONADA_ATUAL = None # Para saber qual pintar de verde
+VARS_FILTRO_AGENTES = {}
+CHAVE_SELECIONADA_ATUAL = None
 COMBO_INSTANCIAS = None
 
+# Filtro que descarta valores piores do que o melhor atual
+class MonotonicFilter:
+    def __init__(self, widget_texto):
+        self.widget = widget_texto
+        self.best_seen = float('inf')
+        self.lock = threading.Lock()
+
+    def reset(self):
+        with self.lock:
+            self.best_seen = float('inf')
+
+    def print_if_better(self, text, makespan_val):
+        with self.lock:
+            val = float(makespan_val)
+            # Ignora valores piores ou iguais ao recorde atual
+            if val >= (self.best_seen - 0.0001):
+                return 
+            
+            self.best_seen = val
+            self._safe_print(text)
+
+    def print_direct(self, text):
+        self._safe_print(text)
+
+    def _safe_print(self, text):
+        try:
+            self.widget.configure(state="normal")
+            self.widget.insert("end", text)
+            self.widget.see("end")
+            self.widget.configure(state="disabled")
+        except: pass
+
+class StdoutRedirector:
+    def __init__(self, filtro):
+        self.filtro = filtro
+
+    def write(self, text):
+        if not text.strip(): return
+        
+        match = RE_NEW_BEST.search(text)
+        if match:
+            try:
+                val = float(match.group(1))
+                self.filtro.print_if_better(text + "\n", val)
+                return
+            except: pass
+        
+        self.filtro.print_direct(text)
+
+    def flush(self): pass
+
 def carregar_cache_caminhos():
-    """Lê o arquivo temp e retorna um dicionário com os caminhos salvos."""
     if os.path.exists(CAMINHO_CACHE_IO):
         try:
             with open(CAMINHO_CACHE_IO, "r", encoding="utf-8") as f:
@@ -106,7 +149,6 @@ def carregar_cache_caminhos():
     return {}
 
 def salvar_cache_caminhos(inst_path, out_path, gantt_path):
-    """Salva os caminhos atuais no arquivo temp dentro da pasta backend existente."""
     dados = {
         "instance_path": inst_path,
         "output_path": out_path,
@@ -118,25 +160,11 @@ def salvar_cache_caminhos(inst_path, out_path, gantt_path):
     except Exception as e:
         print(f"[WARN] writing IO cache: {e}")
 
-# Cria os botoes do historico 
-# Daemon (watchdog) responsavel por verificar constantemente
 def iniciar_watchdog_historico():
     global FILA_BOTOES_PENDENTES, VAR_FILTRO_INSTANCIA
-    
-    # Se houver novos itens na fila
     if FILA_BOTOES_PENDENTES:
-        # Esvazia a fila (pois o aplicar_filtros vai ler tudo do HISTORICO_DATA direto)
         FILA_BOTOES_PENDENTES.clear()
-        
-        # Atualiza a lista de Instancias no ComboBox 
-        if VAR_FILTRO_INSTANCIA:
-            instancias_unicas = sorted(list(set([v['meta_nome'] for v in HISTORICO_DATA.values()])))
-            # valores_combo = ["all"] + instancias_unicas # (Lógica movida para o aplicar_filtros para ser mais robusta)
-            pass 
-        
         aplicar_filtros_historico()
-
-    # Roda a cada 1 segundo
     if FRAME_LISTA_HISTORICO:
         FRAME_LISTA_HISTORICO.after(1000, iniciar_watchdog_historico)
 
@@ -190,24 +218,18 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
         aba.grid_columnconfigure(i, weight=0, minsize=0)
         aba.grid_rowconfigure(i, weight=0, minsize=0)
 
-    # Coluna 0: Menu Esquerdo
     aba.grid_columnconfigure(0, weight=0, minsize=280) 
-    # Coluna 1: Graficos 
     aba.grid_columnconfigure(1, weight=1) 
-    # Linha 0: Altura total
     aba.grid_rowconfigure(0, weight=1)
 
-    # ESQUERDA
     frame_esq = ctk.CTkFrame(aba, fg_color="transparent", width=270)
     frame_esq.grid(row=0, column=0, rowspan=10, sticky="nsew", padx=(5, 5), pady=(5, 5))
     
     frame_esq.grid_rowconfigure(2, weight=1) 
     frame_esq.grid_columnconfigure(0, weight=1)
 
-    # Titulo
     ctk.CTkLabel(frame_esq, text="FINISHED JOBS", font=("Roboto", 16, "bold"), text_color=CORES["destaque"]).grid(row=0, column=0, pady=(0, 5), sticky="ew")
 
-    # filtros
     frame_filtros = ctk.CTkFrame(frame_esq, fg_color="#242424", corner_radius=8)
     frame_filtros.grid(row=1, column=0, sticky="ew", pady=(0, 10), padx=2)
     
@@ -233,17 +255,14 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
         chk.grid(row=i//3, column=i%3, sticky="w", padx=2, pady=2)
         VARS_FILTRO_AGENTES[ag] = var
 
-    # Lista
     FRAME_LISTA_HISTORICO = ctk.CTkScrollableFrame(frame_esq, width=250, fg_color=CORES["fundo_cartao"], corner_radius=10)
     FRAME_LISTA_HISTORICO.grid(row=2, column=0, sticky="nsew", padx=0, pady=0)
     FRAME_LISTA_HISTORICO.grid_columnconfigure(0, weight=1)
 
-    #  DIREITA: scrolling
     frame_dir = ctk.CTkScrollableFrame(aba, fg_color="transparent")
     frame_dir.grid(row=0, column=1, rowspan=10, sticky="nsew", padx=(5, 5), pady=5)
     frame_dir.grid_columnconfigure(0, weight=1) 
 
-    # GRAFICO 1
     frame_top = ctk.CTkFrame(frame_dir, fg_color="#242424", corner_radius=10, height=450) 
     frame_top.pack(fill="x", pady=(0, 20)) 
     frame_top.pack_propagate(False) 
@@ -259,7 +278,6 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     CANVAS_HIST_LINHA.draw()
     CANVAS_HIST_LINHA.get_tk_widget().pack(fill="both", expand=True)
 
-    # GRAFICO 2
     frame_bot = ctk.CTkFrame(frame_dir, fg_color="#242424", corner_radius=10, height=650)
     frame_bot.pack(fill="x", pady=0)
     frame_bot.pack_propagate(False)
@@ -280,103 +298,86 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
 def aplicar_filtros_historico(evento=None):
     global FRAME_LISTA_HISTORICO, HISTORICO_DATA, VAR_FILTRO_INSTANCIA, VAR_FILTRO_DECODER, VARS_FILTRO_AGENTES, CHAVE_SELECIONADA_ATUAL, COMBO_INSTANCIAS
 
-    # Limpa visualmente a lista
     for widget in FRAME_LISTA_HISTORICO.winfo_children():
         widget.destroy()
 
-    # Pega o estado dos filtros
     f_inst = VAR_FILTRO_INSTANCIA.get()
     f_dec = VAR_FILTRO_DECODER.get()
-    
-    # Lista de agentes marcados nos checkboxes
     agentes_requeridos = [nome for nome, var in VARS_FILTRO_AGENTES.items() if var.get()]
-
-    # Filtra o dicionario
-    chaves_filtradas = []
     
-    # Atualiza a lista do ComboBox para garantir que tenha todas as instancias 
     if COMBO_INSTANCIAS and HISTORICO_DATA:
         nomes_unicos = sorted(list(set([v['meta_nome'] for v in HISTORICO_DATA.values()])))
         COMBO_INSTANCIAS.configure(values=["all"] + nomes_unicos)
 
+    chaves_filtradas = []
     for chave, dados in HISTORICO_DATA.items():
-        # Filtro de Nome da Instâacia
         if f_inst != "all" and dados['meta_nome'] != f_inst: continue
-        
-        # Filtro de Decoder
         if f_dec != "all" and dados['meta_decoder'].lower() != f_dec.lower(): continue
-            
-        # Filtro de Agentes 
-        str_agentes_run = dados['meta_agentes']
         
-        # Transforma "BRKGA-SA" em ['BRKGA', 'SA'] para evitar que 'GA' case com 'BRKGA'
+        str_agentes_run = dados['meta_agentes']
         lista_agentes_na_run = str_agentes_run.split("-")
-
-        # Verifica se os requeridos estao na lista
-        if not all(ag in lista_agentes_na_run for ag in agentes_requeridos): continue
-            
+        if agentes_requeridos and not any(ag in lista_agentes_na_run for ag in agentes_requeridos): 
+             continue
+             
         chaves_filtradas.append(chave)
 
-    # Ordena cronologicamente ou alfabeticamente
     chaves_filtradas.sort()
-
+    
     AX_HIST_LINHA.clear()
     
-    # Desenha as linhas de fundo 
     for chave in chaves_filtradas:
         dados = HISTORICO_DATA[chave]
         raw_x, raw_y = dados['x'], dados['y']
+        
         if not raw_x: continue
         
-        # Ordena X para evitar "time travel"
         eixo_x, eixo_y = zip(*sorted(zip(raw_x, raw_y), key=lambda p: p[0]))
-
-        # Se nao for a selecionada, desenha cinza fraquinho
         if chave != CHAVE_SELECIONADA_ATUAL:
-            AX_HIST_LINHA.plot(eixo_x, eixo_y, color='white', alpha=0.7, linewidth=1.5)
+            AX_HIST_LINHA.plot(eixo_x, eixo_y, color='white', alpha=0.15, linewidth=1)
 
-        # Recria o Botao com  as informacoes
         melhor_mksp = min(eixo_y) if eixo_y else "?"
         hora = dados.get('meta_hora', '')
         
-        # Texto completo
-        txt_btn = f"{dados['meta_nome']}\nData: {hora}\nDecoder: {dados['meta_decoder']}\nAgents: [{dados['meta_agentes']}]\nMakespan: {melhor_mksp}"
-        
+        txt_btn = f"{dados['meta_nome']}\n" \
+                  f"Time: {hora}\n" \
+                  f"Best: {melhor_mksp} | {dados['meta_decoder']}"
+                  
         cor_btn = CORES["destaque"] if chave == CHAVE_SELECIONADA_ATUAL else "#333333"
         
         btn = ctk.CTkButton(
-            FRAME_LISTA_HISTORICO, text=txt_btn, font=("Roboto", 11),
-            fg_color=cor_btn, hover_color="#689EAD", height=70, 
+            FRAME_LISTA_HISTORICO, 
+            text=txt_btn, 
+            font=("Roboto", 11),
+            fg_color=cor_btn, 
+            hover_color="#689EAD", 
+            height=60, 
             anchor="w",
             command=lambda k=chave: carregar_instancia_historico(k)
         )
         btn.chave_privada = chave
-        btn.grid(sticky="ew", pady=5, padx=5)
+        
+        btn.pack(fill="x", pady=2, padx=5)
 
     if CHAVE_SELECIONADA_ATUAL and CHAVE_SELECIONADA_ATUAL in chaves_filtradas:
         dados = HISTORICO_DATA[CHAVE_SELECIONADA_ATUAL]
         eixo_x, eixo_y = zip(*sorted(zip(dados['x'], dados['y']), key=lambda p: p[0]))
-        
         AX_HIST_LINHA.plot(eixo_x, eixo_y, color='#00FF00', linewidth=2.5, marker='o', markersize=4, label="Selected")
         AX_HIST_LINHA.set_title(f"Convergence Curves | Selected: {dados['meta_nome']} (Makespan: {min(eixo_y)})", color="white", fontsize=10)
     else:
-        AX_HIST_LINHA.set_title(f"Convergence Curves (filtered {len(chaves_filtradas)} executions)", color="white", fontsize=10)
+        AX_HIST_LINHA.set_title(f"Convergence Curves (Total: {len(chaves_filtradas)})", color="white", fontsize=10)
 
     AX_HIST_LINHA.grid(True, linestyle='--', alpha=0.3)
     CANVAS_HIST_LINHA.draw()
 
 def carregar_instancia_historico(chave_unica):
     global CHAVE_SELECIONADA_ATUAL
-    
     CHAVE_SELECIONADA_ATUAL = chave_unica    
     aplicar_filtros_historico()
-    
     dados = HISTORICO_DATA.get(chave_unica)
     if not dados: return
 
     AX_HIST_GANTT.clear()
     gantt = dados['gantt']
-    
     max_makespan = 0
     if gantt:
         M, p, X, C = gantt["M"], gantt["p"], gantt["X"], gantt["C"]
@@ -421,20 +422,10 @@ def atualizar_desenho_gantt(dados_gantt, nome_instancia, tempo_decorrido):
     AX_GANTT.grid(axis='x', linestyle='--', alpha=0.2, color='white')
     CANVAS_GANTT.draw()
 
-class RedirecionadorTextoThreadSeguro(object):
-    def __init__(self, widget_texto): self.widget_texto = widget_texto
-    def write(self, texto): 
-        try: self.widget_texto.after(0, lambda: self.escrita_segura(texto))
-        except: pass 
-    def escrita_segura(self, texto):
-        try: self.widget_texto.configure(state="normal"); self.widget_texto.insert("end", texto); self.widget_texto.see("end"); self.widget_texto.configure(state="disabled")
-        except: pass
-    def flush(self): pass
-
 def manipulador_retorno_interface(dados):
     global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL, DADOS_X, DADOS_Y, NOME_INSTANCIA_ATUAL
     global CANVAS_GANTT, MELHOR_MAKESPAN_ATUAL, TEMPO_INICIO_BATERIA, HISTORICO_DATA, FILA_BOTOES_PENDENTES
-    global CANVAS_GLOBAL, AX_GLOBAL, LINHA_GLOBAL, AX_GANTT
+    global CANVAS_GLOBAL, AX_GLOBAL, LINHA_GLOBAL, AX_GANTT, MONOTONIC_FILTER
 
     if ESCRITOR_TERMINAL_GLOBAL is None: return
 
@@ -442,10 +433,12 @@ def manipulador_retorno_interface(dados):
     texto_log = dados.get("message", "")
     nome_pacote = dados.get("instancia") 
 
-    # --- INICIO DE JOB ---
     if tipo_status == "running":
         if nome_pacote: NOME_INSTANCIA_ATUAL = nome_pacote
         MELHOR_MAKESPAN_ATUAL = float('inf'); TEMPO_INICIO_BATERIA = time.time(); DADOS_X.clear(); DADOS_Y.clear()
+        
+        if MONOTONIC_FILTER: MONOTONIC_FILTER.reset()
+            
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
         
         if CANVAS_GLOBAL:
@@ -457,22 +450,18 @@ def manipulador_retorno_interface(dados):
         
         if nome_pacote == NOME_INSTANCIA_ATUAL:
             if makespan <= MELHOR_MAKESPAN_ATUAL:
-                
-                # 1. Tenta pegar o tempo exato vindo do Backend (Enviado pelo rko_gui_start)
                 time_to_best = dados.get("time_to_best")
-
-                # 2. Se não veio no pacote de dados, tenta extrair do texto do log (se houver)
-                if time_to_best is None and texto_log:
-                    match = RE_NEW_BEST.search(texto_log)
-                    if match:
-                        try: time_to_best = float(match.group(3))
-                        except: pass
-                
-                # 3. FALLBACK: Se falhar tudo, calcula localmente (evita Crash)
                 if time_to_best is None:
                     time_to_best = time.time() - TEMPO_INICIO_BATERIA
+                
+                time_to_best = abs(float(time_to_best))
+                
+                nome_agente = dados.get("agent", "RKO Parallel")
+                msg_final = f"[{nome_agente}] NEW BEST: {makespan:.4f} - Time: {time_to_best:.2f}s\n"
+                
+                if MONOTONIC_FILTER:
+                    MONOTONIC_FILTER.print_if_better(msg_final, makespan)
 
-                # Atualiza gráficos se houver melhoria
                 if makespan < MELHOR_MAKESPAN_ATUAL:
                     MELHOR_MAKESPAN_ATUAL = makespan
                     DADOS_X.append(time_to_best); DADOS_Y.append(makespan) 
@@ -482,17 +471,10 @@ def manipulador_retorno_interface(dados):
                         AX_GLOBAL.set_title(f"Instance: {NOME_INSTANCIA_ATUAL}  |  Best: {MELHOR_MAKESPAN_ATUAL}  |  Elapsed Time: {time_to_best:.2f}s", fontsize=10, color="#00FF00", fontweight="bold")
                         AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view()
                         CANVAS_GLOBAL.draw()
-                    
-                    #imprime no output o update que nao veio
-                    #if "NEW BEST" not in texto_log:
-                        #log_extra = f"[GUI UPDATE] NEW BEST: {MELHOR_MAKESPAN_ATUAL:.4f} - Time: {time_to_best:.2f}s"
-                        #ESCRITOR_TERMINAL_GLOBAL.write(f"{log_extra}\n")
-                    
 
                 if gantt_data and CANVAS_GANTT: 
                     CANVAS_GANTT.get_tk_widget().after(0, lambda: atualizar_desenho_gantt(gantt_data, nome_pacote, time_to_best))
 
-    # INSTANCIA CONCLUIDA
     elif tipo_status == "instancia_concluida":
         nome_base = dados.get("instancia")
         hist_curve_backend = dados.get("history_curve", []) 
@@ -500,10 +482,6 @@ def manipulador_retorno_interface(dados):
         if nome_base == NOME_INSTANCIA_ATUAL and len(DADOS_X) > 0:
             eixo_x_final = list(DADOS_X)
             eixo_y_final = list(DADOS_Y)
-        #else:
-            # usa o que veio do backend (menos preciso) (c)
-            #eixo_x_final = [p[0] for p in hist_curve_backend]
-            #eixo_y_final = [p[1] for p in hist_curve_backend]
 
         decoder_usado = dados.get("decoder", "Dec")
         agentes_usados = dados.get("agentes", ["Agentes"]) 
@@ -526,7 +504,6 @@ def manipulador_retorno_interface(dados):
             if chave_unica not in FILA_BOTOES_PENDENTES:
                 FILA_BOTOES_PENDENTES.append(chave_unica)
 
-    # --- LOGS E FIM ---
     elif tipo_status == "finished": 
         ESCRITOR_TERMINAL_GLOBAL.write(f"\n{'='*40}\n{texto_log}\n{'='*40}\n")
         try: START_BUTTON_GLOBAL.resetar_estado()
@@ -545,7 +522,6 @@ def manipulador_retorno_interface(dados):
     elif tipo_status == "log": 
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
 
-#  CONFIGURAcOES DAS ABAS DE PARAMETROS E EXECUCAO
 def configurar_aba_parametros(aba):
     aba.widgets_armazenados = {} 
     
@@ -603,9 +579,7 @@ def criar_cartao_agente(conteiner_pai, config):
     frame = ctk.CTkFrame(conteiner_pai, fg_color=CORES["fundo_cartao"], width=LARGURA_CARTAO_AGENTE, height=ALTURA_CARTAO_AGENTE, border_width=1, border_color=CORES["borda"])
     frame.grid(row=config["linha"], column=config["coluna"], padx=8, pady=8, sticky="n")
     
-    frame.grid_propagate(False) # cada card utiliza o mesmo tamanho dos demais
-    # frame.grid_propagate(True) 
-    # cada card usa somente o tamanho minimo necessario
+    frame.grid_propagate(False) 
     
     ctk.CTkLabel(frame, text=config["titulo"], font=FONTES["corpo_negrito"], text_color=CORES["destaque"]).grid(row=0, column=0, sticky="w", padx=10, pady=(8,4))
     var_chk = tk.BooleanVar(value=True)
@@ -616,7 +590,6 @@ def criar_cartao_agente(conteiner_pai, config):
         ctk.CTkLabel(frame, text=txt, anchor="w", font=FONTES["pequena"]).grid(row=i, column=0, sticky="w", padx=70+20, pady=6)
         
         ent = ctk.CTkEntry(frame, width=70); ent.insert(0, val)
-        # col = 1 if config.get("coluna", 0) != 0 else 0
         ent.grid(row=i, column=0, sticky="w", padx=10 if config.get("coluna",0) != 0 else 0, pady=6)
         
         widgets[txt] = ent
@@ -638,7 +611,6 @@ def configurar_aba_entrada_saida(aba):
     try: img = ctk.CTkImage(Image.open(resource_path("assets/dots.png")), size=(16, 16))
     except: img = None 
         
-    # Mapeamento das chaves do cache
     lista_campos = [
         ("output_path", "Output Path", 1), 
         ("instance_path", "Instance Folder Path", 2), 
@@ -654,7 +626,6 @@ def configurar_aba_entrada_saida(aba):
         ent = ctk.CTkEntry(fr, border_color=CORES["primaria"], border_width=2, width=350)
         ent.grid(row=1, column=0, padx=10, pady=3)
         
-        # Se existir valor no cache para esta chave 'k', inserimos na caixa
         valor_cache = cache.get(k, "")
         if valor_cache:
             ent.insert(0, valor_cache)
@@ -664,7 +635,7 @@ def configurar_aba_entrada_saida(aba):
         ctk.CTkButton(fr, text="" if img else "...", width=30, image=img, fg_color="transparent", hover_color=CORES["destaque"], command=lambda e=ent: sel_dir(e)).grid(row=1, column=1, pady=10)
 
 def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
-    global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL
+    global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL, MONOTONIC_FILTER
     
     estado_execucao = {"rodando": False}
 
@@ -683,15 +654,12 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
         
         if not estado_execucao["rodando"]:
             try:
-                # O .get() aqui pega o texto que esta visivel na box
                 w_inst = aba_io.widgets_armazenados.get("instance_path")
                 w_out = aba_io.widgets_armazenados.get("output_path")
                 w_gantt = aba_io.widgets_armazenados.get("gantt_path")
-
                 c_inst = w_inst.get() if w_inst else ""
                 c_out = w_out.get() if w_out else ""
                 c_gantt = w_gantt.get() if w_gantt else ""
-                
                 salvar_cache_caminhos(c_inst, c_out, c_gantt)
             except Exception as e:
                 print(f"Aviso: Não foi possível salvar cache IO: {e}")
@@ -700,7 +668,11 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
             if not data: return 
             
             if ESCRITOR_TERMINAL_GLOBAL:
-                ESCRITOR_TERMINAL_GLOBAL.widget_texto.configure(state="normal"); ESCRITOR_TERMINAL_GLOBAL.widget_texto.delete("1.0", "end"); ESCRITOR_TERMINAL_GLOBAL.widget_texto.configure(state="disabled")
+                try:
+                    ESCRITOR_TERMINAL_GLOBAL.filtro.widget.configure(state="normal")
+                    ESCRITOR_TERMINAL_GLOBAL.filtro.widget.delete("1.0", "end")
+                    ESCRITOR_TERMINAL_GLOBAL.filtro.widget.configure(state="disabled")
+                except: pass
             
             estado_execucao["rodando"] = True
             START_BUTTON_GLOBAL.configure(text="Running...", fg_color="#555555", border_width=2, border_color="#555555", text_color=("gray10", "gray90"))
@@ -719,25 +691,16 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
     term.grid(row=2, column=0, columnspan=10, rowspan=8, sticky="nsew", padx=45, pady=(0,45))
     term.configure(state="disabled")
 
-    ESCRITOR_TERMINAL_GLOBAL = RedirecionadorTextoThreadSeguro(term)
+    MONOTONIC_FILTER = MonotonicFilter(term)
+    
+    redirector = StdoutRedirector(MONOTONIC_FILTER)
+    
+    ESCRITOR_TERMINAL_GLOBAL = redirector
     START_BUTTON_GLOBAL = botao
     START_BUTTON_GLOBAL.resetar_estado = resetar_botao
-    sys.stdout = ESCRITOR_TERMINAL_GLOBAL
-
-#  FUNCOES BASE
-
-def centralizar_janela(janela, w, h):
-    ws = janela.winfo_screenwidth(); hs = janela.winfo_screenheight()
-    x = (ws - w) // 2; y = (hs - h) // 2
-    janela.geometry(f"{w}x{h}+{x}+{y}")
-
-def criar_aba_base(pai):
-    f = ctk.CTkFrame(pai, width=1200, height=900, border_width=5, border_color=CORES["borda"])
-    for i in range(10): f.grid_rowconfigure(i, weight=1, minsize=20); f.grid_columnconfigure(i, weight=1, minsize=20)
-    return f
+    sys.stdout = redirector 
 
 def coletar_dados_interface(aba_p, aba_a, aba_io):
-
     data = {}
     if hasattr(aba_p, 'widgets_armazenados'):
         data["hyper_parameters"] = {k: w.get() for k, w in aba_p.widgets_armazenados.items()}
@@ -749,6 +712,16 @@ def coletar_dados_interface(aba_p, aba_a, aba_io):
     data["io"] = {k: w.get() for k, w in aba_io.widgets_armazenados.items()} if hasattr(aba_io, 'widgets_armazenados') else {}
     return data
 
+def centralizar_janela(janela, w, h):
+    ws = janela.winfo_screenwidth(); hs = janela.winfo_screenheight()
+    x = (ws - w) // 2; y = (hs - h) // 2
+    janela.geometry(f"{w}x{h}+{x}+{y}")
+
+def criar_aba_base(pai):
+    f = ctk.CTkFrame(pai, width=1200, height=900, border_width=5, border_color=CORES["borda"])
+    for i in range(10): f.grid_rowconfigure(i, weight=1, minsize=20); f.grid_columnconfigure(i, weight=1, minsize=20)
+    return f
+
 def construir_aplicacao():
     janela = ctk.CTk()
     janela.title("RKO-SOLVER")
@@ -756,7 +729,6 @@ def construir_aplicacao():
     LARGURA_FIXA = 1280
     ALTURA_FIXA = 810
     
-    # Centraliza
     ws = janela.winfo_screenwidth()
     hs = janela.winfo_screenheight()
     x = (ws - LARGURA_FIXA) // 2
@@ -767,12 +739,10 @@ def construir_aplicacao():
     
     ctk.set_appearance_mode('dark')
 
-    # Grid principal
     for i in range(10): 
-        janela.grid_rowconfigure(i, minsize=0, weight=0) # Tira pesos globais
+        janela.grid_rowconfigure(i, minsize=0, weight=0)
         janela.grid_columnconfigure(i, minsize=0, weight=0)
     
-    # Frame Principal ocupa TUDO
     janela.grid_rowconfigure(2, weight=1)
     janela.grid_columnconfigure(2, weight=1)
 

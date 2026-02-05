@@ -11,7 +11,10 @@ except Exception:
     run_rko = None
 
 # VARIAVEIS GLOBAIS DE CONTROLE
-LOG_QUEUE = Queue(maxsize=2000)
+
+#Queue agora nao tem limites (maximo RAM eh o limite )
+LOG_QUEUE = Queue() 
+
 STOP_EVENT = threading.Event()
 SOLVER_THREAD = None 
 
@@ -22,10 +25,7 @@ def solicitar_parada():
 
 def solver_callback(dados: dict):
     """Callback chamado pelo solver (RKO) para enviar logs."""
-    try:
-        LOG_QUEUE.put_nowait(dados)
-    except Exception:
-        pass 
+    LOG_QUEUE.put(dados)
 
 def logger_worker(gui_callback):
     """Thread dedicada a consumir a fila e atualizar a GUI."""
@@ -85,7 +85,7 @@ def _executar_solver(dados, callback_interface):
         instance_path = dados.get('io', {}).get('instance_path', '').strip()
         decoder = str(dados.get('hyper_parameters', {}).get('decoder', 'ect')).lower()
         time_limit = int(dados.get('hyper_parameters', {}).get('time_limit', 60))
-        execution_times = int(dados.get('hyper_parameters', {}).get('execution_times', 1))  #TODO: considere renomear execution_times para execution_repetitions
+        execution_times = int(dados.get('hyper_parameters', {}).get('execution_times', 1))
         agents = dados.get('agents', {})
 
         if execution_times < 1: execution_times = 1
@@ -116,7 +116,6 @@ def _executar_solver(dados, callback_interface):
 
                 atual += 1
                 
-                # ENVIA NOME DA INSTANCIA EM CADA MENSAGEM CRITICA
                 LOG_QUEUE.put({
                     "status": "running",
                     "message": f"Processando ({atual}/{total}): {nome} [Run {run_idx}]",
@@ -140,12 +139,11 @@ def _executar_solver(dados, callback_interface):
                     
                     lista_agentes_ativos = [k for k, v in agents.items() if v] if agents else ["Padrão"]
 
-                    # Envia a curva completa e o gantt final diretamente.
                     LOG_QUEUE.put({
                         "status": "instancia_concluida",
                         "instancia": nome,
                         "makespan": resultado["makespan"],
-                        "history_curve": resultado.get("history_data", []), # Lista [(tempo, custo), ...]
+                        "history_curve": resultado.get("history_data", []), 
                         "gantt_data": resultado.get("gantt_data"),
                         "decoder": decoder,            
                         "agentes": lista_agentes_ativos,
