@@ -62,17 +62,16 @@ def _queue_reader(q: Queue, callback: Optional[Callable[[dict], None]], history_
         
         try:
             if isinstance(msg, dict):
-                # [SENTINELA]
+                # SENTINELA
                 if msg.get("status") == "DONE":
                     break
 
-                # [CAPTURA DE DADOS FILTRADA]
+                
                 if msg.get("status") == "update" and "makespan" in msg:
                     mksp = float(msg["makespan"])
                     
-                    # [CORREÇÃO CRÍTICA]
-                    # Só adicionamos ao histórico se for ESTRITAMENTE MELHOR que o último gravado.
-                    # Isso elimina os pontos "ruins" (ex: 250 -> 259) que apareciam no arquivo.
+                    # Soh adiciona ao historico se for ESTRITAMENTE MELHOR que o ultimo gravado
+                    # Isso elimina os pontos "ruins" (ex: 250 -> 259) que apareciam no arquivo
                     if mksp < local_best_makespan:
                         local_best_makespan = mksp # Atualiza referência
                         
@@ -84,8 +83,6 @@ def _queue_reader(q: Queue, callback: Optional[Callable[[dict], None]], history_
                             tempo = float(tempo)
                         
                         history_list.append((tempo, mksp))
-                
-                # Para a GUI, mandamos tudo (ela tem seu próprio filtro visual)
                 callback(msg)
             else:
                 texto_msg = str(msg).rstrip()
