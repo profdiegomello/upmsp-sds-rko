@@ -212,8 +212,6 @@ def configurar_aba_gantt_live(aba):
     NavigationToolbar2Tk(CANVAS_GANTT, frame).pack(side="bottom", fill="x")
     return frame
 
-# No arquivo gui/ui.py
-
 def aplicar_filtros_historico(evento=None):
     global FRAME_LISTA_HISTORICO, HISTORICO_DATA, VAR_FILTRO_INSTANCIA, VAR_FILTRO_DECODER, VARS_FILTRO_AGENTES, CHAVE_SELECIONADA_ATUAL, COMBO_INSTANCIAS, VAR_ORDENACAO_HISTORICO
 
@@ -224,7 +222,7 @@ def aplicar_filtros_historico(evento=None):
     # Pega os valores dos filtros
     f_inst = VAR_FILTRO_INSTANCIA.get()
     f_dec = VAR_FILTRO_DECODER.get()
-    f_sort = VAR_ORDENACAO_HISTORICO.get() # Criterio de ordenacao
+    f_sort = VAR_ORDENACAO_HISTORICO.get() # Critério de ordenação
     
     agentes_requeridos = [nome for nome, var in VARS_FILTRO_AGENTES.items() if var.get()]
     
@@ -245,13 +243,20 @@ def aplicar_filtros_historico(evento=None):
              
         chaves_filtradas.append(chave)
 
+    #Ordenacao natural
+    # Funcao auxiliar para ordenar texto com numeros 
+    # Transforma "I_12" em ["I_", 12] e "I_100" em ["I_", 100]
+    def natural_keys(chave):
+        texto = HISTORICO_DATA[chave]['meta_nome']
+        return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', texto)]
+
     if f_sort == "Descending Date/Hour":
         try:
             chaves_filtradas.sort(
                 key=lambda k: datetime.strptime(HISTORICO_DATA[k]['meta_hora'], "%d/%m/%y %H:%M:%S"), 
                 reverse=True
             )
-        except Exception: chaves_filtradas.sort()
+        except: chaves_filtradas.sort()
 
     elif f_sort == "Ascending Date/Hour":
         try:
@@ -259,16 +264,23 @@ def aplicar_filtros_historico(evento=None):
                 key=lambda k: datetime.strptime(HISTORICO_DATA[k]['meta_hora'], "%d/%m/%y %H:%M:%S"), 
                 reverse=False
             )
-        except Exception: chaves_filtradas.sort()
+        except: chaves_filtradas.sort()
             
-    elif f_sort == "Instance":
-        chaves_filtradas.sort(key=lambda k: HISTORICO_DATA[k]['meta_nome'])
+    elif f_sort == "Ascending Instance":
+        try:
+            chaves_filtradas.sort(key=natural_keys, reverse=False)
+        except: chaves_filtradas.sort()
+
+    elif f_sort == "Descending Instance":
+        try:
+            chaves_filtradas.sort(key=natural_keys, reverse=True)
+        except: chaves_filtradas.sort()
         
     elif f_sort == "Decoder":
         chaves_filtradas.sort(key=lambda k: HISTORICO_DATA[k]['meta_decoder'])
     
     else:
-        # Fallback (usa descending como padrao)
+        # Fallback
         try:
             chaves_filtradas.sort(
                 key=lambda k: datetime.strptime(HISTORICO_DATA[k]['meta_hora'], "%d/%m/%y %H:%M:%S"), 
@@ -388,13 +400,18 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     combo_dec = ctk.CTkComboBox(frame_filtros, variable=VAR_FILTRO_DECODER, values=["all", "CHEAPEST", "M3LAW", "ECT", "INCREMENTAL", "KSTS"], state="readonly", height=22, font=("Roboto", 11), command=aplicar_filtros_historico)
     combo_dec.pack(fill="x", padx=5, pady=(0, 5))
 
-    # Sort by com Ascending/Descending
     ctk.CTkLabel(frame_filtros, text="Sort by:", font=("Roboto", 10)).pack(anchor="w", padx=5)
     VAR_ORDENACAO_HISTORICO = ctk.StringVar(value="Descending Date/Hour")
     combo_sort = ctk.CTkComboBox(
         frame_filtros, 
         variable=VAR_ORDENACAO_HISTORICO,
-        values=["Descending Date/Hour", "Ascending Date/Hour", "Instance", "Decoder"],
+        values=[
+            "Descending Date/Hour", 
+            "Ascending Date/Hour", 
+            "Ascending Instance", 
+            "Descending Instance", 
+            "Decoder"
+        ],
         state="readonly", 
         height=22, 
         font=("Roboto", 11),
