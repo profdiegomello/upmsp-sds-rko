@@ -10,6 +10,7 @@ import time
 import json
 import threading
 import matplotlib
+from matplotlib import ticker
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
@@ -214,6 +215,7 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     global FRAME_LISTA_HISTORICO, FIG_HIST_LINHA, AX_HIST_LINHA, CANVAS_HIST_LINHA, FIG_HIST_GANTT, AX_HIST_GANTT, CANVAS_HIST_GANTT
     global VAR_FILTRO_INSTANCIA, VAR_FILTRO_DECODER, VARS_FILTRO_AGENTES, COMBO_INSTANCIAS
 
+    # Configuracao do Grid Principal
     for i in range(2, 20):
         aba.grid_columnconfigure(i, weight=0, minsize=0)
         aba.grid_rowconfigure(i, weight=0, minsize=0)
@@ -222,6 +224,7 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     aba.grid_columnconfigure(1, weight=1) 
     aba.grid_rowconfigure(0, weight=1)
 
+    # COLUNA DA ESQUERDA 
     frame_esq = ctk.CTkFrame(aba, fg_color="transparent", width=270)
     frame_esq.grid(row=0, column=0, rowspan=10, sticky="nsew", padx=(5, 5), pady=(5, 5))
     
@@ -230,6 +233,7 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
 
     ctk.CTkLabel(frame_esq, text="FINISHED JOBS", font=("Roboto", 16, "bold"), text_color=CORES["destaque"]).grid(row=0, column=0, pady=(0, 5), sticky="ew")
 
+    # Filtros
     frame_filtros = ctk.CTkFrame(frame_esq, fg_color="#242424", corner_radius=8)
     frame_filtros.grid(row=1, column=0, sticky="ew", pady=(0, 10), padx=2)
     
@@ -255,15 +259,18 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
         chk.grid(row=i//3, column=i%3, sticky="w", padx=2, pady=2)
         VARS_FILTRO_AGENTES[ag] = var
 
+    # Lista Scroll
     FRAME_LISTA_HISTORICO = ctk.CTkScrollableFrame(frame_esq, width=250, fg_color=CORES["fundo_cartao"], corner_radius=10)
     FRAME_LISTA_HISTORICO.grid(row=2, column=0, sticky="nsew", padx=0, pady=0)
     FRAME_LISTA_HISTORICO.grid_columnconfigure(0, weight=1)
 
+    # COLUNA DA DIREITA 
     frame_dir = ctk.CTkScrollableFrame(aba, fg_color="transparent")
     frame_dir.grid(row=0, column=1, rowspan=10, sticky="nsew", padx=(5, 5), pady=5)
     frame_dir.grid_columnconfigure(0, weight=1) 
 
-    frame_top = ctk.CTkFrame(frame_dir, fg_color="#242424", corner_radius=10, height=450) 
+    # FRAME SUPERIOR (CURVAS)
+    frame_top = ctk.CTkFrame(frame_dir, fg_color="#242424", corner_radius=10, height=500) 
     frame_top.pack(fill="x", pady=(0, 20)) 
     frame_top.pack_propagate(False) 
     
@@ -272,13 +279,23 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     AX_HIST_LINHA.set_title("Convergence Curves", color="white", fontsize=10)
     AX_HIST_LINHA.tick_params(colors='white', labelsize=8)
     for s in AX_HIST_LINHA.spines.values(): s.set_color('white')
-    FIG_HIST_LINHA.subplots_adjust(left=0.05, right=0.98, top=0.92, bottom=0.10)
+    FIG_HIST_LINHA.subplots_adjust(left=0.05, right=0.98, top=0.92, bottom=0.15)
 
     CANVAS_HIST_LINHA = FigureCanvasTkAgg(FIG_HIST_LINHA, master=frame_top)
-    CANVAS_HIST_LINHA.draw()
-    CANVAS_HIST_LINHA.get_tk_widget().pack(fill="both", expand=True)
 
-    frame_bot = ctk.CTkFrame(frame_dir, fg_color="#242424", corner_radius=10, height=650)
+    toolbar_linha = NavigationToolbar2Tk(CANVAS_HIST_LINHA, frame_top)
+    #toolbar_linha.config(background='#333333') 
+    #toolbar_linha._message_label.config(background='#333333', foreground='white')
+    toolbar_linha.update() # Garante que a barra renderize completa
+    toolbar_linha.pack(side="bottom", fill="x") 
+
+    # Canvas ocupa o resto
+    CANVAS_HIST_LINHA.draw()
+    CANVAS_HIST_LINHA.get_tk_widget().pack(side="top", fill="both", expand=True)
+
+
+    # FRAME INFERIOR (GANTT)
+    frame_bot = ctk.CTkFrame(frame_dir, fg_color="#242424", corner_radius=10, height=700)
     frame_bot.pack(fill="x", pady=0)
     frame_bot.pack_propagate(False)
     
@@ -287,11 +304,19 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     AX_HIST_GANTT.set_title("Current Schedule", color="white", fontsize=10)
     AX_HIST_GANTT.tick_params(colors='white', labelsize=8)
     for s in AX_HIST_GANTT.spines.values(): s.set_color('white')
-    FIG_HIST_GANTT.subplots_adjust(left=0.05, right=0.98, top=0.95, bottom=0.05)
+    FIG_HIST_GANTT.subplots_adjust(left=0.05, right=0.98, top=0.95, bottom=0.15)
     
     CANVAS_HIST_GANTT = FigureCanvasTkAgg(FIG_HIST_GANTT, master=frame_bot)
+
+    # [TOOLBAR]: Mesma config de contraste
+    toolbar_gantt = NavigationToolbar2Tk(CANVAS_HIST_GANTT, frame_bot)
+    #toolbar_gantt.config(background='#333333')
+    #toolbar_gantt._message_label.config(background='#333333', foreground='white')
+    toolbar_gantt.update()
+    toolbar_gantt.pack(side="bottom", fill="x")
+
     CANVAS_HIST_GANTT.draw()
-    CANVAS_HIST_GANTT.get_tk_widget().pack(fill="both", expand=True)
+    CANVAS_HIST_GANTT.get_tk_widget().pack(side="top", fill="both", expand=True)
 
     iniciar_watchdog_historico()
 
@@ -314,10 +339,11 @@ def aplicar_filtros_historico(evento=None):
         if f_inst != "all" and dados['meta_nome'] != f_inst: continue
         if f_dec != "all" and dados['meta_decoder'].lower() != f_dec.lower(): continue
         
-        str_agentes_run = dados['meta_agentes']
-        lista_agentes_na_run = str_agentes_run.split("-")
-        if agentes_requeridos and not any(ag in lista_agentes_na_run for ag in agentes_requeridos): 
-             continue
+        if agentes_requeridos:
+            raw_agentes_run = dados.get('meta_agentes', '')
+            lista_agentes_na_run = [ag for ag in raw_agentes_run.split("-") if ag]
+            if not all(req in lista_agentes_na_run for req in agentes_requeridos):
+                continue
              
         chaves_filtradas.append(chave)
 
@@ -333,29 +359,64 @@ def aplicar_filtros_historico(evento=None):
         
         eixo_x, eixo_y = zip(*sorted(zip(raw_x, raw_y), key=lambda p: p[0]))
         if chave != CHAVE_SELECIONADA_ATUAL:
-            AX_HIST_LINHA.plot(eixo_x, eixo_y, color='white', alpha=0.15, linewidth=1)
+            AX_HIST_LINHA.plot(eixo_x, eixo_y, color='white', alpha=0.6, linewidth=1.7)
+
+        raw_agentes = dados.get('meta_agentes', 'N/A')
+        lista_nomes = [x for x in raw_agentes.split("-") if x]
+        
+        linhas_agentes = []
+        linha_atual = ""
+        limite_char = 28
+        
+        for nome in lista_nomes:
+            if len(linha_atual) + len(nome) + 2 > limite_char:
+                linhas_agentes.append(linha_atual.strip(", "))
+                linha_atual = nome + ", "
+            else:
+                linha_atual += nome + ", "
+        
+        if linha_atual:
+            linhas_agentes.append(linha_atual.strip(", "))
+            
+        texto_agentes_formatado = "\n".join(linhas_agentes)
 
         melhor_mksp = min(eixo_y) if eixo_y else "?"
         hora = dados.get('meta_hora', '')
         
         txt_btn = f"{dados['meta_nome']}\n" \
                   f"Time: {hora}\n" \
-                  f"Best: {melhor_mksp} | {dados['meta_decoder']}"
+                  f"Best: {melhor_mksp} | {dados['meta_decoder']}\n" \
+                  f"[{texto_agentes_formatado}]"
                   
-        cor_btn = CORES["destaque"] if chave == CHAVE_SELECIONADA_ATUAL else "#333333"
+        
+        cor_btn_normal = "#6D28D9" if chave == CHAVE_SELECIONADA_ATUAL else "#333333"
         
         btn = ctk.CTkButton(
             FRAME_LISTA_HISTORICO, 
             text=txt_btn, 
-            font=("Roboto", 11),
-            fg_color=cor_btn, 
-            hover_color="#689EAD", 
-            height=60, 
+            font=("Roboto", 12),
+            fg_color=cor_btn_normal, 
+            text_color="#FFFFFF", 
+            
+            # Removemos o hover_color automatico para controlar manualmente
+            hover_color="#FFFFFF",
+            
+            height=90, 
             anchor="w",
             command=lambda k=chave: carregar_instancia_historico(k)
         )
         btn.chave_privada = chave
         
+        # Quando entra: Fundo BRANCO, Texto PRETO
+        def on_enter(e, b=btn):
+            b.configure(fg_color="#FFFFFF", text_color="#000000")
+            
+        # Quando sai: Volta para a cor NORMAL (Roxo/Cinza), Texto BRANCO
+        def on_leave(e, b=btn, cor_orig=cor_btn_normal):
+            b.configure(fg_color=cor_orig, text_color="#FFFFFF")
+
+        btn.bind("<Enter>", on_enter)
+        btn.bind("<Leave>", on_leave)
         btn.pack(fill="x", pady=2, padx=5)
 
     if CHAVE_SELECIONADA_ATUAL and CHAVE_SELECIONADA_ATUAL in chaves_filtradas:
@@ -442,7 +503,13 @@ def manipulador_retorno_interface(dados):
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
         
         if CANVAS_GLOBAL:
-            LINHA_GLOBAL.set_data([], []); AX_GLOBAL.set_title(f"{NOME_INSTANCIA_ATUAL}...", fontsize=10, color="white"); AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view(); CANVAS_GLOBAL.draw()
+            LINHA_GLOBAL.set_data([], [])
+            AX_GLOBAL.set_title(f"{NOME_INSTANCIA_ATUAL}...", fontsize=10, color="white")
+            AX_GLOBAL.set_xlim(auto=True)
+            AX_GLOBAL.set_ylim(auto=True)
+            AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view()
+            CANVAS_GLOBAL.draw()
+            
         if AX_GANTT: AX_GANTT.clear(); CANVAS_GANTT.draw()
 
     elif tipo_status == "update":
@@ -474,14 +541,43 @@ def manipulador_retorno_interface(dados):
 
                 if gantt_data and CANVAS_GANTT: 
                     CANVAS_GANTT.get_tk_widget().after(0, lambda: atualizar_desenho_gantt(gantt_data, nome_pacote, time_to_best))
+    
+    elif tipo_status == "final_plateau":
+        final_time = dados.get("final_time")
+        final_mksp = dados.get("final_makespan")
+        nome_inst = dados.get("instancia")
+        
+        if nome_inst == NOME_INSTANCIA_ATUAL and DADOS_X:
+            # Soh adiciona se estender o grafico
+            if final_time > (DADOS_X[-1] + 0.1):
+                DADOS_X.append(final_time)
+                DADOS_Y.append(final_mksp)
+                
+                if CANVAS_GLOBAL:
+                    LINHA_GLOBAL.set_data(DADOS_X, DADOS_Y)
+                    AX_GLOBAL.set_title(f"Instance: {NOME_INSTANCIA_ATUAL} (Completed)", fontsize=10, color="white", fontweight="bold")
+                    
+                    # Força visualização total (Dezenas no eixo X)
+                    AX_GLOBAL.xaxis.set_major_locator(ticker.MaxNLocator(nbins=15, integer=False))
+                    AX_GLOBAL.set_xlim(left=-0.5, right=final_time * 1.05)
+                    
+                    min_y = min(DADOS_Y); max_y = max(DADOS_Y)
+                    margem = (max_y - min_y) * 0.1 if max_y != min_y else 10
+                    AX_GLOBAL.set_ylim(bottom=max(0, min_y - margem), top=max_y + margem)
+                    
+                    CANVAS_GLOBAL.draw()
 
     elif tipo_status == "instancia_concluida":
         nome_base = dados.get("instancia")
-        hist_curve_backend = dados.get("history_curve", []) 
         gantt_final = dados.get("gantt_data")
+
+        # Salva historico
         if nome_base == NOME_INSTANCIA_ATUAL and len(DADOS_X) > 0:
             eixo_x_final = list(DADOS_X)
             eixo_y_final = list(DADOS_Y)
+        else:
+            eixo_x_final = []
+            eixo_y_final = []
 
         decoder_usado = dados.get("decoder", "Dec")
         agentes_usados = dados.get("agentes", ["Agentes"]) 
