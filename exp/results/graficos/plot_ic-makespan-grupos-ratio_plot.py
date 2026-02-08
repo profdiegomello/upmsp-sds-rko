@@ -122,8 +122,8 @@ for i, group_val in enumerate(ratio_groups):
 
     # --- ALTERAÇÃO: Formato do Título do Subplot ---
     # Garante que o título mostre o valor com uma casa decimal (ex: 2.0, 2.5)
-    # ax.set_title(f'Razão j/m ≈ {group_val:.1f}', fontsize=10)
-    ax.set_title(f'Razão job/machine ≈ {group_val:.1f}', fontsize=10)
+    # ax.set_title(f'Razão N/M ≈ {group_val:.1f}', fontsize=10)
+    ax.set_title(f'Razão N/M ≈ {group_val:.1f}', fontsize=10)
     ax.set_xticks(x_ticks)
     ax.set_xticklabels(x_labels, rotation=0, ha='right')
     ax.grid(True, which='both', linestyle='--', linewidth=0.5)
@@ -134,15 +134,15 @@ for i in range(n_groups, len(axes)):
     axes[i].axis('off')
 
 handles, labels = ax.get_legend_handles_labels()
-# fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=3, title='Modelo', fontsize=12)
-fig.legend(handles, labels, loc='lower right', bbox_to_anchor=(1, 0), ncol=3, title='Modelo', fontsize=12)
+# fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=3, title='Política', fontsize=12)
+fig.legend(handles, labels, loc='lower right', bbox_to_anchor=(1, 0), ncol=3, title='Política', fontsize=12)
 
 # fig.suptitle(f'Desempenho do [RKO, SA, BRKGA, MIP] para métrica Makespan', fontsize=18)
-# fig.suptitle(f'Desempenho do RKO vs BRKGA (mesmos decoders) para métrica Makespan', fontsize=18)
-fig.suptitle(f'Desempenho dos decoders RKO para métrica Makespan', fontsize=18)
+# fig.suptitle(f'Desempenho do RKO vs BRKGA (mesmas políticas de sequenciamento) para métrica Makespan', fontsize=18)
+fig.suptitle(f'Desempenho das políticas de sequenciamento no RKO para métrica Makespan', fontsize=18)
 
 
-fig.supxlabel('Configuração (Jobs, Machines)', fontsize=14, y=0.02)
+fig.supxlabel('Grupo de Instâncias: (Tarefas, Máquinas)', fontsize=14, y=0.02)
 fig.supylabel('IC 95% do Makespan', fontsize=14, x=0.04)
 
 fig.tight_layout(rect=[0.05, 0.05, 1, 0.94])

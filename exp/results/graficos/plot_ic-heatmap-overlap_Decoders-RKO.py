@@ -80,11 +80,11 @@ import matplotlib.ticker as mticker
 cbar = ax.collections[0].colorbar
 cbar.ax.yaxis.set_major_formatter(mticker.PercentFormatter())
 
-fig.supxlabel('Configuração (Jobs, Machines)', fontsize=10, y=0.02)
+fig.supxlabel('Grupo de Instâncias: (Tarefas, Máquinas)', fontsize=10, y=0.02)
 
-fig.suptitle(f'Heatmap de Sobreposição dos ICs 95% entre decoders no RKO', fontsize=12)
-ax.set_title("(A ∩ B) como percentual de interseção entre os dos ICs 95% do Makespan", fontsize=8)
-# ax.set_title("Heatmap de Sobreposição dos ICs 95% entre decoders no RKO: (A ∩ B)\n\n(valores de 0 a 1 indicam a fração de interseção entre os ICs)")
+fig.suptitle(f'Heatmap de Sobreposição dos ICs 95% entre políticas de sequenciamento no RKO', fontsize=12)
+ax.set_title("(A ∩ B) como percentual de interseção entre os ICs 95% do Makespan", fontsize=8)
+# ax.set_title("Heatmap de Sobreposição dos ICs 95% entre políticas de sequenciamento no RKO: (A ∩ B)\n\n(valores de 0 a 1 indicam a fração de interseção entre os ICs)")
 
 plt.tight_layout()
 

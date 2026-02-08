@@ -72,15 +72,15 @@ for model in models:
 # --- 4. Customização e Exibição ---
 
 # Melhora a aparência do gráfico
-ax.set_title('Intervalo de Confiança 95% para Objective por Configuração', fontsize=18, pad=20)
+ax.set_title('Intervalo de Confiança 95% para métrica Makespan', fontsize=18, pad=20)
 ax.set_ylabel('IC 95%: Objective', fontsize=14)
-ax.set_xlabel('Configuração (Jobs, Machines)', fontsize=14)
+ax.set_xlabel('Grupo de Instâncias: (Tarefas, Máquinas)', fontsize=14)
 
 # Define os rótulos do eixo X e rotaciona para evitar sobreposição
 ax.set_xticks(x_ticks)
 ax.set_xticklabels(x_labels, rotation=45, ha='right')
 
-ax.legend(title='Modelo', fontsize=12) # Adiciona a legenda
+ax.legend(title='Política', fontsize=12) # Adiciona a legenda
 ax.grid(True, which='both', linestyle='--', linewidth=0.5) # Adiciona um grid
 fig.tight_layout() # Ajusta o layout para que nada seja cortado
 

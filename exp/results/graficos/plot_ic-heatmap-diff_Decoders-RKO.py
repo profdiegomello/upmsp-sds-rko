@@ -86,7 +86,7 @@ sns.heatmap(
     # , robust=True
 )
 
-ax.set_title("Heatmap das Diferenças dos Pontos Médios dos ICs 95% entre decoders no RKO: (A - B)\n\ncores frias (valor negativo): decoder A é melhor, cores quentes (valor positivo): decoder B é melhor.")
+ax.set_title("Heatmap das Diferenças dos Pontos Médios dos ICs 95% entre políticas de sequenciamento no RKO: (A - B)\n\ncores frias (valor negativo): política A é melhor, cores quentes (valor positivo): política B é melhor.")
 plt.tight_layout()
 
 # Salva a imagem em um arquivo

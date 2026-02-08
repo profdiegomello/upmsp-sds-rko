@@ -101,10 +101,10 @@ import matplotlib.ticker as mticker
 cbar = ax.collections[0].colorbar
 cbar.ax.yaxis.set_major_formatter(mticker.PercentFormatter())
 
-fig.supxlabel('Configuração (Jobs, Machines)', fontsize=10, y=0.02)
+fig.supxlabel('Grupo de Instâncias: (Tarefas, Máquinas)', fontsize=10, y=0.02)
 
-fig.suptitle(f'Heatmap da % de Ganho entre Decoders do RKO', fontsize=12)
-ax.set_title("(B - A)/A do Ponto Médio dos ICs 95%\n\nOBS.: valor positivo: decoder A é melhor, valor negativo: decoder B é melhor", fontsize=8)
+fig.suptitle(f'Heatmap da % de Ganho Relativo entre políticas de sequenciamento do RKO', fontsize=12)
+ax.set_title("(B - A)/A do Ponto Médio dos ICs 95%\n\nOBS.: valor positivo: política A é melhor, valor negativo: política B é melhor", fontsize=8)
 plt.tight_layout()
 
 # Salva a imagem em um arquivo

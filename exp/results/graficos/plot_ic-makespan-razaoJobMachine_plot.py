@@ -2,7 +2,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-SORT_RATIO = True
+# SORT_RATIO = True
+SORT_RATIO = False
 LOG_SCALE = False 
 
 # --- 1. Carregamento e Preparação dos Dados ---
@@ -62,10 +63,10 @@ model_offsets = {
                     , 'SA':            0.6
                 }
 models = [  
-              'RKO-CHI'      #, 'BRKGA-CHI'
-            , 'RKO-M3LAW'    #, 'BRKGA-M3LAW'
-            , 'RKO-ECT'      #, 'BRKGA-ECT'
-           , 'RKO-INC'      #, 'BRKGA-INC'
+              'RKO-CHI'      , 'BRKGA-CHI'
+            , 'RKO-M3LAW'    , 'BRKGA-M3LAW'
+            , 'RKO-ECT'      , 'BRKGA-ECT'
+        #   , 'RKO-INC'      , 'BRKGA-INC'
         #   , 'RKO-KSTS'     , 'BRKGA-KSTS' 
         #   , 'SA'
         #  , 'MIP'
@@ -96,17 +97,17 @@ for model in models:
         color=model_colors[model],
         label=model,
         capsize=5,
-        # linestyle='None', elinewidth=1.5, markersize=5
-        linestyle='-', elinewidth=1.0, markersize=3
+        linestyle='None', elinewidth=1.5, markersize=5
+        # linestyle='-', elinewidth=1.0, markersize=3
         # linestyle=':', elinewidth=1.5, markersize=4
     )
 
 # --- 4. Customização e Exibição ---
 
-ax.set_title(f'Desempenho dos Decoders RKO para métrica Makespan', fontsize=18, pad=20) #\n\ndecoders={models}
+ax.set_title(f'Desempenho das políticas de sequenciamento no RKO para métrica Makespan', fontsize=18, pad=20) #\n\ndecoders={models}
 # ax.set_title('Desempenho do [RKO, BRKGA, SA, MIP] para métrica Makespan', fontsize=18, pad=20)
-# ax.set_title('Desempenho do RKO vs BRKGA (mesmos decoders) para métrica Makespan', fontsize=18, pad=20)
-# ax.set_title('Desempenho do RKO vs BRKGA (decoder CHI) para métrica Makespan', fontsize=18, pad=20)
+# ax.set_title('Desempenho do RKO vs BRKGA (mesmas políticas de sequenciamento) para métrica Makespan', fontsize=18, pad=20)
+# ax.set_title('Desempenho do RKO vs BRKGA (política CHI) para métrica Makespan', fontsize=18, pad=20)
 ax.set_xlabel(f'\nGrupo de Instâncias (Tarefas, Máquinas){ " ordenadas pela razão Tarefas/Máquinas" if SORT_RATIO else "" }', fontsize=14)
 
 
@@ -127,7 +128,7 @@ ax.set_ylabel(f'IC 95% do Makespan{ " (em escala logarítmica)" if LOG_SCALE els
 ax.set_xticks(x_ticks)
 ax.set_xticklabels(x_labels, rotation=45, ha='right')
 
-ax.legend(title='Modelo', fontsize=12)
+ax.legend(title='Política', fontsize=12)
 ax.grid(True, which='both', linestyle='--', linewidth=0.5)
 fig.tight_layout()
 

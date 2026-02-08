@@ -104,7 +104,7 @@ crossover_point = (configs_sorted['SORT_RATIO'] >= 1).sum() - 0.5
 if crossover_point < len(ordered_x_labels) - 1:
     ax.axvline(x=crossover_point, color='grey', linestyle='--', linewidth=2, label='Razão (RKGA/MIP) = 1')
 
-ax.legend(title='Modelo', fontsize=12)
+ax.legend(title='Política', fontsize=12)
 ax.grid(True, which='both', linestyle='--', linewidth=0.5)
 fig.tight_layout()
 

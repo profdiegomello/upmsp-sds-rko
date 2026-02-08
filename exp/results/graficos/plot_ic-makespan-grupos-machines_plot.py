@@ -20,7 +20,7 @@ df['ERRO'] = (df['IC_SUPERIOR_95'] - df['IC_INFERIOR_95']) / 2
 
 # --- ALTERAÇÃO: Nova Estratégia de Agrupamento ---
 
-# Agrupa pela quantidade de máquinas (parece divergir mais o RKO e BRKGA do que em relação à razão j/m).
+# Agrupa pela quantidade de máquinas (parece divergir mais o RKO e BRKGA do que em relação à Razão N/M).
 df['GROUP'] = df['MACHINES']
 
 # Ordena os dados pelo grupo, e depois por JOBS e MACHINES
@@ -131,12 +131,12 @@ for i in range(n_groups, len(axes)):
     axes[i].axis('off')
 
 handles, labels = ax.get_legend_handles_labels()
-# fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=3, title='Modelo', fontsize=12)
-# fig.legend(handles, labels, loc='lower right', bbox_to_anchor=(1, 0), ncol=3, title='Modelo', fontsize=8)
-fig.legend(handles, labels, loc='lower right', bbox_to_anchor=(0.9, 0.2), ncol=1, title='Modelo', fontsize=8)
+# fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=3, title='Política', fontsize=12)
+# fig.legend(handles, labels, loc='lower right', bbox_to_anchor=(1, 0), ncol=3, title='Política', fontsize=8)
+fig.legend(handles, labels, loc='lower right', bbox_to_anchor=(0.9, 0.2), ncol=1, title='Política', fontsize=8)
 
-fig.suptitle(f'Desempenho do RKO vs BRKGA (mesmos decoders) para métrica Makespan', fontsize=14)
-# fig.suptitle(f'Desempenho dos decoders RKO para métrica Makespan', fontsize=18)
+fig.suptitle(f'Desempenho do RKO vs BRKGA (mesmas políticas de sequenciamento) para métrica Makespan', fontsize=14)
+# fig.suptitle(f'Desempenho das políticas de sequenciamento no RKO para métrica Makespan', fontsize=18)
 
 
 # fig.supxlabel('Instâncias agrupadas por quantidade de máquinas', fontsize=14, y=0.02)

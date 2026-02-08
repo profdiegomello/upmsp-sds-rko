@@ -32,3 +32,4 @@ src/original/analysis_rko-tsp/*/*.log
 
 # Ignorar plots do exp/results
 exp/results/graficos/*.png
+exp/results/graficos/*.eps

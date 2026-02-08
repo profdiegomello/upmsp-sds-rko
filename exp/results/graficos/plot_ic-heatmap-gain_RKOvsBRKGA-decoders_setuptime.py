@@ -3,7 +3,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-SORT_BY = 'JOBS'  # Opções: 'JOBS', 'MACHINES', 'RATIO'
+SORT_BY = 'SETUPTIME'  # Opções: 'JOBS', 'MACHINES', 'SETUPTIME', 'RATIO'
 
 try:
     # Carrega o arquivo CSV resumido
@@ -23,11 +23,16 @@ df['RATIO'] = df['JOBS'] / df['MACHINES']
 # Ordena o DataFrame: primeiro pela razão, depois por JOBS e MACHINES para desempate
 # df = df.sort_values(by=['RATIO', 'JOBS', 'MACHINES']).reset_index(drop=True)
 # df = df.sort_values(by=[SORT_BY, 'JOBS', 'MACHINES']).reset_index(drop=True)
-df = df.sort_values(by=[SORT_BY, 'JOBS', 'MACHINES', 'SETUPTIME']).reset_index(drop=True)
+
+# df = df.sort_values(by=[SORT_BY, 'JOBS', 'MACHINES', 'SETUPTIME']).reset_index(drop=True)
+# df = df.sort_values(by=[SORT_BY, 'MACHINES', 'JOBS', 'SETUPTIME']).reset_index(drop=True)
+df = df.sort_values(by=[SORT_BY, 'SETUPTIME', 'JOBS', 'MACHINES']).reset_index(drop=True)
+# df = df.sort_values(by=[SORT_BY, 'SETUPTIME', 'MACHINES', 'JOBS']).reset_index(drop=True)
+# df = df.sort_values(by=[SORT_BY, 'RATIO', 'JOBS', 'MACHINES']).reset_index(drop=True)
 
 # Cria os rótulos a partir dos dados já ordenados
 unique_configs = df[['JOBS', 'MACHINES', 'SETUPTIME']].drop_duplicates()
-configs = ('(' + unique_configs['JOBS'].astype(str) + ' , ' + unique_configs['MACHINES'].astype(str) + ' , ' + unique_configs['SETUPTIME'].astype(str) + ')').tolist()
+configs = ('(' + unique_configs['JOBS'].astype(str) + ' , ' + unique_configs['MACHINES'].astype(str) + ' , 1-' + unique_configs['SETUPTIME'].astype(str) + ')').tolist()
 
 
 # models = [  'RKO-CHI' , 'BRKGA-CHI'
@@ -141,15 +146,15 @@ sns.heatmap(
 )
 
 # ajuste o fontsize dos xticklabels como 8
-plt.xticks(fontsize=8, rotation=90)
+plt.xticks(fontsize=6, rotation=90)
 
 import matplotlib.ticker as mticker
 cbar = ax.collections[0].colorbar
 cbar.ax.yaxis.set_major_formatter(mticker.PercentFormatter())
 
-fig.supxlabel('Configuração (Jobs, Machines, SetupTime)', fontsize=10)#, y=0.02)
+fig.supxlabel('Grupo de Instâncias: (Tarefas, Máquinas, Setup)', fontsize=10)#, y=0.02)
 
-fig.suptitle(f'Heatmap da % de Ganho do RKO vs BRKGA', fontsize=12)
+fig.suptitle(f'Heatmap da % de Ganho Relativo do RKO vs BRKGA', fontsize=12)
 ax.set_title("(B - A)/A do Ponto Médio dos ICs 95%\n\nOBS.: valor positivo: RKO é melhor, valor negativo: BRKGA é melhor", fontsize=8)
 plt.tight_layout()
 

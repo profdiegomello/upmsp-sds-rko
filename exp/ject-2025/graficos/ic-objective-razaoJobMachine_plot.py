@@ -86,7 +86,7 @@ ax.set_yscale('log')
 ax.set_xticks(x_ticks)
 ax.set_xticklabels(x_labels, rotation=45, ha='right')
 
-ax.legend(title='Modelo', fontsize=12)
+ax.legend(title='Política', fontsize=12)
 ax.grid(True, which='both', linestyle='--', linewidth=0.5)
 fig.tight_layout()
 

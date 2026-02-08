@@ -70,9 +70,9 @@ model_offsets = {     'RKO-CHI': 0.0, 'RKO-M3LAW': 0.2, 'RKO-ECT': 0.4, 'RKO-INC
                 }
 models = [    #'MIP', 
         
-           'RKO-CHI'      , 'BRKGA-CHI'
-         , 'RKO-M3LAW'    , 'BRKGA-M3LAW'
-         , 'RKO-ECT'      , 'BRKGA-ECT'
+           'RKO-CHI'      #, 'BRKGA-CHI'
+         , 'RKO-M3LAW'    #, 'BRKGA-M3LAW'
+         , 'RKO-ECT'      #, 'BRKGA-ECT'
         ##  , 'RKO-INC'      , 'BRKGA-INC'
         ##   , 'RKO-KSTS'     , 'BRKGA-KSTS' 
         
@@ -134,7 +134,7 @@ for i, group_val in enumerate(groups):
                 capsize=5, elinewidth=1.0, markersize=2, linestyle=':', linewidth=0.5
             )
 
-    ax.set_title(f'Tarefas={group_val.split("_")[0]} Setup={group_val.split("_")[1]}', fontsize=9)
+    ax.set_title(f'Tarefas={group_val.split("_")[0]} Setup=1-{group_val.split("_")[1]}', fontsize=9)
     ax.set_xticks(x_ticks)
     ax.set_xticklabels(x_labels, rotation=0, ha='center', fontsize=8)
     ax.grid(True, which='both', linestyle='--', linewidth=0.5)
@@ -145,14 +145,14 @@ for i in range(n_groups, len(axes)):
     axes[i].axis('off')
 
 handles, labels = ax.get_legend_handles_labels()
-# fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=3, title='Modelo', fontsize=12)
-# fig.legend(handles, labels, loc='lower right', bbox_to_anchor=(1, 0), ncol=3, title='Modelo', fontsize=8)
-# fig.legend(handles, labels, loc='right', bbox_to_anchor=(.98, 0.65), ncol=1, title='Modelo', fontsize=8)
-fig.legend(handles, labels, loc='right', bbox_to_anchor=(.98, 0.52), ncol=1, title='Modelo', fontsize=8)
+# fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=3, title='Política', fontsize=12)
+# fig.legend(handles, labels, loc='lower right', bbox_to_anchor=(1, 0), ncol=3, title='Política', fontsize=8)
+# fig.legend(handles, labels, loc='right', bbox_to_anchor=(.98, 0.65), ncol=1, title='Política', fontsize=8)
+fig.legend(handles, labels, loc='right', bbox_to_anchor=(.98, 0.52), ncol=1, title='Política', fontsize=8)
 
-fig.suptitle(f'Desempenho do RKO vs BRKGA (mesmos decoders) para métrica Makespan', fontsize=12)
-# fig.suptitle(f'Desempenho dos decoders RKO para métrica Makespan', fontsize=12)
-# fig.suptitle(f'Desempenho dos decoders BRKGA para métrica Makespan', fontsize=12)
+# fig.suptitle(f'Desempenho do RKO vs BRKGA (mesmas políticas de sequenciamento) para métrica Makespan', fontsize=12)
+fig.suptitle(f'Desempenho das políticas de sequenciamento no RKO para métrica Makespan', fontsize=12)
+# fig.suptitle(f'Desempenho das políticas de sequenciamento no BRKGA para métrica Makespan', fontsize=12)
 
 
 # fig.supxlabel('Instâncias agrupadas por quantidade de máquinas', fontsize=14, y=0.02)

@@ -4,6 +4,7 @@ import numpy as np
 import math
 
 OFFSET_IC_MODELOS = True
+SET_SAME_Y_SCALE_FOR_GROUPS = False
 
 # --- 1. Carregamento e Preparação dos Dados ---
 
@@ -20,7 +21,7 @@ df['ERRO'] = (df['IC_SUPERIOR_95'] - df['IC_INFERIOR_95']) / 2
 
 # --- ALTERAÇÃO: Nova Estratégia de Agrupamento ---
 
-# Agrupa pela quantidade de jobs (parece divergir mais o RKO e BRKGA do que em relação à razão j/m).
+# Agrupa pela quantidade de jobs (parece divergir mais o RKO e BRKGA do que em relação à Razão N/M).
 df['GROUP'] = df['JOBS']
 
 # Ordena os dados pelo grupo, e depois por JOBS e MACHINES
@@ -76,7 +77,7 @@ model_offsets = {     'RKO-CHI': 0.0, 'RKO-M3LAW': 0.2, 'RKO-ECT': 0.4, 'RKO-INC
                     , 'BRKGA-CHI': 0.0, 'BRKGA-M3LAW': 0.2, 'BRKGA-ECT': 0.4, 'BRKGA-INC': 0.6 , 'BRKGA-KSTS': 0.8
                     , 'SA': 0.8
                 }
-models = [    'MIP', 
+models = [    #'MIP', 
         
         #    'RKO-CHI'      , 'BRKGA-CHI'
         #  , 'RKO-M3LAW'    , 'BRKGA-M3LAW'
@@ -85,7 +86,7 @@ models = [    'MIP',
         #   , 'RKO-KSTS'     , 'BRKGA-KSTS' 
         
         'RKO-CHI', 'RKO-M3LAW', 'RKO-ECT'#, 'RKO-INC'
-        # 'BRKGA-CHI', 'BRKGA-M3LAW', 'BRKGA-ECT', 'BRKGA-INC'
+        , 'BRKGA-CHI', 'BRKGA-M3LAW', 'BRKGA-ECT'#, 'BRKGA-INC'
         
         #   , 'SA'
          ]
@@ -96,13 +97,24 @@ for i, group_val in enumerate(groups):
     group_df = df[df['GROUP'] == group_val]
     unique_configs = group_df[['JOBS', 'MACHINES']].drop_duplicates()
 
-    # --- Valores máximos da escala Y para os grupos ficarem na mesma escala ---
-    jobs_val = unique_configs['JOBS'].iloc[0]
-    # ymax_por_jobs = {100: 350, 150: 550, 200: 750} # RKO
-    # ymax_por_jobs = {100: 400, 150: 650, 200: 900} # BRKGA
-    ymax_por_jobs = {100: 700, 150: 550, 200: 750} # MIP
-    if jobs_val in ymax_por_jobs:
-        ax.set_ylim(0, ymax_por_jobs[jobs_val])
+    if SET_SAME_Y_SCALE_FOR_GROUPS:
+        # --- Valores máximos da escala Y para os grupos ficarem na mesma escala ---
+        jobs_val = unique_configs['JOBS'].iloc[0]
+        # ymax_por_jobs = {100: 350, 150: 550, 200: 750} # RKO
+        # ymax_por_jobs = {100: 400, 150: 650, 200: 900} # BRKGA
+        # ymax_por_jobs = {100: 700, 150: 550, 200: 750} # MIP
+
+        #TODO migrar o cálculo automático do ymax_por_jobs para os demais scripts de plotagem
+        # verificar o valor máximo de IC_SUPERIOR_95 para o grupo atual filtrando MODEL pelos models para cada valor de JOBS, montar um dicionário JOBS -> max_objective
+        max_objective_dict = {}
+        for jobs in unique_configs['JOBS'].unique():
+            max_objective = df[(df['MODEL'].isin(models)) & (df['JOBS'] == jobs)]['IC_SUPERIOR_95'].max()
+            max_objective_dict[jobs] = max_objective * 1.1 # adicionar uma margem de 10%
+        ymax_por_jobs = max_objective_dict 
+
+        if jobs_val in ymax_por_jobs:
+            ax.set_ylim(0, ymax_por_jobs[jobs_val])
+
     # --------------------------------
 
     # x_labels = [f'({row.JOBS}, {row.MACHINES})' for _, row in unique_configs.iterrows()]
@@ -139,13 +151,13 @@ for i in range(n_groups, len(axes)):
     axes[i].axis('off')
 
 handles, labels = ax.get_legend_handles_labels()
-# fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=3, title='Modelo', fontsize=12)
-# fig.legend(handles, labels, loc='lower right', bbox_to_anchor=(1, 0), ncol=3, title='Modelo', fontsize=8)
-fig.legend(handles, labels, loc='right', bbox_to_anchor=(.98, 0.65), ncol=1, title='Modelo', fontsize=8)
+# fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98), ncol=3, title='Política', fontsize=12)
+# fig.legend(handles, labels, loc='lower right', bbox_to_anchor=(1, 0), ncol=3, title='Política', fontsize=8)
+fig.legend(handles, labels, loc='right', bbox_to_anchor=(.98, 0.65), ncol=1, title='Política', fontsize=8)
 
-# fig.suptitle(f'Desempenho do RKO vs BRKGA (mesmos decoders) para métrica Makespan', fontsize=12)
-fig.suptitle(f'Desempenho dos decoders RKO para métrica Makespan', fontsize=12)
-# fig.suptitle(f'Desempenho dos decoders BRKGA para métrica Makespan', fontsize=12)
+fig.suptitle(f'Desempenho do RKO vs BRKGA (mesmas políticas de sequenciamento) para métrica Makespan', fontsize=12)
+# fig.suptitle(f'Desempenho das políticas de sequenciamento no RKO para métrica Makespan', fontsize=12)
+# fig.suptitle(f'Desempenho das políticas de sequenciamento no BRKGA para métrica Makespan', fontsize=12)
 
 
 # fig.supxlabel('Instâncias agrupadas por quantidade de máquinas', fontsize=14, y=0.02)
