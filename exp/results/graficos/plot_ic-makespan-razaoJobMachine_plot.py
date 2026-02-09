@@ -62,14 +62,14 @@ model_offsets = {
                     , 'RKO-KSTS':      0.8      , 'BRKGA-KSTS':     0.8
                     , 'SA':            0.6
                 }
-models = [  
-              'RKO-CHI'      , 'BRKGA-CHI'
-            , 'RKO-M3LAW'    , 'BRKGA-M3LAW'
-            , 'RKO-ECT'      , 'BRKGA-ECT'
+models = [  'MIP', 
+              'RKO-CHI'      #, 'BRKGA-CHI'
+            , 'RKO-M3LAW'    #, 'BRKGA-M3LAW'
+            , 'RKO-ECT'      #, 'BRKGA-ECT'
         #   , 'RKO-INC'      , 'BRKGA-INC'
         #   , 'RKO-KSTS'     , 'BRKGA-KSTS' 
         #   , 'SA'
-        #  , 'MIP'
+        
          ]
 
 # Cria a figura e os eixos do gráfico
@@ -104,7 +104,7 @@ for model in models:
 
 # --- 4. Customização e Exibição ---
 
-ax.set_title(f'Desempenho das políticas de sequenciamento no RKO para métrica Makespan', fontsize=18, pad=20) #\n\ndecoders={models}
+ax.set_title(f'Desempenho do MIP vs políticas de sequenciamento no RKO para métrica Makespan', fontsize=18, pad=20) #\n\ndecoders={models}
 # ax.set_title('Desempenho do [RKO, BRKGA, SA, MIP] para métrica Makespan', fontsize=18, pad=20)
 # ax.set_title('Desempenho do RKO vs BRKGA (mesmas políticas de sequenciamento) para métrica Makespan', fontsize=18, pad=20)
 # ax.set_title('Desempenho do RKO vs BRKGA (política CHI) para métrica Makespan', fontsize=18, pad=20)
