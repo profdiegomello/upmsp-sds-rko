@@ -15,6 +15,15 @@ from matplotlib import ticker
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
+try:
+    from interface.buttons import create_buttons
+except ImportError:
+    # Fallback se rodar o arquivo diretamente fora do pacote
+    try:
+        from buttons import create_buttons
+    except:
+        print("Erro ao importar buttons.py")
+
 matplotlib.use("TkAgg")
 
 RE_NEW_BEST = re.compile(r"NEW BEST: (\d+\.\d+)")
@@ -24,7 +33,7 @@ try:
     pasta_backend_real = os.path.dirname(os.path.abspath(rko_gui_start.__file__))
     CAMINHO_CACHE_IO = os.path.join(pasta_backend_real, "temp_io_paths.txt")
 except ImportError:
-    print("[ERROR] 'rko_gui_start.py' not found in PATH.")
+    print("[ERROR] 'rko_gui_start.py' not found in PATH.") 
     rko_gui_start = None
     CAMINHO_CACHE_IO = "temp_io_paths.txt"
 
@@ -89,6 +98,7 @@ VAR_FILTRO_DECODER = None
 VARS_FILTRO_AGENTES = {}
 CHAVE_SELECIONADA_ATUAL = None
 COMBO_INSTANCIAS = None
+VAR_ORDENACAO_HISTORICO = None
 
 # Filtro que descarta valores piores do que o melhor atual
 class MonotonicFilter:
@@ -222,7 +232,7 @@ def aplicar_filtros_historico(evento=None):
     # Pega os valores dos filtros
     f_inst = VAR_FILTRO_INSTANCIA.get()
     f_dec = VAR_FILTRO_DECODER.get()
-    f_sort = VAR_ORDENACAO_HISTORICO.get() # Critério de ordenação
+    f_sort = VAR_ORDENACAO_HISTORICO.get() # Criterio de ordenacao
     
     agentes_requeridos = [nome for nome, var in VARS_FILTRO_AGENTES.items() if var.get()]
     
@@ -243,12 +253,15 @@ def aplicar_filtros_historico(evento=None):
              
         chaves_filtradas.append(chave)
 
-    #Ordenacao natural
-    # Funcao auxiliar para ordenar texto com numeros 
-    # Transforma "I_12" em ["I_", 12] e "I_100" em ["I_", 100]
     def natural_keys(chave):
         texto = HISTORICO_DATA[chave]['meta_nome']
         return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', texto)]
+
+    def get_makespan(chave):
+        lista_y = HISTORICO_DATA[chave]['y']
+        if lista_y:
+            return min(lista_y)
+        return float('inf') # Se nao tiver dados, joga pro final
 
     if f_sort == "Descending Date/Hour":
         try:
@@ -267,15 +280,23 @@ def aplicar_filtros_historico(evento=None):
         except: chaves_filtradas.sort()
             
     elif f_sort == "Ascending Instance":
-        try:
-            chaves_filtradas.sort(key=natural_keys, reverse=False)
+        try: chaves_filtradas.sort(key=natural_keys, reverse=False)
         except: chaves_filtradas.sort()
 
     elif f_sort == "Descending Instance":
-        try:
-            chaves_filtradas.sort(key=natural_keys, reverse=True)
+        try: chaves_filtradas.sort(key=natural_keys, reverse=True)
         except: chaves_filtradas.sort()
-        
+    
+    elif f_sort == "Ascending Makespan":
+        # Do MELHOR (menor valor) para o PIOR (maior valor)
+        try: chaves_filtradas.sort(key=get_makespan, reverse=False)
+        except: chaves_filtradas.sort()
+
+    elif f_sort == "Descending Makespan":
+        # Do PIOR (maior valor) para o MELHOR (menor valor)
+        try: chaves_filtradas.sort(key=get_makespan, reverse=True)
+        except: chaves_filtradas.sort()
+
     elif f_sort == "Decoder":
         chaves_filtradas.sort(key=lambda k: HISTORICO_DATA[k]['meta_decoder'])
     
@@ -288,7 +309,6 @@ def aplicar_filtros_historico(evento=None):
             )
         except: chaves_filtradas.sort()
 
-    
     AX_HIST_LINHA.clear()
     
     for chave in chaves_filtradas:
@@ -400,6 +420,7 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     combo_dec = ctk.CTkComboBox(frame_filtros, variable=VAR_FILTRO_DECODER, values=["all", "CHEAPEST", "M3LAW", "ECT", "INCREMENTAL", "KSTS"], state="readonly", height=22, font=("Roboto", 11), command=aplicar_filtros_historico)
     combo_dec.pack(fill="x", padx=5, pady=(0, 5))
 
+    # [ATUALIZADO] Novas opções de Sort
     ctk.CTkLabel(frame_filtros, text="Sort by:", font=("Roboto", 10)).pack(anchor="w", padx=5)
     VAR_ORDENACAO_HISTORICO = ctk.StringVar(value="Descending Date/Hour")
     combo_sort = ctk.CTkComboBox(
@@ -410,6 +431,8 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
             "Ascending Date/Hour", 
             "Ascending Instance", 
             "Descending Instance", 
+            "Ascending Makespan", 
+            "Descending Makespan",
             "Decoder"
         ],
         state="readonly", 
@@ -439,7 +462,7 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     frame_dir.grid(row=0, column=1, rowspan=10, sticky="nsew", padx=(5, 5), pady=5)
     frame_dir.grid_columnconfigure(0, weight=1) 
 
-    # GRAFICOS
+    # GRÁFICOS
     frame_top = ctk.CTkFrame(frame_dir, fg_color="#242424", corner_radius=10, height=500) 
     frame_top.pack(fill="x", pady=(0, 20)); frame_top.pack_propagate(False) 
     
@@ -601,7 +624,7 @@ def manipulador_retorno_interface(dados):
                     LINHA_GLOBAL.set_data(DADOS_X, DADOS_Y)
                     AX_GLOBAL.set_title(f"Instance: {NOME_INSTANCIA_ATUAL} (Completed)", fontsize=10, color="white", fontweight="bold")
                     
-                    # Força visualização total (Dezenas no eixo X)
+                    # Forca visualizacao total (Dezenas no eixo X)
                     AX_GLOBAL.xaxis.set_major_locator(ticker.MaxNLocator(nbins=15, integer=False))
                     AX_GLOBAL.set_xlim(left=-0.5, right=final_time * 1.05)
                     
@@ -862,23 +885,10 @@ def criar_aba_base(pai):
     for i in range(10): f.grid_rowconfigure(i, weight=1, minsize=20); f.grid_columnconfigure(i, weight=1, minsize=20)
     return f
 
-def construir_aplicacao():
-    janela = ctk.CTk()
-    janela.title("RKO-SOLVER")
+# --- FUNÇÃO PRINCIPAL REFATORADA (Para uso do Launcher) ---
+def configurar_interface(janela):
     
-    LARGURA_FIXA = 1280
-    ALTURA_FIXA = 810
-    
-    ws = janela.winfo_screenwidth()
-    hs = janela.winfo_screenheight()
-    x = (ws - LARGURA_FIXA) // 2
-    y = (hs - ALTURA_FIXA) // 2
-    janela.geometry(f"{LARGURA_FIXA}x{ALTURA_FIXA}+{x}+{y}")
-    
-    janela.resizable(False, False) 
-    
-    ctk.set_appearance_mode('dark')
-
+    # 1. Configuração do Grid Principal da Janela
     for i in range(10): 
         janela.grid_rowconfigure(i, minsize=0, weight=0)
         janela.grid_columnconfigure(i, minsize=0, weight=0)
@@ -886,28 +896,82 @@ def construir_aplicacao():
     janela.grid_rowconfigure(2, weight=1)
     janela.grid_columnconfigure(2, weight=1)
 
+    # 2. Criação do Frame Principal
     frame_main = ctk.CTkFrame(janela, fg_color=CORES["fundo_principal"], corner_radius=0)
-    
     frame_main.grid(row=2, column=2, columnspan=20, sticky="nsew", padx=0, pady=0)
-    frame_main.grid_rowconfigure(0, weight=1); frame_main.grid_columnconfigure(0, weight=1); frame_main.grid_propagate(False)
+    frame_main.grid_rowconfigure(0, weight=1)
+    frame_main.grid_columnconfigure(0, weight=1)
+    frame_main.grid_propagate(False)
 
+    # 3. Criação das "Abas" (Frames sobrepostos)
     abas = [criar_aba_base(frame_main) for _ in range(7)]
     aba_p, aba_a, aba_io, aba_exe, aba_gra, aba_gan, aba_hist = abas
 
+    # 4. Função para alternar abas
     def show(a_sel):
         for a in abas: a.grid_forget()
         a_sel.grid(row=0, column=0, sticky="nsew")
 
+    # 5. Configuração do Conteúdo de cada Aba
     configurar_aba_parametros(aba_p)
     configurar_aba_agentes(aba_a)
     configurar_aba_entrada_saida(aba_io)
     configurar_aba_execucao(aba_exe, aba_p, aba_a, aba_io)
     configurar_aba_grafico(aba_gra)
     configurar_aba_gantt_live(aba_gan)
-    
     configurar_aba_historico(aba_hist, largura_total=1280, altura_total=810)
 
+    # 6. Criação dos Botões Laterais (Usando buttons.py)
+    # A função create_buttons coloca os botões na grid(row=2, column=0, columnspan=2)
+    # que é a lateral esquerda definida no layout original.
+    create_buttons(janela, show, aba_p, aba_a, aba_io, aba_exe, aba_gra, aba_gan, aba_hist)
+
+    # 7. Inicia mostrando a primeira aba
     show(aba_p)
-    janela.protocol("WM_DELETE_WINDOW", lambda: (janela.destroy(), sys.exit(0)))
+
+
+def abrir_benchmark(root_parent=None):
+    # Se receber um pai (Launcher), cria como Toplevel (Janela Filha)
+    # Se não receber (teste isolado), cria como CTk (Janela Principal)
+    if root_parent:
+        janela_benchmark = ctk.CTkToplevel(root_parent)
+    else:
+        janela_benchmark = ctk.CTk()
+
+    janela_benchmark.title("RKO Solver - Benchmark & Experimentation")
     
-    return janela, show, aba_p, aba_a, aba_io, aba_exe, aba_gra, aba_gan, aba_hist
+    # Centralizar
+    w, h = 1280, 810
+    ws, hs = janela_benchmark.winfo_screenwidth(), janela_benchmark.winfo_screenheight()
+    x, y = (ws - w) // 2, (hs - h) // 2
+    janela_benchmark.geometry(f"{w}x{h}+{x}+{y}")
+    
+    # Configura o layout
+    configurar_interface(janela_benchmark)
+    
+    # Protocolo de Fechamento Seguro
+    def ao_fechar():
+        # Para execuções e threads se estiverem rodando
+        if rko_gui_start:
+            rko_gui_start.solicitar_parada() 
+            
+        janela_benchmark.destroy()
+        
+        # Se tiver pai (Launcher), NAO MATA O PAI
+        if not root_parent:
+            sys.exit(0)
+
+    janela_benchmark.protocol("WM_DELETE_WINDOW", ao_fechar)
+
+    # Se for filha, traz para frente e foca
+    if root_parent:
+        janela_benchmark.lift()
+        janela_benchmark.focus_force()
+
+    else:
+        janela_benchmark.mainloop()
+
+# Para testes isolados (sem launcher)
+if __name__ == "__main__":
+    ctk.set_appearance_mode('dark')
+    abrir_benchmark(None) # None = Modo isolado
