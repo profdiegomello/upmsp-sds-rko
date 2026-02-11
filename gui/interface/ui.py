@@ -764,7 +764,7 @@ def configurar_aba_entrada_saida(aba):
     aba.widgets_armazenados = {} 
     
     def sel_dir(w):
-        p = filedialog.askdirectory()
+        p = filedialog.askdirectory(parent=aba)
         if p: 
             w.delete(0, "end")
             w.insert(0, p)

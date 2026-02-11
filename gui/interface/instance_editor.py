@@ -142,8 +142,29 @@ class InstanceEditor(ctk.CTkToplevel):
     def criar_info_block(self):
         frm_info = ctk.CTkFrame(self.frm_main, fg_color="transparent")
         frm_info.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 15))
-        self.lbl_info = ctk.CTkLabel(frm_info, text="NO INSTANCE LOADED", text_color=CORES_EDITOR["text_highlight"], font=("Roboto", 12, "bold"), anchor="w")
-        self.lbl_info.pack(fill="x")
+        
+        # --- BLOCO DE INFORMAÇÕES FIXAS (Esquerda) ---
+        # Usamos .pack(side="left") para empilhar: LabelBranco -> ValorAzul -> Espaço -> LabelBranco...
+        
+        # 1. Instance Name
+        ctk.CTkLabel(frm_info, text="INSTANCE:", text_color="white", font=("Roboto", 12, "bold")).pack(side="left", padx=(0, 5))
+        self.lbl_val_nome = ctk.CTkLabel(frm_info, text="---", text_color=CORES_EDITOR["text_highlight"], font=("Roboto", 12, "bold"))
+        self.lbl_val_nome.pack(side="left", padx=(0, 25))
+
+        # 2. Machines
+        ctk.CTkLabel(frm_info, text="MACHINES:", text_color="white", font=("Roboto", 12, "bold")).pack(side="left", padx=(0, 5))
+        self.lbl_val_mach = ctk.CTkLabel(frm_info, text="-", text_color=CORES_EDITOR["text_highlight"], font=("Roboto", 12, "bold"))
+        self.lbl_val_mach.pack(side="left", padx=(0, 25))
+
+        # 3. Jobs
+        ctk.CTkLabel(frm_info, text="JOBS:", text_color="white", font=("Roboto", 12, "bold")).pack(side="left", padx=(0, 5))
+        self.lbl_val_jobs = ctk.CTkLabel(frm_info, text="-", text_color=CORES_EDITOR["text_highlight"], font=("Roboto", 12, "bold"))
+        self.lbl_val_jobs.pack(side="left", padx=(0, 20))
+
+        # --- BLOCO DE CONTEXTO (Direita) ---
+        # Mostra o que está sendo editado no momento (Ex: "Processing Times") de forma discreta
+        self.lbl_context = ctk.CTkLabel(frm_info, text="", text_color="gray60", font=("Roboto", 11, "italic"))
+        self.lbl_context.pack(side="right", padx=10)
 
     def criar_tabela_sheet(self):
         self.frm_table_container = ctk.CTkFrame(self.frm_main, fg_color=CORES_EDITOR["grid_bg"], border_width=1, border_color="#333333", corner_radius=4)
@@ -362,21 +383,19 @@ class InstanceEditor(ctk.CTkToplevel):
 
     def atualizar_interface_pos_load(self):
         dados = self.dados_instancia
-        self.lbl_info.configure(text=f"FILE: {dados['nome']}    MACHINES: {dados['M']}    JOBS: {dados['N']}")
+        
+        # Atualiza os valores nos campos específicos
+        self.lbl_val_nome.configure(text=dados['nome'])
+        self.lbl_val_mach.configure(text=str(dados['M']))
+        self.lbl_val_jobs.configure(text=str(dados['N']))
 
-        # Limpar e repopular a sidebar (Setup Times -> M0, M1...)
-        # Remove filhos antigos de setup
         filhos = self.tree_side.get_children(self.node_setup)
         for f in filhos: self.tree_side.delete(f)
 
-        # Adiciona máAuinas reais lidas
         for m in range(dados['M']):
             self.tree_side.insert(self.node_setup, "end", text=f"    📁 M{m}", values=("setup", f"{m}"))
 
-        # Exibir Processing Times por padrao
         self.exibir_processing_times()
-        
-        # Expande a pasta setup para o usuário ver que carregou
         self.tree_side.item(self.node_setup, open=True)
 
     def ao_selecionar_sidebar(self, event):
@@ -400,8 +419,7 @@ class InstanceEditor(ctk.CTkToplevel):
 
     def exibir_processing_times(self):
         if not Sheet or not self.dados_instancia["loaded"]: return
-        
-        self.view_atual = ("proc", "all") 
+        self.view_atual = ("proc", "all")
         
         dados = self.dados_instancia["processing"]
         n_jobs = self.dados_instancia["N"]
@@ -410,7 +428,8 @@ class InstanceEditor(ctk.CTkToplevel):
         col_headers = [f"J{i}" for i in range(n_jobs)]
         row_indices = [f"M{i}" for i in range(n_maquinas)]
 
-        self.lbl_info.configure(text=f"EDITING: PROCESSING TIMES ({n_maquinas} Machines x {n_jobs} Jobs)")
+        # Atualiza apenas o label de contexto na direita
+        self.lbl_context.configure(text="Editing: Processing Times")
         
         self.sheet.headers(col_headers)
         self.sheet.row_index(row_indices)
@@ -418,22 +437,20 @@ class InstanceEditor(ctk.CTkToplevel):
 
     def exibir_setup_times(self, maquina_idx):
         if not Sheet or not self.dados_instancia["loaded"]: return
-        
-        self.view_atual = ("setup", str(maquina_idx)) 
+        self.view_atual = ("setup", str(maquina_idx))
         
         dados = self.dados_instancia["setup"].get(maquina_idx, [])
-        # Se a maquina nao tiver setup inicializado (caso raro), cria zerado
         if not dados:
             n_jobs = self.dados_instancia["N"]
             dados = [[0]*n_jobs for _ in range(n_jobs)]
             self.dados_instancia["setup"][maquina_idx] = dados
 
         n_jobs = self.dados_instancia["N"]
-        
         headers = [f"J{i}" for i in range(n_jobs)]
         row_indices = [f"J{i}" for i in range(n_jobs)]
 
-        self.lbl_info.configure(text=f"EDITING: SETUP TIMES FOR M{maquina_idx}")
+        # Atualiza apenas o label de contexto na direita
+        self.lbl_context.configure(text=f"Editing: Setup Times (Machine {maquina_idx})")
         
         self.sheet.headers(headers)
         self.sheet.row_index(row_indices) 
