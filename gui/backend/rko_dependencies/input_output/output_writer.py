@@ -27,7 +27,7 @@ def salvar_resultado(
     status: str
 ):
 
-    print(f"Melhor makespan encontrado: {objetivo}")
+    #print(f"Best makespan found: {objetivo}")
 
     # Registra os resultados no arquivo passado, usando tabulação como separador.
     # Caso lowerbound ou gap sejam None, registra como '---'.

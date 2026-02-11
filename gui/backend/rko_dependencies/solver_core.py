@@ -175,10 +175,10 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
                 f_curva.write("TEMPO\tMAKESPAN\n")
                 for t, mksp in stdout_execution_history:
                     f_curva.write(f"{t:.2f}\t{mksp:.4f}\n")
-            print(f"[IO] Curva salva em: {nome_arq_curva}\n") 
+            print(f"[IO] Convergence saved at: {nome_arq_curva}\n") 
 
             model_name = f"RKO-{env.decoder_name.upper()}"
-            print(f"Melhor makespan encontrado: {final_cost}\n")
+            print(f"Best makespan found: {final_cost}\n")
             print("-" * 40 + "\n")
             
             output_writer.salvar_resultado(
@@ -187,7 +187,7 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
                 constraints=0, variables=0, parameters=str_parameters,
                 jobs=len(env.dados.get("N", [])), machines=len(env.dados.get("M", [])), status="FEASIBLE"
             )
-            print(f"[IO] Resultado salvo em: {csv_filename}\n") 
+            print(f"\n[IO] Result saved at: {csv_filename}\n") 
         except Exception as e: print(f"[ERROR] Falha IO: {e}\n")
 
     if gantt_path and raw_gantt_data:
@@ -198,7 +198,7 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
                 X=raw_gantt_data["X"], C=raw_gantt_data["C"], arq_gantt=os.path.join(gantt_path, f"gantt_{env.instance_name}"), 
                 instancia=env.instance_name, makespan=final_cost, str_metodo=f"RKO-{env.decoder_name.upper()}"
             )
-            print(f"[IO] Gantt final salvo em: {gantt_path}\n")
+            print(f"[IO] Final Gantt saved at: {gantt_path}\n")
         except Exception as e: print(f"[ERROR] Falha Gantt: {e}\n")
     
     return {

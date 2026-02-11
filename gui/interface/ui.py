@@ -1,7 +1,7 @@
 import customtkinter as ctk
 import tkinter as tk
 from PIL import Image
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 from typing import Tuple
 from datetime import datetime
 import sys
@@ -10,6 +10,7 @@ import re
 import time
 import json
 import threading
+import pickle # <--- ADICIONADO PARA O SAVE/LOAD
 import matplotlib
 from matplotlib import ticker
 import matplotlib.pyplot as plt
@@ -70,6 +71,8 @@ DIRETORIO_BASE = os.path.dirname(os.path.abspath(__file__))
 
 ESCRITOR_TERMINAL_GLOBAL = None
 START_BUTTON_GLOBAL = None
+PAUSE_BUTTON_GLOBAL = None 
+SAVE_BUTTON_GLOBAL = None  
 MONOTONIC_FILTER = None 
 
 FIG_GLOBAL = None
@@ -554,6 +557,7 @@ def manipulador_retorno_interface(dados):
     global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL, DADOS_X, DADOS_Y, NOME_INSTANCIA_ATUAL
     global CANVAS_GANTT, MELHOR_MAKESPAN_ATUAL, TEMPO_INICIO_BATERIA, HISTORICO_DATA, FILA_BOTOES_PENDENTES
     global CANVAS_GLOBAL, AX_GLOBAL, LINHA_GLOBAL, AX_GANTT, MONOTONIC_FILTER
+    global PAUSE_BUTTON_GLOBAL, SAVE_BUTTON_GLOBAL
 
     if ESCRITOR_TERMINAL_GLOBAL is None: return
 
@@ -610,29 +614,47 @@ def manipulador_retorno_interface(dados):
                     CANVAS_GANTT.get_tk_widget().after(0, lambda: atualizar_desenho_gantt(gantt_data, nome_pacote, time_to_best))
     
     elif tipo_status == "final_plateau":
-        final_time = dados.get("final_time")
-        final_mksp = dados.get("final_makespan")
+        final_time = float(dados.get("final_time", 0))
+        final_mksp = float(dados.get("final_makespan", 0))
         nome_inst = dados.get("instancia")
         
+        # Só desenha se a instância for a atual e se já houver pontos no gráfico
         if nome_inst == NOME_INSTANCIA_ATUAL and DADOS_X:
-            # Soh adiciona se estender o grafico
-            if final_time > (DADOS_X[-1] + 0.1):
+            # Só adiciona o ponto final se ele estender o tempo (evita voltar no tempo)
+            if final_time > DADOS_X[-1]:
                 DADOS_X.append(final_time)
                 DADOS_Y.append(final_mksp)
                 
-                if CANVAS_GLOBAL:
+                if CANVAS_GLOBAL and LINHA_GLOBAL:
                     LINHA_GLOBAL.set_data(DADOS_X, DADOS_Y)
+                    
+                    # Força o eixo X a mostrar exatamente até o Time Limit
+                    AX_GLOBAL.set_xlim(left=0, right=final_time * 1.02)
+                    
+                    # Ajusta escala Y para não cortar o gráfico
+                    if DADOS_Y:
+                        min_y, max_y = min(DADOS_Y), max(DADOS_Y)
+                        margem = (max_y - min_y) * 0.1 if max_y != min_y else 1
+                        AX_GLOBAL.set_ylim(bottom=max(0, min_y - margem), top=max_y + margem)
+                    
                     AX_GLOBAL.set_title(f"Instance: {NOME_INSTANCIA_ATUAL} (Completed)", fontsize=10, color="white", fontweight="bold")
-                    
-                    # Forca visualizacao total (Dezenas no eixo X)
-                    AX_GLOBAL.xaxis.set_major_locator(ticker.MaxNLocator(nbins=15, integer=False))
-                    AX_GLOBAL.set_xlim(left=-0.5, right=final_time * 1.05)
-                    
-                    min_y = min(DADOS_Y); max_y = max(DADOS_Y)
-                    margem = (max_y - min_y) * 0.1 if max_y != min_y else 10
-                    AX_GLOBAL.set_ylim(bottom=max(0, min_y - margem), top=max_y + margem)
-                    
                     CANVAS_GLOBAL.draw()
+
+    elif tipo_status == "paused":
+        ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
+        if PAUSE_BUTTON_GLOBAL:
+            PAUSE_BUTTON_GLOBAL.configure(text="RESUME", state="normal", fg_color="#2980B9", hover_color="#3498DB", text_color="white")
+        if SAVE_BUTTON_GLOBAL:
+            SAVE_BUTTON_GLOBAL.configure(state="normal")
+        if START_BUTTON_GLOBAL:
+            START_BUTTON_GLOBAL.configure(state="normal") 
+
+    elif tipo_status == "resumed":
+        ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
+        if PAUSE_BUTTON_GLOBAL:
+            PAUSE_BUTTON_GLOBAL.configure(text="PAUSE", state="normal", fg_color="#2980B9", hover_color="#3498DB", text_color="white")
+        if SAVE_BUTTON_GLOBAL:
+            SAVE_BUTTON_GLOBAL.configure(state="disabled")
 
     elif tipo_status == "instancia_concluida":
         nome_base = dados.get("instancia")
@@ -798,70 +820,168 @@ def configurar_aba_entrada_saida(aba):
         ctk.CTkButton(fr, text="" if img else "...", width=30, image=img, fg_color="transparent", hover_color=CORES["destaque"], command=lambda e=ent: sel_dir(e)).grid(row=1, column=1, pady=10)
 
 def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
-    global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL, MONOTONIC_FILTER
+    global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL, PAUSE_BUTTON_GLOBAL, SAVE_BUTTON_GLOBAL, MONOTONIC_FILTER
     
-    estado_execucao = {"rodando": False}
+    controles = {
+        "paused": False,
+        "running": False
+    }
 
-    def resetar_botao():
-        estado_execucao["rodando"] = False
-        try: START_BUTTON_GLOBAL.configure(state="normal", text='START SOLVER', fg_color="#77198f", hover_color="#9c27b0", border_width=0, text_color="white")
-        except: pass
+    frm_botoes = ctk.CTkFrame(aba, fg_color="transparent")
+    frm_botoes.grid(row=1, column=0, columnspan=10, pady=10, padx=20, sticky="ew")
+    for i in range(4): frm_botoes.grid_columnconfigure(i, weight=1)
 
-    def ao_passar(e): 
-        if estado_execucao["rodando"]: START_BUTTON_GLOBAL.configure(text="STOP", fg_color="#C0392B", hover_color="#E74C3C", text_color="white")
-    def ao_sair(e):
-        if estado_execucao["rodando"]: START_BUTTON_GLOBAL.configure(text="Running...", fg_color="transparent", border_width=2, border_color="#555555", text_color=("gray10", "gray90"))
+    # CORES DEFINIDAS
+    COR_PAUSE = "#2980B9"
+    COR_PAUSE_HOVER = "#3498DB"
+    COR_LOAD = "#10375C"
+    COR_LOAD_HOVER = "#184E82"
 
-    def acao():
+    def alternar_start_stop():
         if rko_gui_start is None: print("ERRO: Middleware ausente."); return
         
-        if not estado_execucao["rodando"]:
-            try:
-                w_inst = aba_io.widgets_armazenados.get("instance_path")
-                w_out = aba_io.widgets_armazenados.get("output_path")
-                w_gantt = aba_io.widgets_armazenados.get("gantt_path")
-                c_inst = w_inst.get() if w_inst else ""
-                c_out = w_out.get() if w_out else ""
-                c_gantt = w_gantt.get() if w_gantt else ""
-                salvar_cache_caminhos(c_inst, c_out, c_gantt)
-            except Exception as e:
-                print(f"Aviso: Não foi possível salvar cache IO: {e}")
+        if not controles["running"]:
+            # INICIAR 
+            controles["running"] = True
+            controles["paused"] = False
+            
+            btn_start.configure(text="STOP EXECUTION", fg_color="#C0392B", hover_color="#E74C3C", state="normal")
+            btn_pause.configure(state="normal", text="PAUSE", fg_color=COR_PAUSE, hover_color=COR_PAUSE_HOVER, text_color="white")
+            btn_save.configure(state="disabled") 
+            btn_load.configure(state="disabled")
+            
+            try: term.configure(state="normal"); term.delete("1.0", "end"); term.configure(state="disabled")
+            except: pass
 
             data = coletar_dados_interface(aba_p, aba_a, aba_io)
-            if not data: return 
-            
-            if ESCRITOR_TERMINAL_GLOBAL:
-                try:
-                    ESCRITOR_TERMINAL_GLOBAL.filtro.widget.configure(state="normal")
-                    ESCRITOR_TERMINAL_GLOBAL.filtro.widget.delete("1.0", "end")
-                    ESCRITOR_TERMINAL_GLOBAL.filtro.widget.configure(state="disabled")
-                except: pass
-            
-            estado_execucao["rodando"] = True
-            START_BUTTON_GLOBAL.configure(text="Running...", fg_color="#555555", border_width=2, border_color="#555555", text_color=("gray10", "gray90"))
             rko_gui_start.iniciar_resolucao(data, manipulador_retorno_interface)
         else:
+            # PARAR 
             rko_gui_start.solicitar_parada()
+            btn_start.configure(text="STOPPING...", state="disabled", fg_color="#555555")
+            btn_pause.configure(state="disabled")
 
-    rotulo = ctk.CTkLabel(aba, text="EXECUTION LOG", text_color=CORES["destaque"], font=FONTES["titulo"])
+    def alternar_pause():
+        if not controles["running"]: return
+        
+        if not controles["paused"]:
+            # PEDIR PAUSA 
+            btn_pause.configure(text="PAUSING...", state="disabled", fg_color=COR_PAUSE) 
+            btn_start.configure(state="disabled") 
+            aba.update_idletasks() 
+            
+            controles["paused"] = True
+            if hasattr(rko_gui_start, 'alternar_pausa'):
+                rko_gui_start.alternar_pausa(True)
+            
+            # NAO Habilita save ainda (espera backend)
+            
+        else:
+            # PEDIR RETOMADA 
+            btn_pause.configure(text="RESUMING...", state="disabled", fg_color=COR_PAUSE)
+            aba.update_idletasks()
+            
+            controles["paused"] = False
+            if hasattr(rko_gui_start, 'alternar_pausa'):
+                rko_gui_start.alternar_pausa(False)
+            
+            btn_save.configure(state="disabled")
+
+    def acao_salvar_experimento():
+        if not controles["paused"]:
+            messagebox.showwarning("Warning", "You must PAUSE the experiment before saving.")
+            return
+        caminho = filedialog.asksaveasfilename(parent=aba, title="Save Checkpoint", defaultextension=".rko", filetypes=[("RKO Exp", "*.rko")])
+        if not caminho: return
+        try:
+            estado_ui = {
+                "historico": HISTORICO_DATA, "dados_grafico_x": DADOS_X, "dados_grafico_y": DADOS_Y,
+                "melhor_makespan": MELHOR_MAKESPAN_ATUAL, "instancia_atual": NOME_INSTANCIA_ATUAL
+            }
+            estado_backend = rko_gui_start.obter_estado_checkpoint() if hasattr(rko_gui_start, 'obter_estado_checkpoint') else {}
+            dump = {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "ui": estado_ui, "backend": estado_backend}
+            with open(caminho, "wb") as f: pickle.dump(dump, f)
+            ESCRITOR_TERMINAL_GLOBAL.write(f"\n>>> CHECKPOINT SAVED: {os.path.basename(caminho)}\n")
+            messagebox.showinfo("Saved", "Experiment checkpoint saved successfully!", parent=aba)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save:\n{e}", parent=aba)
+
+    def acao_carregar_experimento():
+        if controles["running"]: return
+        caminho = filedialog.askopenfilename(parent=aba, title="Load Checkpoint", filetypes=[("RKO Exp", "*.rko")])
+        if not caminho: return
+        try:
+            with open(caminho, "rb") as f: dump = pickle.load(f)
+            global HISTORICO_DATA, DADOS_X, DADOS_Y, MELHOR_MAKESPAN_ATUAL, NOME_INSTANCIA_ATUAL, FILA_BOTOES_PENDENTES
+            d_ui = dump["ui"]
+            HISTORICO_DATA = d_ui.get("historico", {})
+            DADOS_X = d_ui.get("dados_grafico_x", [])
+            DADOS_Y = d_ui.get("dados_grafico_y", [])
+            MELHOR_MAKESPAN_ATUAL = d_ui.get("melhor_makespan", float('inf'))
+            NOME_INSTANCIA_ATUAL = d_ui.get("instancia_atual", "Resumed")
+            FILA_BOTOES_PENDENTES = list(HISTORICO_DATA.keys())
+            try: term.configure(state="normal"); term.delete("1.0", "end"); term.configure(state="disabled")
+            except: pass
+            ESCRITOR_TERMINAL_GLOBAL.write(f">>> CHECKPOINT LOADED: {d_ui.get('timestamp')}\n")
+            ESCRITOR_TERMINAL_GLOBAL.write(f">>> Resuming from: {NOME_INSTANCIA_ATUAL}\n")
+            
+            # Define estado como RODANDO (Running), pois o backend inicia direto
+            controles["running"] = True
+            controles["paused"] = False  # <--- Mude de True para False
+            
+            btn_start.configure(text="STOP EXECUTION", fg_color="#C0392B", state="normal")
+            
+            # Botao deve aparecer como PAUSE (Azul), pronto para ser clicado
+            btn_pause.configure(state="normal", text="PAUSE", fg_color=COR_PAUSE, hover_color=COR_PAUSE_HOVER, text_color="white")
+            
+            # O Save deve ficar DESABILITADO enquanto roda
+            btn_save.configure(state="disabled") 
+            btn_load.configure(state="disabled")
+            
+            if hasattr(rko_gui_start, 'restaurar_e_continuar'):
+                rko_gui_start.restaurar_e_continuar(dump["backend"], manipulador_retorno_interface)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load:\n{e}", parent=aba)
+
+    def resetar_botoes():
+        controles["running"] = False; controles["paused"] = False
+        btn_start.configure(text="START SOLVER", fg_color="#77198f", hover_color="#9c27b0", state="normal")
+        btn_pause.configure(text="PAUSE", fg_color=COR_PAUSE, state="disabled", text_color="white")
+        btn_save.configure(state="disabled"); btn_load.configure(state="normal")
+
+    # Layout
+    rotulo = ctk.CTkLabel(aba, text="EXECUTION CONTROL & LOG", text_color=CORES["destaque"], font=FONTES["titulo"])
     rotulo.grid(row=0, column=0, columnspan=10, sticky="ew", padx=7, pady=(8,0))
     
-    botao = ctk.CTkButton(aba, text='START SOLVER', width=200, height=50, command=acao, fg_color="#77198f", hover_color="#9c27b0", font=("Roboto", 18, "bold"))
-    botao.grid(row=1, column=0, columnspan=10, pady=0, padx=20)
-    botao.bind("<Enter>", ao_passar); botao.bind("<Leave>", ao_sair)
+    btn_start = ctk.CTkButton(frm_botoes, text='START SOLVER', command=alternar_start_stop, 
+                              fg_color="#77198f", hover_color="#9c27b0", font=("Roboto", 16, "bold"), height=40)
+    btn_start.grid(row=0, column=0, padx=5, sticky="ew")
+
+    btn_pause = ctk.CTkButton(frm_botoes, text='PAUSE', command=alternar_pause, state="disabled",
+                              fg_color=COR_PAUSE, hover_color=COR_PAUSE_HOVER, font=("Roboto", 14, "bold"), height=40)
+    btn_pause.grid(row=0, column=1, padx=5, sticky="ew")
+
+    btn_save = ctk.CTkButton(frm_botoes, text='SAVE EXP.', command=acao_salvar_experimento, state="disabled",
+                             fg_color="#27AE60", hover_color="#2ECC71", font=("Roboto", 14, "bold"), height=40)
+    btn_save.grid(row=0, column=2, padx=5, sticky="ew")
+
+    btn_load = ctk.CTkButton(frm_botoes, text='LOAD EXP.', command=acao_carregar_experimento,
+                             fg_color=COR_LOAD, hover_color=COR_LOAD_HOVER, font=("Roboto", 14, "bold"), height=40)
+    btn_load.grid(row=0, column=3, padx=5, sticky="ew")
 
     term = ctk.CTkTextbox(aba, border_width=2, fg_color="black", text_color="#00FF00", border_color="#2D2D35", font=("Consolas", 13))
     term.grid(row=2, column=0, columnspan=10, rowspan=8, sticky="nsew", padx=45, pady=(0,45))
     term.configure(state="disabled")
 
     MONOTONIC_FILTER = MonotonicFilter(term)
+    ESCRITOR_TERMINAL_GLOBAL = StdoutRedirector(MONOTONIC_FILTER)
+    START_BUTTON_GLOBAL = btn_start
+    START_BUTTON_GLOBAL.resetar_estado = resetar_botoes
     
-    redirector = StdoutRedirector(MONOTONIC_FILTER)
+    PAUSE_BUTTON_GLOBAL = btn_pause
+    SAVE_BUTTON_GLOBAL = btn_save
     
-    ESCRITOR_TERMINAL_GLOBAL = redirector
-    START_BUTTON_GLOBAL = botao
-    START_BUTTON_GLOBAL.resetar_estado = resetar_botao
-    sys.stdout = redirector 
+    sys.stdout = ESCRITOR_TERMINAL_GLOBAL
 
 def coletar_dados_interface(aba_p, aba_a, aba_io):
     data = {}
@@ -885,7 +1005,7 @@ def criar_aba_base(pai):
     for i in range(10): f.grid_rowconfigure(i, weight=1, minsize=20); f.grid_columnconfigure(i, weight=1, minsize=20)
     return f
 
-# --- FUNÇÃO PRINCIPAL REFATORADA (Para uso do Launcher) ---
+# FUNCAO PRINCIPAL REFATORADA (Para uso do Launcher) 
 def configurar_interface(janela):
     
     # 1. Configuração do Grid Principal da Janela
@@ -928,7 +1048,6 @@ def configurar_interface(janela):
 
     # 7. Inicia mostrando a primeira aba
     show(aba_p)
-
 
 def abrir_benchmark(root_parent=None):
     # Se receber um pai (Launcher), cria como Toplevel (Janela Filha)

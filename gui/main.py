@@ -1,12 +1,11 @@
 import customtkinter as ctk
 import sys
 import os
-from tkinter import messagebox # <--- Import necessário para o pop-up
+from tkinter import messagebox
 
-# Ajuste de path para importações funcionarem
+# Ajuste de path para importacoes funcionarem
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Imports dos módulos
 from interface.ui import abrir_benchmark 
 from interface.instance_editor import abrir_editor_janela
 from interface.instance_creator import abrir_creator_janela
@@ -17,7 +16,7 @@ class Launcher(ctk.CTk):
 
         self.title("RKO Solver Launcher")
         
-        # --- LÓGICA DE CENTRALIZAÇÃO ---
+        # --- LOGICA DE CENTRALIZACAO ---
         largura_janela = 500
         altura_janela = 450
 
@@ -37,16 +36,15 @@ class Launcher(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
         self.grid_rowconfigure(5, weight=1)
 
-        # Título
+        # Titulo
         self.lbl_titulo = ctk.CTkLabel(self, text="RKO OPTIMIZER", font=("Roboto", 28, "bold"), text_color="#6D28D9")
         self.lbl_titulo.grid(row=0, column=0, pady=(40, 10))
         
         self.lbl_subtitulo = ctk.CTkLabel(self, text="Select a module to start:", font=("Roboto", 14), text_color="gray")
         self.lbl_subtitulo.grid(row=1, column=0, pady=(0, 30))
 
-        # --- BOTÕES ---
         
-        # 1. Create Instance
+        # Create Instance
         self.btn_create = ctk.CTkButton(
             self, 
             text="➕  Create Instance", 
@@ -59,7 +57,7 @@ class Launcher(ctk.CTk):
         )
         self.btn_create.grid(row=2, column=0, pady=10)
 
-        # 2. Edit Instance
+        # Edit Instance
         self.btn_edit = ctk.CTkButton(
             self, 
             text="✏️  Edit Instance", 
@@ -72,7 +70,7 @@ class Launcher(ctk.CTk):
         )
         self.btn_edit.grid(row=3, column=0, pady=10)
 
-        # 3. Benchmark
+        # Benchmark
         self.btn_bench = ctk.CTkButton(
             self, 
             text="🚀  Benchmark & Run", 
