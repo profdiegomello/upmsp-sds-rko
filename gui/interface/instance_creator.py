@@ -285,6 +285,19 @@ class InstanceCreator(ctk.CTkToplevel):
             return None, None
 
     def acao_gerar_vazia(self):
+        # SAFETY CHECK (Protegido contra fechamento)
+        if self.dados["created"]:
+            try:
+                confirm = tk.messagebox.askyesno(
+                    "Confirm Reset",
+                    "Are you sure you want to generate a new structure?\nAll current data will be lost.",
+                    parent=self
+                )
+                if not confirm:
+                    return
+            except tk.TclError:
+                return
+
         try:
             M = int(self.ent_machines.get())
             N = int(self.ent_jobs.get())
@@ -293,23 +306,36 @@ class InstanceCreator(ctk.CTkToplevel):
             self.lbl_status.configure(text="Error: Invalid M/N inputs", text_color="red")
             return
 
+        # 1. Gera Dados
         self.dados["M"] = M
         self.dados["N"] = N
         self.dados["processing"] = [[0]*N for _ in range(M)]
         self.dados["setup"] = {m: [[0]*N for _ in range(N)] for m in range(M)}
         self.dados["created"] = True
 
+        # 2. Atualiza Sidebar (Setup Children)
         filhos = self.tree.get_children(self.node_setup)
         for f in filhos: self.tree.delete(f)
         for m in range(M):
             self.tree.insert(self.node_setup, "end", text=f"    📁 M{m}", values=("setup", f"{m}"))
 
-        # Habilita todos os botoes de acao global
+        # 3. Habilita Botões
         self.btn_rand_proc.configure(state="normal")
         self.btn_rand_setups.configure(state="normal")
         self.btn_save.configure(state="normal")
         
         self.lbl_status.configure(text=f"Structure ({M}x{N}) generated", text_color=CORES_CREATOR["success_text"])
+
+        # --- NOVAS FUNCIONALIDADES DE UX ---
+        
+        # A) Expande a árvore de Setup
+        self.tree.item(self.node_setup, open=True)
+
+        # B) Seleciona e foca na aba Processing Times automaticamente
+        self.selecao_atual = ("proc", "root")     # Atualiza estado interno
+        self.tree.selection_set(self.node_proc)   # Marca o item na árvore visualmente
+        self.carregar_proc_sheet()                # Carrega os dados na tabela
+        self.mostrar_sheet()                      # Troca a view (sai do General, vai pra Sheet)
 
     def acao_randomizar_selecionado(self):
         if not self.dados["created"]: return
@@ -400,24 +426,30 @@ class InstanceCreator(ctk.CTkToplevel):
             s_dict = self.dados["setup"]
 
             with open(caminho, "w") as f:
+                # Cabeçalho
                 f.write(f"{N}\t{M}\t1\n")
                 f.write(f"{M}\n")
                 
+                # Processing Times
                 for j in range(N):
                     linha_txt = []
                     for m in range(M):
                         linha_txt.append(f"{m}\t{p_matrix[m][j]}")
                     f.write("\t".join(linha_txt) + "\n")
                 
+                # Setup Times (SSD)
                 f.write("SSD\n")
                 for m in range(M):
                     f.write(f"M{m}\n")
                     matriz = s_dict[m]
-                    for idx_linha, row in enumerate(matriz):
-                        linha_vals = [str(idx_linha)] + [str(v) for v in row]
+                    for row in matriz:
+                        linha_vals = [str(v) for v in row]
                         f.write("\t".join(linha_vals) + "\n")
             
             self.lbl_status.configure(text=f"Saved to: {os.path.basename(caminho)}", text_color=CORES_CREATOR["success_text"])
+            
+            # Feedback Visual
+            tk.messagebox.showinfo("Success", "Instance saved successfully!", parent=self)
 
         except Exception as e:
             tk.messagebox.showerror("Error", f"Failed to save:\n{e}", parent=self)
