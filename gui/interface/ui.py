@@ -423,7 +423,6 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     combo_dec = ctk.CTkComboBox(frame_filtros, variable=VAR_FILTRO_DECODER, values=["all", "CHEAPEST", "M3LAW", "ECT", "INCREMENTAL", "KSTS"], state="readonly", height=22, font=("Roboto", 11), command=aplicar_filtros_historico)
     combo_dec.pack(fill="x", padx=5, pady=(0, 5))
 
-    # [ATUALIZADO] Novas opções de Sort
     ctk.CTkLabel(frame_filtros, text="Sort by:", font=("Roboto", 10)).pack(anchor="w", padx=5)
     VAR_ORDENACAO_HISTORICO = ctk.StringVar(value="Descending Date/Hour")
     combo_sort = ctk.CTkComboBox(
@@ -642,18 +641,36 @@ def manipulador_retorno_interface(dados):
 
     elif tipo_status == "paused":
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
-        if PAUSE_BUTTON_GLOBAL:
-            PAUSE_BUTTON_GLOBAL.configure(text="RESUME", state="normal", fg_color="#2980B9", hover_color="#3498DB", text_color="white")
+        if PAUSE_BUTTON_GLOBAL and hasattr(PAUSE_BUTTON_GLOBAL, 'icons'):
+            # Muda para Ícone Resume (Play), Texto Resume, Cor Neutra
+            PAUSE_BUTTON_GLOBAL.configure(
+                text="RESUME", 
+                state="normal", 
+                image=PAUSE_BUTTON_GLOBAL.icons["resume"], 
+                fg_color='#333333', 
+                text_color="white"
+            )
         if SAVE_BUTTON_GLOBAL:
-            SAVE_BUTTON_GLOBAL.configure(state="normal")
+            # Habilita Save com Cor Neutra
+            SAVE_BUTTON_GLOBAL.configure(state="normal", fg_color='#333333')
         if START_BUTTON_GLOBAL:
+            # Mantém Start travado
             START_BUTTON_GLOBAL.configure(state="normal") 
 
+    # --- LÓGICA DO STATUS RESUMED ---
     elif tipo_status == "resumed":
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
-        if PAUSE_BUTTON_GLOBAL:
-            PAUSE_BUTTON_GLOBAL.configure(text="PAUSE", state="normal", fg_color="#2980B9", hover_color="#3498DB", text_color="white")
+        if PAUSE_BUTTON_GLOBAL and hasattr(PAUSE_BUTTON_GLOBAL, 'icons'):
+            # Muda para Ícone Pause, Texto Pause, Cor Neutra
+            PAUSE_BUTTON_GLOBAL.configure(
+                text="PAUSE", 
+                state="normal", 
+                image=PAUSE_BUTTON_GLOBAL.icons["pause"], 
+                fg_color='#333333', 
+                text_color="white"
+            )
         if SAVE_BUTTON_GLOBAL:
+            # Desabilita Save
             SAVE_BUTTON_GLOBAL.configure(state="disabled")
 
     elif tipo_status == "instancia_concluida":
@@ -822,6 +839,25 @@ def configurar_aba_entrada_saida(aba):
 def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
     global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL, PAUSE_BUTTON_GLOBAL, SAVE_BUTTON_GLOBAL, MONOTONIC_FILTER
     
+    # --- Carregamento de Ícones ---
+    def carregar_icone(nome_arquivo):
+        try:
+            caminho = resource_path(f"assets/{nome_arquivo}")
+            img = Image.open(caminho)
+            return ctk.CTkImage(light_image=img, dark_image=img, size=(20, 20))
+        except Exception as e:
+            print(f"Aviso: Ícone {nome_arquivo} não encontrado ({e})")
+            return None
+
+    # Salva referências na aba
+    aba.icons = {
+        "rocket": carregar_icone("rocket.png"),
+        "pause":  carregar_icone("pause.png"),
+        "resume": carregar_icone("play.png"),
+        "save":   carregar_icone("save.png"),
+        "load":   carregar_icone("folder.png")
+    }
+
     controles = {
         "paused": False,
         "running": False
@@ -831,11 +867,11 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
     frm_botoes.grid(row=1, column=0, columnspan=10, pady=10, padx=20, sticky="ew")
     for i in range(4): frm_botoes.grid_columnconfigure(i, weight=1)
 
-    # CORES DEFINIDAS
-    COR_PAUSE = "#2980B9"
-    COR_PAUSE_HOVER = "#3498DB"
-    COR_LOAD = "#10375C"
-    COR_LOAD_HOVER = "#184E82"
+    # CORES (Apenas Start com cor, resto neutro)
+    COR_NEUTRA = "#333333"
+    COR_NEUTRA_HOVER = "#444444"
+    COR_START = "#77198f"
+    COR_STOP = "#C0392B"
 
     def alternar_start_stop():
         if rko_gui_start is None: print("ERRO: Middleware ausente."); return
@@ -845,8 +881,11 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
             controles["running"] = True
             controles["paused"] = False
             
-            btn_start.configure(text="STOP EXECUTION", fg_color="#C0392B", hover_color="#E74C3C", state="normal")
-            btn_pause.configure(state="normal", text="PAUSE", fg_color=COR_PAUSE, hover_color=COR_PAUSE_HOVER, text_color="white")
+            btn_start.configure(text="STOP EXECUTION", fg_color=COR_STOP, hover_color="#E74C3C", state="normal")
+            
+            # Pause habilita com cor neutra e ícone
+            btn_pause.configure(state="normal", text="PAUSE", image=aba.icons["pause"], fg_color=COR_NEUTRA, hover_color=COR_NEUTRA_HOVER, text_color="white")
+            
             btn_save.configure(state="disabled") 
             btn_load.configure(state="disabled")
             
@@ -866,20 +905,21 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
         
         if not controles["paused"]:
             # PEDIR PAUSA 
-            btn_pause.configure(text="PAUSING...", state="disabled", fg_color=COR_PAUSE) 
+            # Remove ícone temporariamente ou mantém (opcional), muda texto, cor neutra, desabilita
+            btn_pause.configure(text="PAUSING...", state="disabled", fg_color=COR_NEUTRA, image=None) 
             btn_start.configure(state="disabled") 
-            aba.update_idletasks() 
+            aba.update_idletasks() # Força atualização visual
             
             controles["paused"] = True
             if hasattr(rko_gui_start, 'alternar_pausa'):
                 rko_gui_start.alternar_pausa(True)
             
-            # NAO Habilita save ainda (espera backend)
+            # NAO Habilita save ainda (espera backend retornar status 'paused')
             
         else:
             # PEDIR RETOMADA 
-            btn_pause.configure(text="RESUMING...", state="disabled", fg_color=COR_PAUSE)
-            aba.update_idletasks()
+            btn_pause.configure(text="RESUMING...", state="disabled", fg_color=COR_NEUTRA, image=None)
+            aba.update_idletasks() # Força atualização visual
             
             controles["paused"] = False
             if hasattr(rko_gui_start, 'alternar_pausa'):
@@ -925,16 +965,16 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
             ESCRITOR_TERMINAL_GLOBAL.write(f">>> CHECKPOINT LOADED: {d_ui.get('timestamp')}\n")
             ESCRITOR_TERMINAL_GLOBAL.write(f">>> Resuming from: {NOME_INSTANCIA_ATUAL}\n")
             
-            # Define estado como RODANDO (Running), pois o backend inicia direto
+            # Define estado como RODANDO
             controles["running"] = True
-            controles["paused"] = False  # <--- Mude de True para False
+            controles["paused"] = False 
             
             btn_start.configure(text="STOP EXECUTION", fg_color="#C0392B", state="normal")
             
-            # Botao deve aparecer como PAUSE (Azul), pronto para ser clicado
-            btn_pause.configure(state="normal", text="PAUSE", fg_color=COR_PAUSE, hover_color=COR_PAUSE_HOVER, text_color="white")
+            # Botao PAUSE (Azul->Neutro)
+            btn_pause.configure(state="normal", text="PAUSE", image=aba.icons["pause"], fg_color=COR_NEUTRA, hover_color=COR_NEUTRA_HOVER, text_color="white")
             
-            # O Save deve ficar DESABILITADO enquanto roda
+            # Save DESABILITADO
             btn_save.configure(state="disabled") 
             btn_load.configure(state="disabled")
             
@@ -945,28 +985,39 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
 
     def resetar_botoes():
         controles["running"] = False; controles["paused"] = False
-        btn_start.configure(text="START SOLVER", fg_color="#77198f", hover_color="#9c27b0", state="normal")
-        btn_pause.configure(text="PAUSE", fg_color=COR_PAUSE, state="disabled", text_color="white")
-        btn_save.configure(state="disabled"); btn_load.configure(state="normal")
+        btn_start.configure(text="START SOLVER", image=aba.icons["rocket"], fg_color=COR_START, hover_color="#9c27b0", state="normal")
+        btn_pause.configure(text="PAUSE", image=aba.icons["pause"], fg_color=COR_NEUTRA, state="disabled", text_color="white")
+        btn_save.configure(state="disabled")
+        btn_load.configure(state="normal")
 
     # Layout
     rotulo = ctk.CTkLabel(aba, text="EXECUTION CONTROL & LOG", text_color=CORES["destaque"], font=FONTES["titulo"])
     rotulo.grid(row=0, column=0, columnspan=10, sticky="ew", padx=7, pady=(8,0))
     
-    btn_start = ctk.CTkButton(frm_botoes, text='START SOLVER', command=alternar_start_stop, 
-                              fg_color="#77198f", hover_color="#9c27b0", font=("Roboto", 16, "bold"), height=40)
+    # --- BOTOES MODIFICADOS: COMPOUND RIGHT, ICONES, CORES NEUTRAS ---
+    
+    # START: Único com cor
+    btn_start = ctk.CTkButton(frm_botoes, text='START SOLVER', image=aba.icons["rocket"], compound="right",
+                              command=alternar_start_stop, 
+                              fg_color=COR_START, hover_color="#9c27b0", font=("Roboto", 16, "bold"), height=40)
     btn_start.grid(row=0, column=0, padx=5, sticky="ew")
 
-    btn_pause = ctk.CTkButton(frm_botoes, text='PAUSE', command=alternar_pause, state="disabled",
-                              fg_color=COR_PAUSE, hover_color=COR_PAUSE_HOVER, font=("Roboto", 14, "bold"), height=40)
+    # PAUSE: Neutro
+    btn_pause = ctk.CTkButton(frm_botoes, text='PAUSE', image=aba.icons["pause"], compound="right",
+                              command=alternar_pause, state="disabled",
+                              fg_color=COR_NEUTRA, hover_color=COR_NEUTRA_HOVER, font=("Roboto", 14, "bold"), height=40)
     btn_pause.grid(row=0, column=1, padx=5, sticky="ew")
 
-    btn_save = ctk.CTkButton(frm_botoes, text='SAVE EXP.', command=acao_salvar_experimento, state="disabled",
-                             fg_color="#27AE60", hover_color="#2ECC71", font=("Roboto", 14, "bold"), height=40)
+    # SAVE: Neutro
+    btn_save = ctk.CTkButton(frm_botoes, text='SAVE EXP.', image=aba.icons["save"], compound="right",
+                             command=acao_salvar_experimento, state="disabled",
+                             fg_color=COR_NEUTRA, hover_color=COR_NEUTRA_HOVER, font=("Roboto", 14, "bold"), height=40)
     btn_save.grid(row=0, column=2, padx=5, sticky="ew")
 
-    btn_load = ctk.CTkButton(frm_botoes, text='LOAD EXP.', command=acao_carregar_experimento,
-                             fg_color=COR_LOAD, hover_color=COR_LOAD_HOVER, font=("Roboto", 14, "bold"), height=40)
+    # LOAD: Neutro
+    btn_load = ctk.CTkButton(frm_botoes, text='LOAD EXP.', image=aba.icons["load"], compound="right",
+                             command=acao_carregar_experimento,
+                             fg_color=COR_NEUTRA, hover_color=COR_NEUTRA_HOVER, font=("Roboto", 14, "bold"), height=40)
     btn_load.grid(row=0, column=3, padx=5, sticky="ew")
 
     term = ctk.CTkTextbox(aba, border_width=2, fg_color="black", text_color="#00FF00", border_color="#2D2D35", font=("Consolas", 13))
@@ -979,6 +1030,9 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
     START_BUTTON_GLOBAL.resetar_estado = resetar_botoes
     
     PAUSE_BUTTON_GLOBAL = btn_pause
+    # Salva referências para uso no callback global
+    PAUSE_BUTTON_GLOBAL.icons = aba.icons 
+    
     SAVE_BUTTON_GLOBAL = btn_save
     
     sys.stdout = ESCRITOR_TERMINAL_GLOBAL
