@@ -1,8 +1,12 @@
 import customtkinter as ctk
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, messagebox
 import tkinter as tk
 import os
 import sys
+
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import numpy as np
 
 # Tenta importar o tksheet
 try:
@@ -34,7 +38,7 @@ class InstanceEditor(ctk.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
 
-        self.parent_app = parent # Guarda a referencia do Launcher
+        self.parent_app = parent 
         self.protocol("WM_DELETE_WINDOW", self.ao_fechar)
         
         self.title("RKO Instance Editor")
@@ -50,6 +54,8 @@ class InstanceEditor(ctk.CTkToplevel):
         }
         
         self.view_atual = None
+        self.canvas_stats = None # Referencia para o canvas do matplotlib
+        self.fig_stats = None
 
         if os.name == 'nt':
             try: self.after(200, lambda: self.iconbitmap())
@@ -70,37 +76,41 @@ class InstanceEditor(ctk.CTkToplevel):
 
         self.criar_header_botoes()
         self.criar_info_block()
+        
+        # Container da Tabela (Sheet)
         self.criar_tabela_sheet()
         
+        # Container dos Gráficos (Statistics) - Inicialmente oculto
+        self.criar_area_estatisticas()
+        
     def ao_fechar(self):
-        """Fecha apenas o editor, mantendo o Launcher vivo"""
         self.destroy()
    
     def salvar_alteracoes_da_view_atual(self):
-        """Pega os dados visuais do tksheet e salva na estrutura de dados em memória"""
+        """Salva o que está na tela (Sheet) para a memória antes de trocar de aba"""
         if not self.dados_instancia["loaded"] or not self.view_atual:
             return
 
         tipo, tag = self.view_atual
         
-        # Pega todos os dados da planilha como lista de listas
+        # Se estivermos vendo estatísticas, não há o que salvar da visualização
+        if tipo == "stats":
+            return
+
         dados_visuais = self.sheet.get_sheet_data()
         
-        # Converte tudo para int (o tksheet pode retornar strings)
         try:
             dados_int = [[int(c) for c in linha] for linha in dados_visuais]
         except ValueError:
-            tk.messagebox.showerror("Format Error", "All cells must contain integer numbers.")
+            messagebox.showerror("Format Error", "All cells must contain integer numbers.")
             return
 
         if tipo == "proc":
             self.dados_instancia["processing"] = dados_int
-            #print("Processing times updated in memory.")
             
         elif tipo == "setup":
             maquina_id = int(tag)
             self.dados_instancia["setup"][maquina_id] = dados_int
-            #print(f"Setup times for Machine {maquina_id} updated in memory.")
 
     def criar_sidebar(self):
         self.frm_side = ctk.CTkFrame(self, fg_color=CORES_EDITOR["sidebar_bg"], corner_radius=0, width=260)
@@ -124,8 +134,12 @@ class InstanceEditor(ctk.CTkToplevel):
         self.tree_side.configure(yscrollcommand=scroll_y.set)
         scroll_y.grid(row=0, column=1, sticky="ns")
 
+        # Nós da árvore
         self.node_proc = self.tree_side.insert("", "end", text=" 📂 Processing Times", open=True, values=("proc", "all"))
         self.node_setup = self.tree_side.insert("", "end", text=" 📂 Setup Times", open=True, values=("setup_root", "none"))
+        
+        # --- NOVO NÓ DE ESTATÍSTICAS ---
+        self.node_stats = self.tree_side.insert("", "end", text=" 📊 Statistics", values=("stats", "all"))
         
         self.tree_side.bind("<<TreeviewSelect>>", self.ao_selecionar_sidebar)
 
@@ -143,37 +157,30 @@ class InstanceEditor(ctk.CTkToplevel):
         frm_info = ctk.CTkFrame(self.frm_main, fg_color="transparent")
         frm_info.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 15))
         
-        # --- BLOCO DE INFORMAÇÕES FIXAS (Esquerda) ---
-        # Usamos .pack(side="left") para empilhar: LabelBranco -> ValorAzul -> Espaço -> LabelBranco...
-        
-        # 1. Instance Name
         ctk.CTkLabel(frm_info, text="INSTANCE:", text_color="white", font=("Roboto", 12, "bold")).pack(side="left", padx=(0, 5))
         self.lbl_val_nome = ctk.CTkLabel(frm_info, text="---", text_color=CORES_EDITOR["text_highlight"], font=("Roboto", 12, "bold"))
         self.lbl_val_nome.pack(side="left", padx=(0, 25))
 
-        # 2. Machines
         ctk.CTkLabel(frm_info, text="MACHINES:", text_color="white", font=("Roboto", 12, "bold")).pack(side="left", padx=(0, 5))
         self.lbl_val_mach = ctk.CTkLabel(frm_info, text="-", text_color=CORES_EDITOR["text_highlight"], font=("Roboto", 12, "bold"))
         self.lbl_val_mach.pack(side="left", padx=(0, 25))
 
-        # 3. Jobs
         ctk.CTkLabel(frm_info, text="JOBS:", text_color="white", font=("Roboto", 12, "bold")).pack(side="left", padx=(0, 5))
         self.lbl_val_jobs = ctk.CTkLabel(frm_info, text="-", text_color=CORES_EDITOR["text_highlight"], font=("Roboto", 12, "bold"))
         self.lbl_val_jobs.pack(side="left", padx=(0, 20))
 
-        # --- BLOCO DE CONTEXTO (Direita) ---
-        # Mostra o que está sendo editado no momento (Ex: "Processing Times") de forma discreta
         self.lbl_context = ctk.CTkLabel(frm_info, text="", text_color="gray60", font=("Roboto", 11, "italic"))
         self.lbl_context.pack(side="right", padx=10)
 
     def criar_tabela_sheet(self):
+        # Frame container para a Tabela (Sheet)
         self.frm_table_container = ctk.CTkFrame(self.frm_main, fg_color=CORES_EDITOR["grid_bg"], border_width=1, border_color="#333333", corner_radius=4)
+        # Grid inicialmente posicionado
         self.frm_table_container.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 20))
         self.frm_table_container.grid_rowconfigure(0, weight=1)
         self.frm_table_container.grid_columnconfigure(0, weight=1)
 
         if Sheet:
-            # Sheet comeca vazia
             self.sheet = Sheet(self.frm_table_container,
                                headers=[], 
                                data=[], 
@@ -202,220 +209,187 @@ class InstanceEditor(ctk.CTkToplevel):
                 font = ("Arial", 10, "normal"),
                 header_font = ("Arial", 10, "bold"),
                 index_font = ("Arial", 10, "bold"),
-                
                 default_column_width = 60 
             )
-
             self.sheet.grid(row=0, column=0, sticky="nsew")
 
-    def acao_save_instance(self):
+    def criar_area_estatisticas(self):
+        """Cria o frame onde os gráficos serão exibidos, mas o mantém oculto inicialmente"""
+        self.frm_stats_container = ctk.CTkFrame(self.frm_main, fg_color="transparent")
+        # Nota: Não fazemos .grid() aqui ainda, faremos na troca de visualização
+        self.frm_stats_container.grid_rowconfigure(0, weight=1)
+        self.frm_stats_container.grid_columnconfigure(0, weight=1)
+
+    # logica de graficos
+    def gerar_graficos_estatisticas(self, maquina_idx=None):
+        """
+        Gera histogramas e boxplots separados.
+        CORREÇÃO: Agora fecha a figura anterior para liberar memória.
+        """
+        # Limpeza de Widgets (Visual)
+        for widget in self.frm_stats_container.winfo_children():
+            widget.destroy()
+
+        # Limpeza do Matplotlib (Memoria) 
+        if self.fig_stats:
+            plt.close(self.fig_stats)
+            self.fig_stats = None
+
         if not self.dados_instancia["loaded"]:
+            ctk.CTkLabel(self.frm_stats_container, text="No instance loaded.", font=("Roboto", 16)).pack(expand=True)
             return
 
-        # Garante que a edicao atual foi salva na memoria
-        self.salvar_alteracoes_da_view_atual()
+        # PREPARACAO DOS DADOS 
+        proc_flat = []
+        setup_flat = []
+        titulo_sufixo = "Global"
 
-        # Pede onde salvar
-        nome_sugerido = f"MODIFIED_{self.dados_instancia.get('nome', 'instance.txt')}"
+        if maquina_idx is None:
+            titulo_sufixo = "Global"
+            raw_proc = self.dados_instancia["processing"]
+            if raw_proc:
+                try: proc_flat = np.array(raw_proc).flatten()
+                except: pass
+            raw_setup = self.dados_instancia["setup"]
+            if raw_setup:
+                try:
+                    all_setups = []
+                    for matriz in raw_setup.values():
+                        all_setups.extend(np.array(matriz).flatten())
+                    setup_flat = [x for x in all_setups if x > 0]
+                except: pass
+        else:
+            titulo_sufixo = f"Machine {maquina_idx}"
+            try:
+                if maquina_idx < len(self.dados_instancia["processing"]):
+                    linha_proc = self.dados_instancia["processing"][maquina_idx]
+                    proc_flat = np.array(linha_proc)
+            except: pass
+            try:
+                matriz_setup = self.dados_instancia["setup"].get(maquina_idx, [])
+                if matriz_setup:
+                    flat_setup_local = np.array(matriz_setup).flatten()
+                    setup_flat = [x for x in flat_setup_local if x > 0]
+            except: pass
 
-        caminho = filedialog.asksaveasfilename(
-            parent=self,
-            initialfile=nome_sugerido, 
-            defaultextension=".txt", 
-            filetypes=[("Text Files", "*.txt")]
-        )
+        # CONFIGURACAO MATPLOTLIB 
+        plt.style.use('dark_background')
         
-        if not caminho: return
-
-        try:
-            N = self.dados_instancia["N"]
-            M = self.dados_instancia["M"]
-            p_matrix = self.dados_instancia["processing"] # Linha=Maq, Col=Job
-            s_dict = self.dados_instancia["setup"]
-
-            with open(caminho, "w") as f:
-
-                f.write(f"{N}\t{M}\t1\n")
-                f.write(f"{M}\n") 
-
-                # --- PROCESSING TIMES ---
-                # Formato original: MaqID \t Tempo \t MaqID \t Tempo ...
-                for j in range(N): # Para cada Job (linha do arquivo)
-                    linha_txt = []
-                    for m in range(M): # Para cada Máquina
-                        tempo = p_matrix[m][j]
-                        # Adiciona par: ID_Maquina [TAB] Tempo
-                        linha_txt.append(f"{m}\t{tempo}")
-                    
-                    # Une tudo com TAB e escreve
-                    f.write("\t".join(linha_txt) + "\n")
-
-                # --- SSD (SETUP TIMES) ---
-                f.write("SSD\n")
-                
-                for m in range(M):
-                    f.write(f"M{m}\n")
-                    matriz = s_dict.get(m, [])
-                    
-                    if not matriz: 
-                        matriz = [[0]*N for _ in range(N)]
-                    
-                    for idx_linha, row in enumerate(matriz):
-                        linha_valores = [str(idx_linha)] + [str(v) for v in row]
-                        
-                        # Une com TAB
-                        linha_str = "\t".join(linha_valores)
-                        f.write(linha_str + "\n")
-            
-            #print(f"Sucesso: Arquivo salvo em {caminho}")
-
-        except Exception as e:
-            tk.messagebox.showerror("Error", f"Failed to save file:\n{e}")
-            print(f"Erro detalhado save: {e}")
-
-    # PARSER
-    def acao_load_instance(self):
-        caminho = filedialog.askopenfilename(
-            parent=self, 
-            filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")]
-        )
-        if not caminho: return
-
-        try:
-            with open(caminho, 'r') as f:
-                # Lê todas as linhas removendo espaços em branco extras
-                linhas = [l.strip() for l in f.readlines() if l.strip()]
-
-            if not linhas: return
-
-            # Ler Cabeçalho (N Jobs, M Máquinas)
-            cabecalho = list(map(int, linhas[0].split()))
-            n_jobs = cabecalho[0]
-            n_maquinas = cabecalho[1]
-
-            segunda_linha = list(map(int, linhas[1].split()))
-            if len(segunda_linha) == 1:
-                inicio_proc = 2
-            else:
-                inicio_proc = 1
-
-            # Inicializa matriz MxN com zeros
-            matriz_proc = [[0]*n_jobs for _ in range(n_maquinas)]
-            
-            # Ler Processing Times
-            for j in range(n_jobs):
-                if (inicio_proc + j) >= len(linhas): break
-                
-                linha_raw = list(map(int, linhas[inicio_proc + j].split()))
-                
-                # A linha tem pares: (maq_id, tempo) -> Ex: 0 67 1 12 ...
-                # maq_id no arquivo é 0-based
-                for k in range(0, len(linha_raw), 2):
-                    if k+1 >= len(linha_raw): break
-                    maq_idx = linha_raw[k] 
-                    tempo = linha_raw[k+1]
-                    
-                    if maq_idx < n_maquinas:
-                        matriz_proc[maq_idx][j] = tempo
-
-            # Ler Setups
-            setups = {} 
-            # O bloco SSD começa logo apOs os jobs
-            idx_busca_ssd = inicio_proc + n_jobs
-            
-            idx_ssd = -1
-            for i in range(idx_busca_ssd, len(linhas)):
-                if linhas[i] == "SSD":
-                    idx_ssd = i
-                    break
-            
-            if idx_ssd != -1:
-                idx_atual = idx_ssd + 1
-                
-                # Ler blocos de máquinas
-                # O formato é: "M0", depois N linhas de matriz, depois "M1", etc.
-                maquina_atual = -1
-                
-                while idx_atual < len(linhas):
-                    conteudo = linhas[idx_atual]
-                    
-                    if conteudo.startswith("M"):
-                        # Nova máquina encontrada (ex: "M0")
-                        try:
-                            # Extrai o número depois do M (M0 -> 0)
-                            maquina_atual = int(conteudo[1:])
-                        except:
-                            maquina_atual = -1
-                        
-                        idx_atual += 1
-                        
-                        # Se identificou uma máquina válida, lê as próximas N linhas
-                        if 0 <= maquina_atual < n_maquinas:
-                            matriz_m = []
-                            for _ in range(n_jobs):
-                                if idx_atual >= len(linhas): break
-                                vals = list(map(int, linhas[idx_atual].split()))
-                                matriz_m.append(vals)
-                                idx_atual += 1
-                            setups[maquina_atual] = matriz_m
-                        else:
-                            # Se não for marcador de máquina válido ou acabou, continua
-                            pass
-                    else:
-                        idx_atual += 1
-
-            # Salvar em memOria
-            self.dados_instancia = {
-                "loaded": True,
-                "nome": os.path.basename(caminho),
-                "N": n_jobs,
-                "M": n_maquinas,
-                "processing": matriz_proc,
-                "setup": setups
-            }
-
-            #Atualizar Interface
-            self.atualizar_interface_pos_load()
-
-        except Exception as e:
-            print(f"Erro ao ler instância: {e}")
-            tk.messagebox.showerror("Error", f"Failed to parse instance:\n{e}")
-
-    def atualizar_interface_pos_load(self):
-        dados = self.dados_instancia
+        self.fig_stats, axes = plt.subplots(2, 2, figsize=(10, 6), dpi=100, 
+                                 sharex='col', 
+                                 gridspec_kw={'height_ratios': [0.60, 0.40], 'hspace': 0.4, 'wspace': 0.2})
         
-        # Atualiza os valores nos campos específicos
-        self.lbl_val_nome.configure(text=dados['nome'])
-        self.lbl_val_mach.configure(text=str(dados['M']))
-        self.lbl_val_jobs.configure(text=str(dados['N']))
+        self.fig_stats.patch.set_facecolor(CORES_EDITOR["main_bg"]) 
 
-        filhos = self.tree_side.get_children(self.node_setup)
-        for f in filhos: self.tree_side.delete(f)
+        (ax_hist_p, ax_hist_s), (ax_box_p, ax_box_s) = axes
 
-        for m in range(dados['M']):
-            self.tree_side.insert(self.node_setup, "end", text=f"    📁 M{m}", values=("setup", f"{m}"))
+        cor_proc = '#9C27B0' if maquina_idx is not None else '#5CAEC4'
+        cor_setup = '#FF9800' if maquina_idx is not None else '#E74C3C'
+        cor_grid_bg = CORES_EDITOR["grid_bg"]
 
-        self.exibir_processing_times()
-        self.tree_side.item(self.node_setup, open=True)
+        # COLUNA 1: PROCESSING TIMES 
+        ax_hist_p.set_facecolor(cor_grid_bg)
+        if len(proc_flat) > 0:
+            ax_hist_p.hist(proc_flat, bins=15, color=cor_proc, edgecolor='black', alpha=0.8)
+            media_p = np.mean(proc_flat)
+            ax_hist_p.axvline(media_p, color='white', linestyle='dashed', linewidth=1, label=f'Avg: {media_p:.1f}')
+            ax_hist_p.legend(fontsize=7, facecolor=cor_grid_bg, edgecolor="white", loc='upper right')
+
+        ax_hist_p.set_title(f"Processing Times ({titulo_sufixo})", fontsize=10, color="white", fontweight="bold")
+        ax_hist_p.set_ylabel("Freq.", fontsize=8, color="gray")
+        ax_hist_p.grid(axis='y', alpha=0.2, linestyle='--')
+        ax_hist_p.tick_params(axis='x', labelbottom=True) 
+
+        ax_box_p.set_facecolor(cor_grid_bg)
+        if len(proc_flat) > 0:
+            props = dict(color='white')
+            flier_props = dict(marker='o', markerfacecolor='white', markersize=3, linestyle='none', markeredgecolor='none')
+            
+            ax_box_p.boxplot(proc_flat, vert=False, patch_artist=True, 
+                             boxprops=dict(facecolor=cor_proc, alpha=0.6),
+                             medianprops=props, capprops=props, whiskerprops=props, flierprops=flier_props,
+                             widths=0.5)
+            
+        ax_box_p.set_xlabel("Time Unit", fontsize=9, color="gray")
+        ax_box_p.set_yticks([]) 
+        ax_box_p.grid(axis='x', alpha=0.2, linestyle='--')
+        ax_box_p.set_title("Distribution Boxplot", fontsize=9, color="gray", pad=5)
+
+        # COLUNA 2: SETUP TIMES 
+        ax_hist_s.set_facecolor(cor_grid_bg)
+        if len(setup_flat) > 0:
+            ax_hist_s.hist(setup_flat, bins=20, color=cor_setup, edgecolor='black', alpha=0.8)
+            media_s = np.mean(setup_flat)
+            ax_hist_s.axvline(media_s, color='white', linestyle='dashed', linewidth=1, label=f'Avg: {media_s:.1f}')
+            ax_hist_s.legend(fontsize=7, facecolor=cor_grid_bg, edgecolor="white", loc='upper right')
+        else:
+            ax_hist_s.text(0.5, 0.5, "No Data", ha='center', va='center', color='gray')
+
+        ax_hist_s.set_title(f"Setup Times ({titulo_sufixo})", fontsize=10, color="white", fontweight="bold")
+        ax_hist_s.grid(axis='y', alpha=0.2, linestyle='--')
+        ax_hist_s.tick_params(axis='x', labelbottom=True)
+
+        ax_box_s.set_facecolor(cor_grid_bg)
+        if len(setup_flat) > 0:
+            props = dict(color='white')
+            flier_props = dict(marker='o', markerfacecolor='white', markersize=3, linestyle='none', markeredgecolor='none')
+            ax_box_s.boxplot(setup_flat, vert=False, patch_artist=True,
+                             boxprops=dict(facecolor=cor_setup, alpha=0.6),
+                             medianprops=props, capprops=props, whiskerprops=props, flierprops=flier_props,
+                             widths=0.5)
+            
+        ax_box_s.set_xlabel("Time Unit", fontsize=9, color="gray")
+        ax_box_s.set_yticks([])
+        ax_box_s.grid(axis='x', alpha=0.2, linestyle='--')
+        ax_box_s.set_title("Distribution Boxplot", fontsize=9, color="gray", pad=5)
+
+        self.fig_stats.subplots_adjust(left=0.08, right=0.95, top=0.92, bottom=0.15, wspace=0.2, hspace=0.4)
+        
+        # Renderiza
+        self.canvas_stats = FigureCanvasTkAgg(self.fig_stats, master=self.frm_stats_container)
+        self.canvas_stats.draw()
+        self.canvas_stats.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
 
     def ao_selecionar_sidebar(self, event):
         sel = self.tree_side.selection()
         if not sel: return
         
+        # Salva o que estava sendo editado antes de mudar
         self.salvar_alteracoes_da_view_atual()
 
-        # Descobre o novo item selecionado
         item = self.tree_side.item(sel[0])
         tipo = item['values'][0] 
         tag = item['values'][1]  
 
         if not self.dados_instancia["loaded"]: return
 
-        # Carrega o novo item
-        if tipo == "proc":
-            self.exibir_processing_times()
-        elif tipo == "setup" and tag != "none":
-            self.exibir_setup_times(int(tag))
+        # LOGICA DE TROCA DE VISUALIZACAO
+        
+        if tipo == "stats" or tipo == "stats_mach":
+            # Esconde Tabela, Mostra Gráficos
+            self.frm_table_container.grid_forget()
+            self.frm_stats_container.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 20))
+            
+            # Define se é Global ou Local
+            if tipo == "stats":
+                self.view_atual = ("stats", "all")
+                self.lbl_context.configure(text="Viewing: Global Statistics")
+                self.gerar_graficos_estatisticas(maquina_idx=None) # None = Global
+            else:
+                m_idx = int(tag)
+                self.view_atual = ("stats_mach", tag)
+                self.lbl_context.configure(text=f"Viewing: Machine {m_idx} Statistics")
+                self.gerar_graficos_estatisticas(maquina_idx=m_idx) # Passa o ID da máquina
+            
+        else:
+            # Esconde Graficos, Mostra Tabela
+            self.frm_stats_container.grid_forget()
+            self.frm_table_container.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 20))
+
+            if tipo == "proc":
+                self.exibir_processing_times()
+            elif tipo == "setup" and tag != "none":
+                self.exibir_setup_times(int(tag))
 
     def exibir_processing_times(self):
         if not Sheet or not self.dados_instancia["loaded"]: return
@@ -428,7 +402,6 @@ class InstanceEditor(ctk.CTkToplevel):
         col_headers = [f"J{i}" for i in range(n_jobs)]
         row_indices = [f"M{i}" for i in range(n_maquinas)]
 
-        # Atualiza apenas o label de contexto na direita
         self.lbl_context.configure(text="Editing: Processing Times")
         
         self.sheet.headers(col_headers)
@@ -449,12 +422,168 @@ class InstanceEditor(ctk.CTkToplevel):
         headers = [f"J{i}" for i in range(n_jobs)]
         row_indices = [f"J{i}" for i in range(n_jobs)]
 
-        # Atualiza apenas o label de contexto na direita
         self.lbl_context.configure(text=f"Editing: Setup Times (Machine {maquina_idx})")
         
         self.sheet.headers(headers)
         self.sheet.row_index(row_indices) 
         self.sheet.set_sheet_data(dados)
+
+    def acao_save_instance(self):
+        if not self.dados_instancia["loaded"]:
+            return
+
+        self.salvar_alteracoes_da_view_atual()
+
+        nome_sugerido = f"MODIFIED_{self.dados_instancia.get('nome', 'instance.txt')}"
+
+        caminho = filedialog.asksaveasfilename(
+            parent=self,
+            initialfile=nome_sugerido, 
+            defaultextension=".txt", 
+            filetypes=[("Text Files", "*.txt")]
+        )
+        if not caminho: return
+
+        try:
+            N = self.dados_instancia["N"]
+            M = self.dados_instancia["M"]
+            p_matrix = self.dados_instancia["processing"] 
+            s_dict = self.dados_instancia["setup"]
+
+            with open(caminho, "w") as f:
+                f.write(f"{N}\t{M}\t1\n")
+                f.write(f"{M}\n") 
+
+                for j in range(N): 
+                    linha_txt = []
+                    for m in range(M): 
+                        tempo = p_matrix[m][j]
+                        linha_txt.append(f"{m}\t{tempo}")
+                    f.write("\t".join(linha_txt) + "\n")
+
+                f.write("SSD\n")
+                for m in range(M):
+                    f.write(f"M{m}\n")
+                    matriz = s_dict.get(m, [])
+                    if not matriz: matriz = [[0]*N for _ in range(N)]
+                    
+                    for idx_linha, row in enumerate(matriz):
+                        linha_valores = [str(idx_linha)] + [str(v) for v in row]
+                        linha_str = "\t".join(linha_valores)
+                        f.write(linha_str + "\n")
+            
+            messagebox.showinfo("Saved", "Instance saved successfully!", parent=self)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save file:\n{e}")
+
+    def acao_load_instance(self):
+        caminho = filedialog.askopenfilename(
+            parent=self, 
+            filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")]
+        )
+        if not caminho: return
+
+        try:
+            with open(caminho, 'r') as f:
+                linhas = [l.strip() for l in f.readlines() if l.strip()]
+
+            if not linhas: return
+
+            cabecalho = list(map(int, linhas[0].split()))
+            n_jobs = cabecalho[0]
+            n_maquinas = cabecalho[1]
+
+            segunda_linha = list(map(int, linhas[1].split()))
+            if len(segunda_linha) == 1: inicio_proc = 2
+            else: inicio_proc = 1
+
+            matriz_proc = [[0]*n_jobs for _ in range(n_maquinas)]
+            
+            for j in range(n_jobs):
+                if (inicio_proc + j) >= len(linhas): break
+                linha_raw = list(map(int, linhas[inicio_proc + j].split()))
+                for k in range(0, len(linha_raw), 2):
+                    if k+1 >= len(linha_raw): break
+                    maq_idx = linha_raw[k] 
+                    tempo = linha_raw[k+1]
+                    if maq_idx < n_maquinas:
+                        matriz_proc[maq_idx][j] = tempo
+
+            setups = {} 
+            idx_busca_ssd = inicio_proc + n_jobs
+            idx_ssd = -1
+            for i in range(idx_busca_ssd, len(linhas)):
+                if linhas[i] == "SSD":
+                    idx_ssd = i
+                    break
+            
+            if idx_ssd != -1:
+                idx_atual = idx_ssd + 1
+                maquina_atual = -1
+                
+                while idx_atual < len(linhas):
+                    conteudo = linhas[idx_atual]
+                    if conteudo.startswith("M"):
+                        try: maquina_atual = int(conteudo[1:])
+                        except: maquina_atual = -1
+                        idx_atual += 1
+                        if 0 <= maquina_atual < n_maquinas:
+                            matriz_m = []
+                            for _ in range(n_jobs):
+                                if idx_atual >= len(linhas): break
+                                vals = list(map(int, linhas[idx_atual].split()))
+                                matriz_m.append(vals)
+                                idx_atual += 1
+                            setups[maquina_atual] = matriz_m
+                        else: pass
+                    else: idx_atual += 1
+
+            self.dados_instancia = {
+                "loaded": True,
+                "nome": os.path.basename(caminho),
+                "N": n_jobs,
+                "M": n_maquinas,
+                "processing": matriz_proc,
+                "setup": setups
+            }
+
+            self.atualizar_interface_pos_load()
+
+        except Exception as e:
+            print(f"Erro ao ler instância: {e}")
+            messagebox.showerror("Error", f"Failed to parse instance:\n{e}")
+
+    def atualizar_interface_pos_load(self):
+        dados = self.dados_instancia
+        
+        # Atualiza os labels do topo
+        self.lbl_val_nome.configure(text=dados['nome'])
+        self.lbl_val_mach.configure(text=str(dados['M']))
+        self.lbl_val_jobs.configure(text=str(dados['N']))
+
+        # --- ATUALIZA A ÁRVORE DE SETUP ---
+        filhos_setup = self.tree_side.get_children(self.node_setup)
+        for f in filhos_setup: self.tree_side.delete(f)
+
+        # --- ATUALIZA A ÁRVORE DE ESTATÍSTICAS (NOVO) ---
+        filhos_stats = self.tree_side.get_children(self.node_stats)
+        for f in filhos_stats: self.tree_side.delete(f)
+
+        # Cria os nós filhos para cada máquina
+        for m in range(dados['M']):
+            # Nó de Setup (Tabela)
+            self.tree_side.insert(self.node_setup, "end", text=f"    📁 M{m}", values=("setup", f"{m}"))
+            
+            # Nó de Estatística (Gráfico Local)
+            self.tree_side.insert(self.node_stats, "end", text=f"    📊 M{m} Stats", values=("stats_mach", f"{m}"))
+
+        self.exibir_processing_times()
+        
+        # Abre os nós pais para facilitar a visualização
+        self.tree_side.item(self.node_stats, open=True)
+        self.tree_side.item(self.node_setup, open=False) 
+        self.tree_side.selection_set(self.node_proc)
 
 def abrir_editor_janela(root_parent=None):
     if root_parent:
@@ -462,6 +591,7 @@ def abrir_editor_janela(root_parent=None):
     else:
         app = InstanceEditor(None)
         app.mainloop()
+
 if __name__ == "__main__":
     ctk.set_appearance_mode("Dark")
     abrir_editor_janela()
