@@ -10,7 +10,7 @@ import re
 import time
 import json
 import threading
-import pickle # <--- ADICIONADO PARA O SAVE/LOAD
+import pickle 
 import matplotlib
 from matplotlib import ticker
 import matplotlib.pyplot as plt
@@ -154,6 +154,34 @@ class StdoutRedirector:
 
     def flush(self): pass
 
+class CustomToolbar(NavigationToolbar2Tk):
+    def save_figure(self, *args):
+        # Descobre qual é a janela atual (Toplevel) onde o gráfico está
+        top_level = self.canvas.get_tk_widget().winfo_toplevel()
+        
+        # Obtém os formatos suportados pelo backend
+        filetypes = self.canvas.get_supported_filetypes()
+        default_filetype = self.canvas.get_default_filetype()
+        
+        # Formata para o padrão do Tkinter
+        tk_filetypes = []
+        for name, ext in filetypes.items():
+            tk_filetypes.append((name, ext))
+        
+        # Abre o diálogo FORÇANDO o parent correto
+        fname = filedialog.asksaveasfilename(
+            parent=top_level,  # <--- O PULO DO GATO ESTÁ AQUI
+            title="Save the figure",
+            filetypes=tk_filetypes,
+            defaultextension=default_filetype
+        )
+
+        if fname:
+            try:
+                self.canvas.figure.savefig(fname)
+            except Exception as e:
+                messagebox.showerror("Error saving file", str(e), parent=top_level)
+
 def carregar_cache_caminhos():
     if os.path.exists(CAMINHO_CACHE_IO):
         try:
@@ -202,7 +230,7 @@ def configurar_aba_grafico(aba):
     CANVAS_GLOBAL = FigureCanvasTkAgg(FIG_GLOBAL, master=frame)
     CANVAS_GLOBAL.draw()
     CANVAS_GLOBAL.get_tk_widget().pack(fill="both", expand=True)
-    NavigationToolbar2Tk(CANVAS_GLOBAL, frame).pack(side="bottom", fill="x")
+    CustomToolbar(CANVAS_GLOBAL, frame).pack(side="bottom", fill="x")
     return frame
 
 def configurar_aba_gantt_live(aba):
@@ -222,7 +250,7 @@ def configurar_aba_gantt_live(aba):
     CANVAS_GANTT = FigureCanvasTkAgg(FIG_GANTT, master=frame)
     CANVAS_GANTT.draw()
     CANVAS_GANTT.get_tk_widget().pack(fill="both", expand=True)
-    NavigationToolbar2Tk(CANVAS_GANTT, frame).pack(side="bottom", fill="x")
+    CustomToolbar(CANVAS_GANTT, frame).pack(side="bottom", fill="x")
     return frame
 
 def aplicar_filtros_historico(evento=None):
@@ -476,9 +504,10 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     FIG_HIST_LINHA.subplots_adjust(left=0.05, right=0.98, top=0.92, bottom=0.15)
 
     CANVAS_HIST_LINHA = FigureCanvasTkAgg(FIG_HIST_LINHA, master=frame_top)
-    toolbar_linha = NavigationToolbar2Tk(CANVAS_HIST_LINHA, frame_top)
+    toolbar_linha = CustomToolbar(CANVAS_HIST_LINHA, frame_top)
     toolbar_linha.update()
     toolbar_linha.pack(side="bottom", fill="x")
+
     CANVAS_HIST_LINHA.draw(); CANVAS_HIST_LINHA.get_tk_widget().pack(side="top", fill="both", expand=True)
 
     frame_bot = ctk.CTkFrame(frame_dir, fg_color="#242424", corner_radius=10, height=700)
@@ -492,7 +521,7 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     FIG_HIST_GANTT.subplots_adjust(left=0.05, right=0.98, top=0.95, bottom=0.15)
     
     CANVAS_HIST_GANTT = FigureCanvasTkAgg(FIG_HIST_GANTT, master=frame_bot)
-    toolbar_gantt = NavigationToolbar2Tk(CANVAS_HIST_GANTT, frame_bot)
+    toolbar_gantt = CustomToolbar(CANVAS_HIST_GANTT, frame_bot)
     toolbar_gantt.update()
     toolbar_gantt.pack(side="bottom", fill="x")
     CANVAS_HIST_GANTT.draw(); CANVAS_HIST_GANTT.get_tk_widget().pack(side="top", fill="both", expand=True)
@@ -973,7 +1002,6 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
                 if "inst_idx" not in primeira_tarefa or "inst_total" not in primeira_tarefa:
                     raise ValueError(
                         "Incompatible Version detected!\n\n"
-                        "This checkpoint lacks instance counters (Inst X/N).\n"
                         "Please use checkpoints created with the current version."
                     )
             
