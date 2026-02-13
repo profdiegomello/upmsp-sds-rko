@@ -1198,4 +1198,4 @@ def abrir_benchmark(root_parent=None):
 # Para testes isolados (sem launcher)
 if __name__ == "__main__":
     ctk.set_appearance_mode('dark')
-    abrir_benchmark(None) # None = Modo isolado
+    abrir_benchmark(None) # None = Modo isolado 
