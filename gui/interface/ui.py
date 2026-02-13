@@ -862,8 +862,6 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
             
         if hasattr(aba_io, 'widgets_armazenados'):
             _aplicar(aba_io.widgets_armazenados.get("instance_path"))
-            _aplicar(aba_io.widgets_armazenados.get("output_path"))
-            _aplicar(aba_io.widgets_armazenados.get("gantt_path")) # Travando Gantt Path também
 
     def alternar_start_stop():
         if rko_gui_start is None: return
@@ -952,18 +950,41 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
 
     def acao_carregar_experimento():
         if controles["running"]: return
-        caminho = filedialog.askopenfilename(parent=aba,
-                                             filetypes=[("RKO Exp", "*.rko")])
+        
+        caminho = filedialog.askopenfilename(parent=aba, filetypes=[("RKO Exp", "*.rko")])
         if not caminho: return
+        
         try:
-            btn_load.configure(text="LOADING...", state="disabled"); aba.update_idletasks()
+            btn_load.configure(text="LOADING...", state="disabled")
+            aba.update_idletasks()
 
             with open(caminho, "rb") as f: dump = pickle.load(f)
+            
+            # Checa integridade
+            if "backend" not in dump or "ui" not in dump:
+                raise ValueError("Invalid file structure: Missing 'backend' or 'ui' keys.")
+
+            d_back = dump["backend"]
+            fila_tarefas = d_back.get("fila_tarefas", [])
+
+            # Verifica se é um dump da versão antiga (sem contadores de instância)
+            if fila_tarefas and len(fila_tarefas) > 0:
+                primeira_tarefa = fila_tarefas[0]
+                if "inst_idx" not in primeira_tarefa or "inst_total" not in primeira_tarefa:
+                    raise ValueError(
+                        "Incompatible Version detected!\n\n"
+                        "This checkpoint lacks instance counters (Inst X/N).\n"
+                        "Please use checkpoints created with the current version."
+                    )
+            
+            # Se passou da validação, prossegue normalmente
+            
+            d_ui = dump["ui"]
+            
+            if "params" in d_back: 
+                carregar_dados_interface(d_back["params"], aba_p, aba_a, aba_io)
+            
             global HISTORICO_DATA, DADOS_X, DADOS_Y, MELHOR_MAKESPAN_ATUAL, NOME_INSTANCIA_ATUAL, FILA_BOTOES_PENDENTES
-            d_ui = dump["ui"]; d_back = dump["backend"]
-            
-            if "params" in d_back: carregar_dados_interface(d_back["params"], aba_p, aba_a, aba_io)
-            
             HISTORICO_DATA = d_ui.get("historico", {})
             DADOS_X = d_ui.get("dados_grafico_x", [])
             DADOS_Y = d_ui.get("dados_grafico_y", [])
@@ -971,11 +992,18 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
             NOME_INSTANCIA_ATUAL = d_ui.get("instancia", "Resumed")
             FILA_BOTOES_PENDENTES = list(HISTORICO_DATA.keys())
             
-            ESCRITOR_TERMINAL_GLOBAL.write(f">>> LOADED. SYSTEM PAUSED. Check params then RESUME.\n")
+            try: 
+                term.configure(state="normal")
+                term.delete("1.0", "end")
+                term.configure(state="disabled")
+            except: pass
             
-            controles["running"] = True; controles["paused"] = True
+            ESCRITOR_TERMINAL_GLOBAL.write(f">>> LOADED: {d_ui.get('timestamp')}\n")
+            ESCRITOR_TERMINAL_GLOBAL.write(f">>> SYSTEM PAUSED. Check params then RESUME.\n")
             
-            # Trava visualmente ao carregar
+            controles["running"] = True
+            controles["paused"] = True
+            
             travar_campos_estruturais(True)
             
             btn_start.configure(text="STOP EXECUTION", fg_color=COR_STOP, state="normal")
@@ -986,10 +1014,19 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
             if hasattr(rko_gui_start, 'restaurar_e_continuar'):
                 rko_gui_start.restaurar_e_continuar(d_back, manipulador_retorno_interface, start_paused=True)
                 
-        except Exception as e: messagebox.showerror("Error", str(e))
-        finally: 
+        except Exception as e:
+            # Mostra o erro amigável para o usuário e cancela o carregamento
+            messagebox.showerror("Load Failed", f"Could not load checkpoint:\n{e}", parent=aba)
+            
+            # Reseta estado visual caso tenha falhado no meio do caminho
             btn_load.configure(text="LOAD EXP.", state="normal")
-            if controles["running"]: btn_load.configure(state="disabled")
+            
+        finally: 
+            # Se deu certo (está rodando), mantém LOAD desabilitado. Se deu erro, reabilita.
+            if controles["running"]: 
+                btn_load.configure(state="disabled", text="LOAD EXP.")
+            else:
+                btn_load.configure(state="normal", text="LOAD EXP.")
 
     def resetar_botoes():
         controles["running"] = False; controles["paused"] = False

@@ -2,6 +2,7 @@ import customtkinter as ctk
 import sys
 import os
 from tkinter import messagebox
+from PIL import Image # Necessário para carregar imagens
 
 # Ajuste de path para importacoes funcionarem
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -36,6 +37,30 @@ class Launcher(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
         self.grid_rowconfigure(5, weight=1)
 
+        # --- CARREGAMENTO DE ÍCONES ---
+        self.icons = {}
+        try:
+            # Carrega Imagem do Foguete
+            image_path_rocket = self.resource_path("assets/rocket-launcher.png")
+            img_rocket = Image.open(image_path_rocket)
+            self.icons["rocket"] = ctk.CTkImage(light_image=img_rocket, dark_image=img_rocket, size=(30, 30))
+
+            # Carrega Imagem do Lápis
+            image_path_pencil = self.resource_path("assets/pencil.png")
+            img_pencil = Image.open(image_path_pencil)
+            self.icons["pencil"] = ctk.CTkImage(light_image=img_pencil, dark_image=img_pencil, size=(30, 30))
+
+            # Carrega Imagem do Plus
+            image_path_plus = self.resource_path("assets/plus.png")
+            img_plus = Image.open(image_path_plus)
+            self.icons["plus"] = ctk.CTkImage(light_image=img_plus, dark_image=img_plus, size=(28, 28))
+            
+        except Exception as e:
+            print(f"Aviso: Não foi possível carregar ícones da pasta assets. Erro: {e}")
+            self.icons["rocket"] = None
+            self.icons["pencil"] = None
+            self.icons["plus"] = None
+
         # Titulo
         self.lbl_titulo = ctk.CTkLabel(self, text="RKO OPTIMIZER", font=("Roboto", 28, "bold"), text_color="#6D28D9")
         self.lbl_titulo.grid(row=0, column=0, pady=(40, 10))
@@ -44,10 +69,12 @@ class Launcher(ctk.CTk):
         self.lbl_subtitulo.grid(row=1, column=0, pady=(0, 30))
 
         
-        # Create Instance
+        # Create Instance 
         self.btn_create = ctk.CTkButton(
             self, 
-            text="➕  Create Instance", 
+            text="Create Instance", # Sem emoji
+            image=self.icons["plus"],
+            compound="left",        # Imagem à esquerda
             font=("Roboto", 14, "bold"), 
             height=50, 
             width=280, 
@@ -57,10 +84,12 @@ class Launcher(ctk.CTk):
         )
         self.btn_create.grid(row=2, column=0, pady=10)
 
-        # Edit Instance
+        # Edit Instance (Lápis)
         self.btn_edit = ctk.CTkButton(
             self, 
-            text="✏️  Edit Instance", 
+            text="Edit Instance",   # Sem emoji
+            image=self.icons["pencil"],
+            compound="left",        # Imagem à esquerda
             font=("Roboto", 14, "bold"), 
             height=50, 
             width=280, 
@@ -70,10 +99,12 @@ class Launcher(ctk.CTk):
         )
         self.btn_edit.grid(row=3, column=0, pady=10)
 
-        # Benchmark
+        # Benchmark (Foguete)
         self.btn_bench = ctk.CTkButton(
             self, 
-            text="🚀  Benchmark & Run", 
+            text="Benchmark & Run", # Sem emoji
+            image=self.icons["rocket"],
+            compound="left",        # Imagem à esquerda
             font=("Roboto", 14, "bold"), 
             height=50, 
             width=280, 
@@ -85,6 +116,16 @@ class Launcher(ctk.CTk):
 
         # Footer
         ctk.CTkLabel(self, text="v1.0.0 - Scientific Initiation Project", font=("Arial", 10), text_color="#444444").grid(row=5, column=0, pady=20)
+
+    def resource_path(self, relative_path):
+        """Obtém o caminho absoluto para o recurso, funciona para dev e PyInstaller"""
+        try:
+            # PyInstaller cria uma pasta temporária em _MEIPASS
+            base_path = sys._MEIPASS
+        except Exception:
+            base_path = os.path.abspath(".")
+
+        return os.path.join(base_path, relative_path)
 
     def abrir_benchmark_app(self):
         try:
