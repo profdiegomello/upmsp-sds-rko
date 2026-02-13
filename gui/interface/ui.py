@@ -563,6 +563,8 @@ def manipulador_retorno_interface(dados):
     tipo_status = dados.get("status")
     texto_log = dados.get("message", "")
     nome_pacote = dados.get("instancia") 
+    
+    COR_NEUTRA = "#333333"
 
     if tipo_status == "running":
         if nome_pacote: NOME_INSTANCIA_ATUAL = nome_pacote
@@ -575,152 +577,102 @@ def manipulador_retorno_interface(dados):
         if CANVAS_GLOBAL:
             LINHA_GLOBAL.set_data([], [])
             AX_GLOBAL.set_title(f"{NOME_INSTANCIA_ATUAL}...", fontsize=10, color="white")
-            AX_GLOBAL.set_xlim(auto=True)
-            AX_GLOBAL.set_ylim(auto=True)
-            AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view()
-            CANVAS_GLOBAL.draw()
-            
+            AX_GLOBAL.set_xlim(auto=True); AX_GLOBAL.set_ylim(auto=True); AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view(); CANVAS_GLOBAL.draw()
         if AX_GANTT: AX_GANTT.clear(); CANVAS_GANTT.draw()
 
     elif tipo_status == "update":
         makespan = dados.get("makespan"); gantt_data = dados.get("gantt_data")
-        
         if nome_pacote == NOME_INSTANCIA_ATUAL:
             if makespan <= MELHOR_MAKESPAN_ATUAL:
                 time_to_best = dados.get("time_to_best")
-                if time_to_best is None:
-                    time_to_best = time.time() - TEMPO_INICIO_BATERIA
-                
+                if time_to_best is None: time_to_best = time.time() - TEMPO_INICIO_BATERIA
                 time_to_best = abs(float(time_to_best))
-                
                 nome_agente = dados.get("agent", "RKO Parallel")
                 msg_final = f"[{nome_agente}] NEW BEST: {makespan:.4f} - Time: {time_to_best:.2f}s\n"
-                
-                if MONOTONIC_FILTER:
-                    MONOTONIC_FILTER.print_if_better(msg_final, makespan)
-
+                if MONOTONIC_FILTER: MONOTONIC_FILTER.print_if_better(msg_final, makespan)
                 if makespan < MELHOR_MAKESPAN_ATUAL:
                     MELHOR_MAKESPAN_ATUAL = makespan
                     DADOS_X.append(time_to_best); DADOS_Y.append(makespan) 
-                    
                     if CANVAS_GLOBAL: 
                         LINHA_GLOBAL.set_data(DADOS_X, DADOS_Y)
                         AX_GLOBAL.set_title(f"Instance: {NOME_INSTANCIA_ATUAL}  |  Best: {MELHOR_MAKESPAN_ATUAL}  |  Elapsed Time: {time_to_best:.2f}s", fontsize=10, color="#00FF00", fontweight="bold")
-                        AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view()
-                        CANVAS_GLOBAL.draw()
-
-                if gantt_data and CANVAS_GANTT: 
-                    CANVAS_GANTT.get_tk_widget().after(0, lambda: atualizar_desenho_gantt(gantt_data, nome_pacote, time_to_best))
+                        AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view(); CANVAS_GLOBAL.draw()
+                if gantt_data and CANVAS_GANTT: CANVAS_GANTT.get_tk_widget().after(0, lambda: atualizar_desenho_gantt(gantt_data, nome_pacote, time_to_best))
     
     elif tipo_status == "final_plateau":
         final_time = float(dados.get("final_time", 0))
         final_mksp = float(dados.get("final_makespan", 0))
         nome_inst = dados.get("instancia")
-        
-        # Só desenha se a instância for a atual e se já houver pontos no gráfico
         if nome_inst == NOME_INSTANCIA_ATUAL and DADOS_X:
-            # Só adiciona o ponto final se ele estender o tempo (evita voltar no tempo)
             if final_time > DADOS_X[-1]:
-                DADOS_X.append(final_time)
-                DADOS_Y.append(final_mksp)
-                
+                DADOS_X.append(final_time); DADOS_Y.append(final_mksp)
                 if CANVAS_GLOBAL and LINHA_GLOBAL:
                     LINHA_GLOBAL.set_data(DADOS_X, DADOS_Y)
-                    
-                    # Força o eixo X a mostrar exatamente até o Time Limit
                     AX_GLOBAL.set_xlim(left=0, right=final_time * 1.02)
-                    
-                    # Ajusta escala Y para não cortar o gráfico
                     if DADOS_Y:
                         min_y, max_y = min(DADOS_Y), max(DADOS_Y)
                         margem = (max_y - min_y) * 0.1 if max_y != min_y else 1
                         AX_GLOBAL.set_ylim(bottom=max(0, min_y - margem), top=max_y + margem)
-                    
-                    AX_GLOBAL.set_title(f"Instance: {NOME_INSTANCIA_ATUAL} (Completed)", fontsize=10, color="white", fontweight="bold")
-                    CANVAS_GLOBAL.draw()
+                    AX_GLOBAL.set_title(f"Instance: {NOME_INSTANCIA_ATUAL} (Completed)", fontsize=10, color="white", fontweight="bold"); CANVAS_GLOBAL.draw()
 
     elif tipo_status == "paused":
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
         if PAUSE_BUTTON_GLOBAL and hasattr(PAUSE_BUTTON_GLOBAL, 'icons'):
-            # Muda para Ícone Resume (Play), Texto Resume, Cor Neutra
             PAUSE_BUTTON_GLOBAL.configure(
-                text="RESUME", 
-                state="normal", 
+                text="RESUME", state="normal", 
                 image=PAUSE_BUTTON_GLOBAL.icons["resume"], 
-                fg_color='#333333', 
+                fg_color=COR_NEUTRA, 
                 text_color="white"
             )
         if SAVE_BUTTON_GLOBAL:
-            # Habilita Save com Cor Neutra
-            SAVE_BUTTON_GLOBAL.configure(state="normal", fg_color='#333333')
+            SAVE_BUTTON_GLOBAL.configure(state="normal", fg_color=COR_NEUTRA)
         if START_BUTTON_GLOBAL:
-            # Mantém Start travado
+            # MUDANÇA: Mantém o Start/Stop habilitado durante a pausa
             START_BUTTON_GLOBAL.configure(state="normal") 
 
-    # --- LÓGICA DO STATUS RESUMED ---
     elif tipo_status == "resumed":
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
         if PAUSE_BUTTON_GLOBAL and hasattr(PAUSE_BUTTON_GLOBAL, 'icons'):
-            # Muda para Ícone Pause, Texto Pause, Cor Neutra
             PAUSE_BUTTON_GLOBAL.configure(
-                text="PAUSE", 
-                state="normal", 
+                text="PAUSE", state="normal", 
                 image=PAUSE_BUTTON_GLOBAL.icons["pause"], 
-                fg_color='#333333', 
+                fg_color=COR_NEUTRA, 
                 text_color="white"
             )
         if SAVE_BUTTON_GLOBAL:
-            # Desabilita Save
             SAVE_BUTTON_GLOBAL.configure(state="disabled")
+        if START_BUTTON_GLOBAL:
+            START_BUTTON_GLOBAL.configure(state="normal") 
 
     elif tipo_status == "instancia_concluida":
-        nome_base = dados.get("instancia")
-        gantt_final = dados.get("gantt_data")
-
-        # Salva historico
-        if nome_base == NOME_INSTANCIA_ATUAL and len(DADOS_X) > 0:
-            eixo_x_final = list(DADOS_X)
-            eixo_y_final = list(DADOS_Y)
-        else:
-            eixo_x_final = []
-            eixo_y_final = []
-
-        decoder_usado = dados.get("decoder", "Dec")
-        agentes_usados = dados.get("agentes", ["Agentes"]) 
+        nome_base = dados.get("instancia"); gantt_final = dados.get("gantt_data")
+        if nome_base == NOME_INSTANCIA_ATUAL and len(DADOS_X) > 0: eixo_x_final = list(DADOS_X); eixo_y_final = list(DADOS_Y)
+        else: eixo_x_final = []; eixo_y_final = []
+        decoder_usado = dados.get("decoder", "Dec"); agentes_usados = dados.get("agentes", ["Agentes"]) 
         if isinstance(agentes_usados, list): str_agentes = "-".join(agentes_usados)
         else: str_agentes = str(agentes_usados)
-
         hora_termino = time.strftime("%d/%m/%y %H:%M:%S")
         chave_unica = f"{nome_base} [{decoder_usado}] ({str_agentes}) @{hora_termino}"
-
         if nome_base:
             HISTORICO_DATA[chave_unica] = {
-                'x': eixo_x_final, 
-                'y': eixo_y_final, 
-                'gantt': gantt_final,
-                'meta_nome': nome_base, 
-                'meta_decoder': decoder_usado, 
-                'meta_agentes': str_agentes,
-                'meta_hora': hora_termino 
+                'x': eixo_x_final, 'y': eixo_y_final, 'gantt': gantt_final,
+                'meta_nome': nome_base, 'meta_decoder': decoder_usado, 
+                'meta_agentes': str_agentes, 'meta_hora': hora_termino 
             }
-            if chave_unica not in FILA_BOTOES_PENDENTES:
-                FILA_BOTOES_PENDENTES.append(chave_unica)
+            if chave_unica not in FILA_BOTOES_PENDENTES: FILA_BOTOES_PENDENTES.append(chave_unica)
 
     elif tipo_status == "finished": 
         ESCRITOR_TERMINAL_GLOBAL.write(f"\n{'='*40}\n{texto_log}\n{'='*40}\n")
         try: START_BUTTON_GLOBAL.resetar_estado()
         except: pass
-
     elif tipo_status == "error": 
         ESCRITOR_TERMINAL_GLOBAL.write(f"ERRO: {texto_log}\n")
         try: START_BUTTON_GLOBAL.resetar_estado()
-        except: pass
-        
+        except: pass   
     elif tipo_status == "completed_all":
         ESCRITOR_TERMINAL_GLOBAL.write(f"\n>>> {texto_log} <<<\n")
         try: START_BUTTON_GLOBAL.resetar_estado()
         except: pass
-
     elif tipo_status == "log": 
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
 
@@ -836,188 +788,228 @@ def configurar_aba_entrada_saida(aba):
         
         ctk.CTkButton(fr, text="" if img else "...", width=30, image=img, fg_color="transparent", hover_color=CORES["destaque"], command=lambda e=ent: sel_dir(e)).grid(row=1, column=1, pady=10)
 
+def carregar_dados_interface(dados, aba_p, aba_a, aba_io):
+    """Preenche widgets com dados do dump."""
+    try:
+        if "hyper_parameters" in dados and hasattr(aba_p, 'widgets_armazenados'):
+            for k, v in dados["hyper_parameters"].items():
+                w = aba_p.widgets_armazenados.get(k)
+                if w:
+                    if isinstance(w, ctk.CTkComboBox): w.set(v)
+                    elif isinstance(w, ctk.CTkEntry): w.delete(0, "end"); w.insert(0, str(v))
+        if "io" in dados and hasattr(aba_io, 'widgets_armazenados'):
+            for k, v in dados["io"].items():
+                w = aba_io.widgets_armazenados.get(k)
+                if w: w.delete(0, "end"); w.insert(0, str(v))
+        if "agents" in dados and hasattr(aba_a, 'parametros_agentes'):
+            for _, widgets in aba_a.parametros_agentes.items():
+                widgets["variavel_controle"].set(False)
+            for nome_ag, params in dados["agents"].items():
+                widgets = aba_a.parametros_agentes.get(nome_ag)
+                if widgets:
+                    widgets["variavel_controle"].set(True)
+                    for kp, vp in params.items():
+                        ent = widgets.get(kp)
+                        if ent and isinstance(ent, ctk.CTkEntry):
+                            ent.delete(0, "end"); ent.insert(0, str(vp))
+    except Exception as e: print(f"Erro popular UI: {e}")
+
 def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
     global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL, PAUSE_BUTTON_GLOBAL, SAVE_BUTTON_GLOBAL, MONOTONIC_FILTER
     
-    # --- Carregamento de Ícones ---
+    # --- ÍCONES ---
     def carregar_icone(nome_arquivo):
         try:
             caminho = resource_path(f"assets/{nome_arquivo}")
             img = Image.open(caminho)
             return ctk.CTkImage(light_image=img, dark_image=img, size=(20, 20))
-        except Exception as e:
-            print(f"Aviso: Ícone {nome_arquivo} não encontrado ({e})")
-            return None
+        except Exception as e: return None
 
-    # Salva referências na aba
     aba.icons = {
-        "rocket": carregar_icone("rocket.png"),
-        "pause":  carregar_icone("pause.png"),
-        "resume": carregar_icone("play.png"),
-        "save":   carregar_icone("save.png"),
+        "rocket": carregar_icone("rocket.png"), "pause":  carregar_icone("pause.png"),
+        "resume": carregar_icone("play.png"), "save":   carregar_icone("save.png"),
         "load":   carregar_icone("folder.png")
     }
 
-    controles = {
-        "paused": False,
-        "running": False
-    }
-
+    controles = {"paused": False, "running": False}
     frm_botoes = ctk.CTkFrame(aba, fg_color="transparent")
     frm_botoes.grid(row=1, column=0, columnspan=10, pady=10, padx=20, sticky="ew")
     for i in range(4): frm_botoes.grid_columnconfigure(i, weight=1)
 
-    # CORES (Apenas Start com cor, resto neutro)
+    # --- CORES ---
     COR_NEUTRA = "#333333"
     COR_NEUTRA_HOVER = "#444444"
     COR_START = "#77198f"
     COR_STOP = "#C0392B"
 
-    def alternar_start_stop():
-        if rko_gui_start is None: print("ERRO: Middleware ausente."); return
+    # --- FUNÇÃO AUXILIAR: TRAVAR CAMPOS (COM VISUAL TRANSPARENTE) ---
+    def travar_campos_estruturais(bloquear: bool):
+        estado = "disabled" if bloquear else "normal"
         
+        # Cores para indicar travamento (efeito visual)
+        # Se bloqueado: Fundo quase preto, texto cinza, borda escura
+        # Se normal: Fundo padrão do tema Dark (#343638), texto branco, borda roxa
+        fg_c = "#101010" if bloquear else "#343638" 
+        txt_c = "#555555" if bloquear else "#FFFFFF"
+        brd_c = "#222222" if bloquear else CORES["primaria"]
+
+        def _aplicar(widget):
+            if widget:
+                widget.configure(state=estado, fg_color=fg_c, text_color=txt_c, border_color=brd_c)
+
+        if hasattr(aba_p, 'widgets_armazenados'):
+            _aplicar(aba_p.widgets_armazenados.get("execution_times"))
+            
+        if hasattr(aba_io, 'widgets_armazenados'):
+            _aplicar(aba_io.widgets_armazenados.get("instance_path"))
+            _aplicar(aba_io.widgets_armazenados.get("output_path"))
+            _aplicar(aba_io.widgets_armazenados.get("gantt_path")) # Travando Gantt Path também
+
+    def alternar_start_stop():
+        if rko_gui_start is None: return
         if not controles["running"]:
-            # INICIAR 
-            controles["running"] = True
-            controles["paused"] = False
+            # INICIAR
+            controles["running"] = True; controles["paused"] = False
+            travar_campos_estruturais(True) # Trava e escurece campos
             
             btn_start.configure(text="STOP EXECUTION", fg_color=COR_STOP, hover_color="#E74C3C", state="normal")
-            
-            # Pause habilita com cor neutra e ícone
-            btn_pause.configure(state="normal", text="PAUSE", image=aba.icons["pause"], fg_color=COR_NEUTRA, hover_color=COR_NEUTRA_HOVER, text_color="white")
-            
-            btn_save.configure(state="disabled") 
-            btn_load.configure(state="disabled")
+            btn_pause.configure(state="normal", text="PAUSE", image=aba.icons["pause"], fg_color=COR_NEUTRA, hover_color=COR_NEUTRA_HOVER)
+            btn_save.configure(state="disabled"); btn_load.configure(state="disabled")
             
             try: term.configure(state="normal"); term.delete("1.0", "end"); term.configure(state="disabled")
             except: pass
 
             data = coletar_dados_interface(aba_p, aba_a, aba_io)
+            # Salvar cache
+            dados_io = data.get("io", {})
+            salvar_cache_caminhos(dados_io.get("instance_path", ""), dados_io.get("output_path", ""), dados_io.get("gantt_path", ""))
+
             rko_gui_start.iniciar_resolucao(data, manipulador_retorno_interface)
         else:
-            # PARAR 
+            # PARAR
             rko_gui_start.solicitar_parada()
             btn_start.configure(text="STOPPING...", state="disabled", fg_color="#555555")
             btn_pause.configure(state="disabled")
+            frm_botoes.update()
 
     def alternar_pause():
         if not controles["running"]: return
         
         if not controles["paused"]:
-            # PEDIR PAUSA 
-            # Remove ícone temporariamente ou mantém (opcional), muda texto, cor neutra, desabilita
+            # PAUSANDO...
             btn_pause.configure(text="PAUSING...", state="disabled", fg_color=COR_NEUTRA, image=None) 
-            btn_start.configure(state="disabled") 
-            aba.update_idletasks() # Força atualização visual
+            btn_save.configure(state="disabled") 
+            
+            # --- MUDANÇA AQUI: NÃO DESABILITA O STOP ---
+            # btn_start.configure(state="disabled") <- Removido
+            btn_start.configure(state="normal") # Garante que STOP continua ativo
+            
+            aba.update_idletasks()
             
             controles["paused"] = True
             if hasattr(rko_gui_start, 'alternar_pausa'):
                 rko_gui_start.alternar_pausa(True)
-            
-            # NAO Habilita save ainda (espera backend retornar status 'paused')
-            
         else:
-            # PEDIR RETOMADA 
+            # RETOMANDO...
             btn_pause.configure(text="RESUMING...", state="disabled", fg_color=COR_NEUTRA, image=None)
-            aba.update_idletasks() # Força atualização visual
             
+            aba.update_idletasks()
+            
+            novos_dados = coletar_dados_interface(aba_p, aba_a, aba_io)
+            if hasattr(rko_gui_start, 'atualizar_parametros_runtime'):
+                rko_gui_start.atualizar_parametros_runtime(novos_dados)
+
             controles["paused"] = False
             if hasattr(rko_gui_start, 'alternar_pausa'):
                 rko_gui_start.alternar_pausa(False)
             
             btn_save.configure(state="disabled")
+            btn_start.configure(state="normal")
 
     def acao_salvar_experimento():
         if not controles["paused"]:
-            messagebox.showwarning("Warning", "You must PAUSE the experiment before saving.")
+            messagebox.showwarning("Warning", "You must PAUSE before saving.")
             return
-        caminho = filedialog.asksaveasfilename(parent=aba, title="Save Checkpoint", defaultextension=".rko", filetypes=[("RKO Exp", "*.rko")])
+        caminho = filedialog.asksaveasfilename(parent=aba, 
+                                               defaultextension=".rko",
+                                               filetypes=[("RKO Exp", "*.rko")])
         if not caminho: return
         try:
-            estado_ui = {
-                "historico": HISTORICO_DATA, "dados_grafico_x": DADOS_X, "dados_grafico_y": DADOS_Y,
-                "melhor_makespan": MELHOR_MAKESPAN_ATUAL, "instancia_atual": NOME_INSTANCIA_ATUAL
-            }
+            btn_save.configure(text="SAVING...", state="disabled"); aba.update_idletasks()
+            
+            estado_ui = {"historico": HISTORICO_DATA, "dados_grafico_x": DADOS_X, "dados_grafico_y": DADOS_Y, "melhor": MELHOR_MAKESPAN_ATUAL, "instancia": NOME_INSTANCIA_ATUAL}
             estado_backend = rko_gui_start.obter_estado_checkpoint() if hasattr(rko_gui_start, 'obter_estado_checkpoint') else {}
-            dump = {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "ui": estado_ui, "backend": estado_backend}
+            
+            dados_visuais = coletar_dados_interface(aba_p, aba_a, aba_io)
+            estado_backend["params"] = dados_visuais 
+
+            dump = {"timestamp": datetime.now().strftime("%Y-%m-%d"), "ui": estado_ui, "backend": estado_backend}
             with open(caminho, "wb") as f: pickle.dump(dump, f)
-            ESCRITOR_TERMINAL_GLOBAL.write(f"\n>>> CHECKPOINT SAVED: {os.path.basename(caminho)}\n")
-            messagebox.showinfo("Saved", "Experiment checkpoint saved successfully!", parent=aba)
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to save:\n{e}", parent=aba)
+            ESCRITOR_TERMINAL_GLOBAL.write(f"\n>>> SAVED: {os.path.basename(caminho)}\n")
+            messagebox.showinfo("Saved", "Success!")
+        except Exception as e: messagebox.showerror("Error", str(e))
+        finally: btn_save.configure(text="SAVE EXP.", state="normal")
 
     def acao_carregar_experimento():
         if controles["running"]: return
-        caminho = filedialog.askopenfilename(parent=aba, title="Load Checkpoint", filetypes=[("RKO Exp", "*.rko")])
+        caminho = filedialog.askopenfilename(parent=aba,
+                                             filetypes=[("RKO Exp", "*.rko")])
         if not caminho: return
         try:
+            btn_load.configure(text="LOADING...", state="disabled"); aba.update_idletasks()
+
             with open(caminho, "rb") as f: dump = pickle.load(f)
             global HISTORICO_DATA, DADOS_X, DADOS_Y, MELHOR_MAKESPAN_ATUAL, NOME_INSTANCIA_ATUAL, FILA_BOTOES_PENDENTES
-            d_ui = dump["ui"]
+            d_ui = dump["ui"]; d_back = dump["backend"]
+            
+            if "params" in d_back: carregar_dados_interface(d_back["params"], aba_p, aba_a, aba_io)
+            
             HISTORICO_DATA = d_ui.get("historico", {})
             DADOS_X = d_ui.get("dados_grafico_x", [])
             DADOS_Y = d_ui.get("dados_grafico_y", [])
-            MELHOR_MAKESPAN_ATUAL = d_ui.get("melhor_makespan", float('inf'))
-            NOME_INSTANCIA_ATUAL = d_ui.get("instancia_atual", "Resumed")
+            MELHOR_MAKESPAN_ATUAL = d_ui.get("melhor", float('inf'))
+            NOME_INSTANCIA_ATUAL = d_ui.get("instancia", "Resumed")
             FILA_BOTOES_PENDENTES = list(HISTORICO_DATA.keys())
-            try: term.configure(state="normal"); term.delete("1.0", "end"); term.configure(state="disabled")
-            except: pass
-            ESCRITOR_TERMINAL_GLOBAL.write(f">>> CHECKPOINT LOADED: {d_ui.get('timestamp')}\n")
-            ESCRITOR_TERMINAL_GLOBAL.write(f">>> Resuming from: {NOME_INSTANCIA_ATUAL}\n")
             
-            # Define estado como RODANDO
-            controles["running"] = True
-            controles["paused"] = False 
+            ESCRITOR_TERMINAL_GLOBAL.write(f">>> LOADED. SYSTEM PAUSED. Check params then RESUME.\n")
             
-            btn_start.configure(text="STOP EXECUTION", fg_color="#C0392B", state="normal")
+            controles["running"] = True; controles["paused"] = True
             
-            # Botao PAUSE (Azul->Neutro)
-            btn_pause.configure(state="normal", text="PAUSE", image=aba.icons["pause"], fg_color=COR_NEUTRA, hover_color=COR_NEUTRA_HOVER, text_color="white")
+            # Trava visualmente ao carregar
+            travar_campos_estruturais(True)
             
-            # Save DESABILITADO
-            btn_save.configure(state="disabled") 
+            btn_start.configure(text="STOP EXECUTION", fg_color=COR_STOP, state="normal")
+            btn_pause.configure(state="normal", text="RESUME", image=aba.icons["resume"], fg_color=COR_NEUTRA, hover_color=COR_NEUTRA_HOVER)
+            btn_save.configure(state="normal", fg_color=COR_NEUTRA) 
             btn_load.configure(state="disabled")
             
             if hasattr(rko_gui_start, 'restaurar_e_continuar'):
-                rko_gui_start.restaurar_e_continuar(dump["backend"], manipulador_retorno_interface)
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load:\n{e}", parent=aba)
+                rko_gui_start.restaurar_e_continuar(d_back, manipulador_retorno_interface, start_paused=True)
+                
+        except Exception as e: messagebox.showerror("Error", str(e))
+        finally: 
+            btn_load.configure(text="LOAD EXP.", state="normal")
+            if controles["running"]: btn_load.configure(state="disabled")
 
     def resetar_botoes():
         controles["running"] = False; controles["paused"] = False
+        
+        # Destrava visualmente ao terminar
+        travar_campos_estruturais(False)
+        
         btn_start.configure(text="START SOLVER", image=aba.icons["rocket"], fg_color=COR_START, hover_color="#9c27b0", state="normal")
         btn_pause.configure(text="PAUSE", image=aba.icons["pause"], fg_color=COR_NEUTRA, state="disabled", text_color="white")
         btn_save.configure(state="disabled")
         btn_load.configure(state="normal")
 
-    # Layout
-    rotulo = ctk.CTkLabel(aba, text="EXECUTION CONTROL & LOG", text_color=CORES["destaque"], font=FONTES["titulo"])
-    rotulo.grid(row=0, column=0, columnspan=10, sticky="ew", padx=7, pady=(8,0))
-    
-    # --- BOTOES MODIFICADOS: COMPOUND RIGHT, ICONES, CORES NEUTRAS ---
-    
-    # START: Único com cor
-    btn_start = ctk.CTkButton(frm_botoes, text='START SOLVER', image=aba.icons["rocket"], compound="right",
-                              command=alternar_start_stop, 
-                              fg_color=COR_START, hover_color="#9c27b0", font=("Roboto", 16, "bold"), height=40)
+    # BOTOES
+    btn_start = ctk.CTkButton(frm_botoes, text='START SOLVER', image=aba.icons["rocket"], compound="right", command=alternar_start_stop, fg_color=COR_START, hover_color="#9c27b0", height=40)
     btn_start.grid(row=0, column=0, padx=5, sticky="ew")
-
-    # PAUSE: Neutro
-    btn_pause = ctk.CTkButton(frm_botoes, text='PAUSE', image=aba.icons["pause"], compound="right",
-                              command=alternar_pause, state="disabled",
-                              fg_color=COR_NEUTRA, hover_color=COR_NEUTRA_HOVER, font=("Roboto", 14, "bold"), height=40)
+    btn_pause = ctk.CTkButton(frm_botoes, text='PAUSE', image=aba.icons["pause"], compound="right", command=alternar_pause, state="disabled", fg_color=COR_NEUTRA, hover_color=COR_NEUTRA_HOVER, height=40)
     btn_pause.grid(row=0, column=1, padx=5, sticky="ew")
-
-    # SAVE: Neutro
-    btn_save = ctk.CTkButton(frm_botoes, text='SAVE EXP.', image=aba.icons["save"], compound="right",
-                             command=acao_salvar_experimento, state="disabled",
-                             fg_color=COR_NEUTRA, hover_color=COR_NEUTRA_HOVER, font=("Roboto", 14, "bold"), height=40)
+    btn_save = ctk.CTkButton(frm_botoes, text='SAVE EXP.', image=aba.icons["save"], compound="right", command=acao_salvar_experimento, state="disabled", fg_color=COR_NEUTRA, hover_color=COR_NEUTRA_HOVER, height=40)
     btn_save.grid(row=0, column=2, padx=5, sticky="ew")
-
-    # LOAD: Neutro
-    btn_load = ctk.CTkButton(frm_botoes, text='LOAD EXP.', image=aba.icons["load"], compound="right",
-                             command=acao_carregar_experimento,
-                             fg_color=COR_NEUTRA, hover_color=COR_NEUTRA_HOVER, font=("Roboto", 14, "bold"), height=40)
+    btn_load = ctk.CTkButton(frm_botoes, text='LOAD EXP.', image=aba.icons["load"], compound="right", command=acao_carregar_experimento, fg_color=COR_NEUTRA, hover_color=COR_NEUTRA_HOVER, height=40)
     btn_load.grid(row=0, column=3, padx=5, sticky="ew")
 
     term = ctk.CTkTextbox(aba, border_width=2, fg_color="black", text_color="#00FF00", border_color="#2D2D35", font=("Consolas", 13))
@@ -1026,15 +1018,9 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
 
     MONOTONIC_FILTER = MonotonicFilter(term)
     ESCRITOR_TERMINAL_GLOBAL = StdoutRedirector(MONOTONIC_FILTER)
-    START_BUTTON_GLOBAL = btn_start
-    START_BUTTON_GLOBAL.resetar_estado = resetar_botoes
-    
-    PAUSE_BUTTON_GLOBAL = btn_pause
-    # Salva referências para uso no callback global
-    PAUSE_BUTTON_GLOBAL.icons = aba.icons 
-    
+    START_BUTTON_GLOBAL = btn_start; START_BUTTON_GLOBAL.resetar_estado = resetar_botoes
+    PAUSE_BUTTON_GLOBAL = btn_pause; PAUSE_BUTTON_GLOBAL.icons = aba.icons
     SAVE_BUTTON_GLOBAL = btn_save
-    
     sys.stdout = ESCRITOR_TERMINAL_GLOBAL
 
 def coletar_dados_interface(aba_p, aba_a, aba_io):

@@ -11,13 +11,12 @@ try:
 except Exception:
     run_rko = None
 
-
 LOG_QUEUE = Queue() 
 
 # Eventos de Controle de Thread
 STOP_EVENT = threading.Event()
 RESUME_EVENT = threading.Event() 
-RESUME_EVENT.set() # Começa "Setado" (Executando)
+RESUME_EVENT.set() 
 
 SOLVER_THREAD = None 
 
@@ -26,6 +25,12 @@ FILA_TAREFAS = []
 PARAMS_ATUAIS = {} 
 
 # --- FUNCOES DE COMUNICACAO COM A GUI ---
+def atualizar_parametros_runtime(novos_dados):
+    """Permite atualizar parametros globais enquanto pausado."""
+    global PARAMS_ATUAIS
+    if novos_dados:
+        PARAMS_ATUAIS = novos_dados
+        LOG_QUEUE.put({"status": "log", "message": ">>> Runtime Parameters Updated."})
 
 def solicitar_parada():
     """Chamado pela GUI para abortar a execução."""
@@ -36,10 +41,18 @@ def alternar_pausa(pausar: bool):
     """Chamado pela GUI para Pausar/Retomar."""
     if pausar:
         RESUME_EVENT.clear() 
+        # Envia apenas log, a UI trata o visual
         LOG_QUEUE.put({"status": "log", "message": ">>> PAUSE REQUESTED... Waiting for current task to finish."})
     else:
         RESUME_EVENT.set()   
         LOG_QUEUE.put({"status": "resumed", "message": ">>> SYSTEM RESUMED."})
+
+def atualizar_parametros_runtime(novos_dados):
+    """Permite atualizar parametros enquanto pausado."""
+    global PARAMS_ATUAIS
+    if novos_dados:
+        PARAMS_ATUAIS = novos_dados
+        LOG_QUEUE.put({"status": "log", "message": ">>> Runtime Parameters Updated."})
 
 def obter_estado_checkpoint():
     """Retorna o estado atual para o Pickle salvar."""
@@ -48,8 +61,7 @@ def obter_estado_checkpoint():
         "params": PARAMS_ATUAIS.copy()
     }
 
-def restaurar_e_continuar(estado, callback_interface):
-    """Recebe o estado do Pickle e reinicia a thread."""
+def restaurar_e_continuar(estado, callback_interface, start_paused=False):
     global FILA_TAREFAS, PARAMS_ATUAIS, SOLVER_THREAD
     
     if SOLVER_THREAD is not None and SOLVER_THREAD.is_alive():
@@ -59,7 +71,12 @@ def restaurar_e_continuar(estado, callback_interface):
     PARAMS_ATUAIS = estado["params"]
     
     STOP_EVENT.clear()
-    RESUME_EVENT.set() 
+    
+    if start_paused:
+        RESUME_EVENT.clear() # Inicia travado
+        LOG_QUEUE.put({"status": "log", "message": ">>> CHECKPOINT RESTORED."})
+    else:
+        RESUME_EVENT.set() 
     
     SOLVER_THREAD = threading.Thread(
         target=_consumir_fila_tarefas, 
@@ -115,7 +132,6 @@ def _preparar_fila_execucao(dados, callback_interface):
 
     instance_path = dados.get('io', {}).get('instance_path', '').strip()
     execution_times = int(dados.get('hyper_parameters', {}).get('execution_times', 1))
-    
     if execution_times < 1: execution_times = 1
 
     arquivos = []
@@ -128,19 +144,25 @@ def _preparar_fila_execucao(dados, callback_interface):
         return False
 
     FILA_TAREFAS = []
-    for arq in arquivos:
+    total_instancias = len(arquivos)
+
+    # Usa enumerate para pegar o índice (1, 2, 3...)
+    for idx, arq in enumerate(arquivos, 1):
         for i in range(1, execution_times + 1):
             FILA_TAREFAS.append({
                 "arquivo": arq,
                 "run_atual": i,
-                "total_runs": execution_times
+                "total_runs": execution_times,
+                "inst_idx": idx,              # Índice atual
+                "inst_total": total_instancias # Total
             })
     
     PARAMS_ATUAIS = dados
     return True
 
 def _consumir_fila_tarefas(callback_interface):
-    global FILA_TAREFAS 
+    # Global deve ser a primeira linha
+    global FILA_TAREFAS, PARAMS_ATUAIS 
 
     threading.Thread(target=logger_worker, args=(callback_interface,), daemon=True).start()
 
@@ -148,20 +170,9 @@ def _consumir_fila_tarefas(callback_interface):
         if run_rko is None:
             raise Exception("Dependency 'run_rko' not found.")
 
-        output_path = PARAMS_ATUAIS.get('io', {}).get('output_path', '').strip()
-        gantt_path = PARAMS_ATUAIS.get('io', {}).get('gantt_path', '').strip()
-        decoder = str(PARAMS_ATUAIS.get('hyper_parameters', {}).get('decoder', 'ect')).lower()
-        time_limit = int(PARAMS_ATUAIS.get('hyper_parameters', {}).get('time_limit', 60))
-        agents = PARAMS_ATUAIS.get('agents', {})
-        exec_times = int(PARAMS_ATUAIS.get('hyper_parameters', {}).get('execution_times', 1))
-
         data_inicio = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        qtd_tarefas = len(FILA_TAREFAS)
-        
         LOG_QUEUE.put({"status": "log", "message": f"Starting experiment at: {data_inicio} (Brazilian Date)"})
-        LOG_QUEUE.put({"status": "log", "message": f"Tasks in queue: {qtd_tarefas} | Runs per instance: {exec_times}"})
-        LOG_QUEUE.put({"status": "log", "message": "=" * 50})
-
+        
         # --- MAIN LOOP ---
         while len(FILA_TAREFAS) > 0:
             
@@ -174,15 +185,30 @@ def _consumir_fila_tarefas(callback_interface):
             
             if STOP_EVENT.is_set(): break
 
+            # --- LEITURA DINÂMICA (Para pegar novos parâmetros do Resume) ---
+            output_path = PARAMS_ATUAIS.get('io', {}).get('output_path', '').strip()
+            gantt_path = PARAMS_ATUAIS.get('io', {}).get('gantt_path', '').strip()
+            decoder = str(PARAMS_ATUAIS.get('hyper_parameters', {}).get('decoder', 'ect')).lower()
+            time_limit = int(PARAMS_ATUAIS.get('hyper_parameters', {}).get('time_limit', 60))
+            agents = PARAMS_ATUAIS.get('agents', {})
+            # -------------------------------------------------------------
+
             tarefa = FILA_TAREFAS.pop(0) 
             
             arquivo = tarefa["arquivo"]
             run_idx = tarefa["run_atual"]
+            total_runs = tarefa["total_runs"]
+            
+            # Dados para Log X/N
+            inst_idx = tarefa.get("inst_idx", "?")
+            inst_total = tarefa.get("inst_total", "?")
+            
             nome = os.path.basename(arquivo)
 
+            # Log Modificado
             LOG_QUEUE.put({
-                "status": "running",
-                "message": f"Processing: {nome} [Run {run_idx}]... (Remaining: {len(FILA_TAREFAS)})",
+                "status": "running", # Mantive running para limpar gráficos na UI
+                "message": f"Processing: {nome} (Inst {inst_idx}/{inst_total}) [Run {run_idx}/{total_runs}]... (Decoder: {decoder.upper()})",
                 "instancia": nome
             })
 
@@ -197,17 +223,13 @@ def _consumir_fila_tarefas(callback_interface):
                     gantt_path=gantt_path
                 )
 
-                # --- FIX: PLATEAU ---
-                # Envia sinal para UI desenhar a linha reta até o final do time_limit
                 LOG_QUEUE.put({
                     "status": "final_plateau",
                     "instancia": nome,
                     "final_time": float(time_limit), 
                     "final_makespan": resultado["makespan"]
                 })
-                # --------------------
 
-                # Update Forçado (para garantir Gantt final)
                 LOG_QUEUE.put({
                     "status": "update",
                     "makespan": resultado["makespan"],
@@ -229,7 +251,7 @@ def _consumir_fila_tarefas(callback_interface):
                     "agentes": lista_agentes_ativos,
                 })
 
-                LOG_QUEUE.put({"status": "log", "message": f"Finished: {nome} [Run {run_idx}] - Makespan: {resultado['makespan']}"})
+                LOG_QUEUE.put({"status": "log", "message": f"Finished: {nome} - Makespan: {resultado['makespan']}"})
                 LOG_QUEUE.put({"status": "log", "message": "==================================================\n"})
 
             except Exception as e:
