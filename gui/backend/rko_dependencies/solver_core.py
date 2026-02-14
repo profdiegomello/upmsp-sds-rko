@@ -72,6 +72,9 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
     env = UPMSPSDSProblem(instance_path=instance_path, decoder=decoder, time_limit=time_limit)
     if callback: env.ui_callback = MainThreadCallbackWrapper(callback)
     else: env.ui_callback = None
+    
+    # O env.agent_config recebe o dicionário completo (com params),
+    # assim o _injetar_parametros_gui do RKO.py vai funcionar (pois tem .items())
     env.agent_config = agents 
 
     old_stdout = sys.stdout
@@ -92,16 +95,41 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
     final_cost = float('inf'); final_schedule = {}; raw_gantt_data = None; runtime = 0; final_time_to_best = 0
 
     try:
+        # Função auxiliar para extrair qtd de workers de forma segura
+        def get_w(nome_agente):
+            dados = agents.get(nome_agente, {})
+            # Se for dicionário (novo padrão), pega chave 'workers'
+            if isinstance(dados, dict):
+                return int(dados.get("workers", 0))
+            # Fallback (caso raro de vir int direto)
+            if isinstance(dados, int):
+                return dados
+            return 0
+
         solver = RKO(env, print_best=True, save_directory=None, log_queue=log_queue)
         start_time_solver = time.time()
-        active_agents = [k for k, v in agents.items() if v]
+        
+        # Log visual dos agentes ativos
+        active_agents = []
+        for k, v in agents.items():
+            w = get_w(k)
+            if w > 0: active_agents.append(f"{k}({w})")
+            
         str_parameters = "+".join(active_agents) if active_agents else "RKO_DEFAULT"
 
+        # CHAMADA DO SOLVER USANDO A FUNÇÃO AUXILIAR
         solver_final_cost, final_solution_keys, solver_time_to_best = solver.solve(
-            time_total=time_limit, runs=1,
-            brkga=1 if agents.get("BRKGA") else 0, sa=1 if agents.get("SA") else 0, ils=1 if agents.get("ILS") else 0,
-            vns=1 if agents.get("VNS") else 0, pso=1 if agents.get("PSO") else 0, ga=1 if agents.get("GA") else 0, lns=1 if agents.get("LNS") else 0
+            time_total=time_limit, 
+            runs=1,
+            brkga=get_w("BRKGA"), 
+            sa=get_w("SA"), 
+            ils=get_w("ILS"),
+            vns=get_w("VNS"), 
+            pso=get_w("PSO"), 
+            ga=get_w("GA"), 
+            lns=get_w("LNS")
         )
+
         runtime = time.time() - start_time_solver
         final_time_to_best = solver_time_to_best
 
@@ -126,7 +154,6 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
         final_cost = min(solver_final_cost, calculated_makespan)
         if calculated_makespan == float('inf'): final_cost = solver_final_cost
 
-        #logica do plateou
         if stdout_execution_history:
             stdout_execution_history.sort(key=lambda x: x[0])
             last_time, last_val = stdout_execution_history[-1]

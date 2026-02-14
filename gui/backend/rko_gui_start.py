@@ -161,7 +161,6 @@ def _preparar_fila_execucao(dados, callback_interface):
     return True
 
 def _consumir_fila_tarefas(callback_interface):
-    # Global deve ser a primeira linha
     global FILA_TAREFAS, PARAMS_ATUAIS 
 
     threading.Thread(target=logger_worker, args=(callback_interface,), daemon=True).start()
@@ -171,27 +170,26 @@ def _consumir_fila_tarefas(callback_interface):
             raise Exception("Dependency 'run_rko' not found.")
 
         data_inicio = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        LOG_QUEUE.put({"status": "log", "message": f"Starting experiment at: {data_inicio} (Brazilian Date)"})
+        LOG_QUEUE.put({"status": "log", "message": f"Starting experiment at: {data_inicio}"})
         
-        # --- MAIN LOOP ---
         while len(FILA_TAREFAS) > 0:
             
             if STOP_EVENT.is_set(): break
 
             if not RESUME_EVENT.is_set():
-                LOG_QUEUE.put({"status": "paused", "message": ">>> SYSTEM PAUSED."})
+                LOG_QUEUE.put({"status": "paused", "message": ">>> SYSTEM PAUSED (Queue held)."})
             
             RESUME_EVENT.wait() 
             
             if STOP_EVENT.is_set(): break
 
-            # --- LEITURA DINÂMICA (Para pegar novos parâmetros do Resume) ---
+            # --- LEITURA DINÂMICA ---
             output_path = PARAMS_ATUAIS.get('io', {}).get('output_path', '').strip()
             gantt_path = PARAMS_ATUAIS.get('io', {}).get('gantt_path', '').strip()
             decoder = str(PARAMS_ATUAIS.get('hyper_parameters', {}).get('decoder', 'ect')).lower()
             time_limit = int(PARAMS_ATUAIS.get('hyper_parameters', {}).get('time_limit', 60))
             agents = PARAMS_ATUAIS.get('agents', {})
-            # -------------------------------------------------------------
+            # ------------------------
 
             tarefa = FILA_TAREFAS.pop(0) 
             
@@ -199,15 +197,13 @@ def _consumir_fila_tarefas(callback_interface):
             run_idx = tarefa["run_atual"]
             total_runs = tarefa["total_runs"]
             
-            # Dados para Log X/N
             inst_idx = tarefa.get("inst_idx", "?")
             inst_total = tarefa.get("inst_total", "?")
             
             nome = os.path.basename(arquivo)
 
-            # Log Modificado
             LOG_QUEUE.put({
-                "status": "running", # Mantive running para limpar gráficos na UI
+                "status": "running", 
                 "message": f"Processing: {nome} (Inst {inst_idx}/{inst_total}) [Run {run_idx}/{total_runs}]... (Decoder: {decoder.upper()})",
                 "instancia": nome
             })
@@ -239,7 +235,23 @@ def _consumir_fila_tarefas(callback_interface):
                     "agent": resultado.get("agent", "Final") 
                 })
 
-                lista_agentes_ativos = [k for k, v in agents.items() if v] if agents else ["Default"]
+                lista_agentes_ativos = []
+                if agents:
+                    for k, v in agents.items():
+                        qtd = 0
+                        if isinstance(v, dict):
+                            qtd = int(v.get("workers", 0))
+                        # Verifica se é int (caso algum legado exista)
+                        elif isinstance(v, int):
+                            qtd = v
+                        
+                        # Só adiciona na lista se tiver workers > 0
+                        if qtd > 0:
+                            lista_agentes_ativos.append(k)
+                            
+                if not lista_agentes_ativos: 
+                    lista_agentes_ativos = ["None"]
+                # -----------------------------------------------
 
                 LOG_QUEUE.put({
                     "status": "instancia_concluida",
@@ -248,13 +260,14 @@ def _consumir_fila_tarefas(callback_interface):
                     "history_curve": resultado.get("history_data", []), 
                     "gantt_data": resultado.get("gantt_data"),
                     "decoder": decoder,            
-                    "agentes": lista_agentes_ativos,
+                    "agentes": lista_agentes_ativos, # Envia a lista filtrada corretamente
                 })
 
                 LOG_QUEUE.put({"status": "log", "message": f"Finished: {nome} - Makespan: {resultado['makespan']}"})
                 LOG_QUEUE.put({"status": "log", "message": "==================================================\n"})
 
             except Exception as e:
+                import traceback
                 tb = traceback.format_exc()
                 LOG_QUEUE.put({"status": "error", "message": f"Failure in {nome}: {e}\n{tb}"})
 
@@ -267,6 +280,7 @@ def _consumir_fila_tarefas(callback_interface):
              LOG_QUEUE.put({"status": "completed_all", "message": f"All tasks completed at: {agora}"})
 
     except Exception as e:
+        import traceback
         tb = traceback.format_exc()
         LOG_QUEUE.put({"status": "error", "message": f"Fatal error in worker: {e}\n{tb}"})
     

@@ -170,7 +170,7 @@ class CustomToolbar(NavigationToolbar2Tk):
         
         # Abre o diálogo FORÇANDO o parent correto
         fname = filedialog.asksaveasfilename(
-            parent=top_level,  # <--- O PULO DO GATO ESTÁ AQUI
+            parent=top_level,  
             title="Save the figure",
             filetypes=tk_filetypes,
             defaultextension=default_filetype
@@ -761,21 +761,84 @@ def configurar_aba_agentes(aba):
 def criar_cartao_agente(conteiner_pai, config):
     frame = ctk.CTkFrame(conteiner_pai, fg_color=CORES["fundo_cartao"], width=LARGURA_CARTAO_AGENTE, height=ALTURA_CARTAO_AGENTE, border_width=1, border_color=CORES["borda"])
     frame.grid(row=config["linha"], column=config["coluna"], padx=8, pady=8, sticky="n")
-    
     frame.grid_propagate(False) 
     
+    # Header: Título + Checkbox
     ctk.CTkLabel(frame, text=config["titulo"], font=FONTES["corpo_negrito"], text_color=CORES["destaque"]).grid(row=0, column=0, sticky="w", padx=10, pady=(8,4))
-    var_chk = tk.BooleanVar(value=True)
-    ctk.CTkCheckBox(frame, text="", variable=var_chk).grid(row=0, column=1, sticky="e", padx=10, pady=(8,4))
     
-    widgets = {"frame_conteiner": frame , "variavel_controle": var_chk}
-    for i, (txt, val) in enumerate(config["campos"], start=1):
-        ctk.CTkLabel(frame, text=txt, anchor="w", font=FONTES["pequena"]).grid(row=i, column=0, sticky="w", padx=70+20, pady=6)
+    var_chk = tk.BooleanVar(value=True)
+    chk_enable = ctk.CTkCheckBox(frame, text="", variable=var_chk, width=20)
+    chk_enable.grid(row=0, column=1, sticky="e", padx=10, pady=(8,4))
+    
+    # --- CONTROLE DE WORKERS (THREADS) ---
+    frm_workers = ctk.CTkFrame(frame, fg_color="transparent")
+    frm_workers.grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=2)
+    
+    ctk.CTkLabel(frm_workers, text="Workers/Threads:", font=FONTES["pequena"], text_color="gray").pack(side="left", padx=(0,5))
+    
+    # Botão Menos
+    btn_minus = ctk.CTkButton(frm_workers, text="-", width=25, height=20, fg_color="#333333", font=("Arial", 12, "bold"))
+    btn_minus.pack(side="left")
+    
+    # Entrada Numérica
+    ent_workers = ctk.CTkEntry(frm_workers, width=40, height=20, font=("Arial", 12), justify="center")
+    ent_workers.insert(0, "1")
+    ent_workers.pack(side="left", padx=2)
+    
+    # Botão Mais
+    btn_plus = ctk.CTkButton(frm_workers, text="+", width=25, height=20, fg_color="#333333", font=("Arial", 12, "bold"))
+    btn_plus.pack(side="left")
+    
+    # Label Max CPU
+    max_cpu = os.cpu_count() or 4
+    ctk.CTkLabel(frm_workers, text=f"(Max: {max_cpu})", font=("Arial", 9), text_color="gray").pack(side="left", padx=5)
+
+    # Lógica dos Botões +/-
+    def alterar_workers(delta):
+        try:
+            val = int(ent_workers.get())
+            novo = val + delta
+            if 1 <= novo <= max_cpu:
+                ent_workers.delete(0, "end")
+                ent_workers.insert(0, str(novo))
+        except:
+            ent_workers.delete(0, "end"); ent_workers.insert(0, "1")
+
+    btn_minus.configure(command=lambda: alterar_workers(-1))
+    btn_plus.configure(command=lambda: alterar_workers(1))
+    
+    # Lógica de Habilitar/Desabilitar baseada no Checkbox
+    def toggle_state(*args):
+        estado = "normal" if var_chk.get() else "disabled"
+        cor_txt = "white" if var_chk.get() else "gray"
         
-        ent = ctk.CTkEntry(frame, width=70); ent.insert(0, val)
-        ent.grid(row=i, column=0, sticky="w", padx=10 if config.get("coluna",0) != 0 else 0, pady=6)
+        ent_workers.configure(state=estado, text_color=cor_txt)
+        btn_minus.configure(state=estado)
+        btn_plus.configure(state=estado)
         
+        # Desabilita também os outros campos de parâmetros
+        for k_widget, w_widget in widgets.items():
+            if isinstance(w_widget, ctk.CTkEntry) and k_widget != "workers_entry":
+                w_widget.configure(state=estado, text_color=cor_txt)
+
+    var_chk.trace_add("write", toggle_state)
+    chk_enable.configure(command=toggle_state) # Trigger extra para garantir
+
+    widgets = {
+        "frame_conteiner": frame, 
+        "variavel_controle": var_chk,
+        "workers_entry": ent_workers # Guardamos referência para coletar depois
+    }
+    
+    # Cria os campos normais de parâmetros (Population, Alpha, etc.)
+    row_start = 2
+    for i, (txt, val) in enumerate(config["campos"], start=row_start):
+        ctk.CTkLabel(frame, text=txt, anchor="w", font=FONTES["pequena"]).grid(row=i, column=0, sticky="w", padx=70+20, pady=4)
+        ent = ctk.CTkEntry(frame, width=70, height=22)
+        ent.insert(0, val)
+        ent.grid(row=i, column=0, sticky="w", padx=10 if config.get("coluna",0) != 0 else 0, pady=4)
         widgets[txt] = ent
+        
     return widgets
 
 def configurar_aba_entrada_saida(aba):
@@ -826,21 +889,37 @@ def carregar_dados_interface(dados, aba_p, aba_a, aba_io):
                 if w:
                     if isinstance(w, ctk.CTkComboBox): w.set(v)
                     elif isinstance(w, ctk.CTkEntry): w.delete(0, "end"); w.insert(0, str(v))
+        
         if "io" in dados and hasattr(aba_io, 'widgets_armazenados'):
             for k, v in dados["io"].items():
                 w = aba_io.widgets_armazenados.get(k)
                 if w: w.delete(0, "end"); w.insert(0, str(v))
+        
+        # --- CARREGAR AGENTES E WORKERS ---
         if "agents" in dados and hasattr(aba_a, 'parametros_agentes'):
+            # Primeiro desabilita tudo
             for _, widgets in aba_a.parametros_agentes.items():
                 widgets["variavel_controle"].set(False)
-            for nome_ag, params in dados["agents"].items():
+            
+            # Itera sobre o que veio do arquivo
+            for nome_ag, valor in dados["agents"].items():
                 widgets = aba_a.parametros_agentes.get(nome_ag)
                 if widgets:
-                    widgets["variavel_controle"].set(True)
-                    for kp, vp in params.items():
-                        ent = widgets.get(kp)
-                        if ent and isinstance(ent, ctk.CTkEntry):
-                            ent.delete(0, "end"); ent.insert(0, str(vp))
+                    # Se valor for int > 0, ativa e seta workers
+                    if isinstance(valor, int) and valor > 0:
+                        widgets["variavel_controle"].set(True)
+                        if "workers_entry" in widgets:
+                            widgets["workers_entry"].delete(0, "end")
+                            widgets["workers_entry"].insert(0, str(valor))
+                    
+                    # Compatibilidade com dumps antigos (params internos)
+                    elif isinstance(valor, dict):
+                        widgets["variavel_controle"].set(True)
+                        # Tenta achar params internos se existirem
+                        for kp, vp in valor.items():
+                            ent = widgets.get(kp)
+                            if ent and isinstance(ent, ctk.CTkEntry):
+                                ent.delete(0, "end"); ent.insert(0, str(vp))
     except Exception as e: print(f"Erro popular UI: {e}")
 
 def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
@@ -1090,14 +1169,43 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
 
 def coletar_dados_interface(aba_p, aba_a, aba_io):
     data = {}
+    
+    # 1. Hyper-Parameters
     if hasattr(aba_p, 'widgets_armazenados'):
         data["hyper_parameters"] = {k: w.get() for k, w in aba_p.widgets_armazenados.items()}
+    
+    # 2. IO
+    data["io"] = {k: w.get() for k, w in aba_io.widgets_armazenados.items()} if hasattr(aba_io, 'widgets_armazenados') else {}
+    
+    # 3. Agents 
     data["agents"] = {}
     if hasattr(aba_a, 'parametros_agentes'):
-        for n, w in aba_a.parametros_agentes.items():
-            if w["variavel_controle"].get():
-                data["agents"][n] = {k: v.get() for k, v in w.items() if k not in ("frame_conteiner", "variavel_controle")}
-    data["io"] = {k: w.get() for k, w in aba_io.widgets_armazenados.items()} if hasattr(aba_io, 'widgets_armazenados') else {}
+        for nome_agente, widgets in aba_a.parametros_agentes.items():
+            
+            # Se o checkbox estiver marcado
+            if widgets["variavel_controle"].get():
+                params_agente = {}
+                
+                # 3.1 Pega a quantidade de workers e salva no dicionário
+                try:
+                    qtd = int(widgets["workers_entry"].get())
+                except:
+                    qtd = 1
+                params_agente["workers"] = qtd
+                
+                # 3.2 Pega os outros parâmetros (Population, Alpha, etc)
+                for k_widget, w_entry in widgets.items():
+                    # Ignora as chaves de controle interno
+                    if k_widget not in ["frame_conteiner", "variavel_controle", "workers_entry"]:
+                        params_agente[k_widget] = w_entry.get()
+                
+                # Salva o DICIONÁRIO COMPLETO, não apenas o inteiro
+                data["agents"][nome_agente] = params_agente
+                
+            else:
+                # Se desativado, pode ser None ou dict vazio com workers=0
+                data["agents"][nome_agente] = {"workers": 0}
+
     return data
 
 def centralizar_janela(janela, w, h):
@@ -1154,7 +1262,34 @@ def configurar_interface(janela):
     # 7. Inicia mostrando a primeira aba
     show(aba_p)
 
+def resetar_variaveis_globais():
+    """Limpa todos os dados da memória para iniciar o Benchmark zerado."""
+    global HISTORICO_DATA, DADOS_X, DADOS_Y, MELHOR_MAKESPAN_ATUAL
+    global NOME_INSTANCIA_ATUAL, FILA_BOTOES_PENDENTES
+    global START_BUTTON_GLOBAL, PAUSE_BUTTON_GLOBAL, SAVE_BUTTON_GLOBAL
+    global ESCRITOR_TERMINAL_GLOBAL, MONOTONIC_FILTER
+    
+    # Limpa estruturas de dados
+    HISTORICO_DATA.clear()
+    DADOS_X.clear()
+    DADOS_Y.clear()
+    FILA_BOTOES_PENDENTES.clear()
+    
+    # Reseta valores escalares
+    MELHOR_MAKESPAN_ATUAL = float('inf')
+    NOME_INSTANCIA_ATUAL = "---"
+    
+    # Reseta referências de UI (para evitar erros de widget destruído)
+    START_BUTTON_GLOBAL = None
+    PAUSE_BUTTON_GLOBAL = None
+    SAVE_BUTTON_GLOBAL = None
+    
+    # Reseta o filtro de log
+    if MONOTONIC_FILTER:
+        MONOTONIC_FILTER.reset()
+
 def abrir_benchmark(root_parent=None):
+    resetar_variaveis_globais()
     # Se receber um pai (Launcher), cria como Toplevel (Janela Filha)
     # Se não receber (teste isolado), cria como CTk (Janela Principal)
     if root_parent:
