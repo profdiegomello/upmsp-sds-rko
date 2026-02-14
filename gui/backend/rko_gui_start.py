@@ -189,17 +189,37 @@ def _consumir_fila_tarefas(callback_interface):
             decoder = str(PARAMS_ATUAIS.get('hyper_parameters', {}).get('decoder', 'ect')).lower()
             time_limit = int(PARAMS_ATUAIS.get('hyper_parameters', {}).get('time_limit', 60))
             agents = PARAMS_ATUAIS.get('agents', {})
+            
+            # Pega o caminho atual da interface para tentar recuperar arquivos perdidos
+            path_interface_atual = PARAMS_ATUAIS.get('io', {}).get('instance_path', '').strip()
             # ------------------------
 
             tarefa = FILA_TAREFAS.pop(0) 
             
             arquivo = tarefa["arquivo"]
+            
+            if not os.path.exists(arquivo):
+                nome_base = os.path.basename(arquivo)
+                
+                # Tenta construir um novo caminho baseando-se na configuração atual da UI
+                candidato = ""
+                if os.path.isdir(path_interface_atual):
+                    candidato = os.path.join(path_interface_atual, nome_base)
+                elif os.path.isfile(path_interface_atual):
+                    candidato = os.path.join(os.path.dirname(path_interface_atual), nome_base)
+                
+                if candidato and os.path.exists(candidato):
+                    # LOG_QUEUE.put({"status": "log", "message": f"[INFO] Path recovered for: {nome_base}"})
+                    arquivo = candidato
+                else:
+                    LOG_QUEUE.put({"status": "log", "message": f"File not found (skipped): {nome_base}"})
+                    continue # Pula esta tarefa se não achar o arquivo
+            # ------------------------------------------------------
+
             run_idx = tarefa["run_atual"]
             total_runs = tarefa["total_runs"]
-            
             inst_idx = tarefa.get("inst_idx", "?")
             inst_total = tarefa.get("inst_total", "?")
-            
             nome = os.path.basename(arquivo)
 
             LOG_QUEUE.put({
@@ -235,23 +255,16 @@ def _consumir_fila_tarefas(callback_interface):
                     "agent": resultado.get("agent", "Final") 
                 })
 
+                # Filtro de agentes ativos para o Log
                 lista_agentes_ativos = []
                 if agents:
                     for k, v in agents.items():
                         qtd = 0
-                        if isinstance(v, dict):
-                            qtd = int(v.get("workers", 0))
-                        # Verifica se é int (caso algum legado exista)
-                        elif isinstance(v, int):
-                            qtd = v
-                        
-                        # Só adiciona na lista se tiver workers > 0
-                        if qtd > 0:
-                            lista_agentes_ativos.append(k)
+                        if isinstance(v, dict): qtd = int(v.get("workers", 0))
+                        elif isinstance(v, int): qtd = v
+                        if qtd > 0: lista_agentes_ativos.append(k)
                             
-                if not lista_agentes_ativos: 
-                    lista_agentes_ativos = ["None"]
-                # -----------------------------------------------
+                if not lista_agentes_ativos: lista_agentes_ativos = ["None"]
 
                 LOG_QUEUE.put({
                     "status": "instancia_concluida",
@@ -260,7 +273,7 @@ def _consumir_fila_tarefas(callback_interface):
                     "history_curve": resultado.get("history_data", []), 
                     "gantt_data": resultado.get("gantt_data"),
                     "decoder": decoder,            
-                    "agentes": lista_agentes_ativos, # Envia a lista filtrada corretamente
+                    "agentes": lista_agentes_ativos,
                 })
 
                 LOG_QUEUE.put({"status": "log", "message": f"Finished: {nome} - Makespan: {resultado['makespan']}"})

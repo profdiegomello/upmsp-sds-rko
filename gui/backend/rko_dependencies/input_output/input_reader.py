@@ -6,8 +6,8 @@
 #####################################################################################
 
 import os
-
 import sys
+
 # Adicionando a pasta raiz do codigo fonte para que todos os demais imports sejam relativos
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -15,7 +15,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # Le arquvo no formato informado.
 #
 def le_formato_variavel(diretorio, formato):
-
 
     # Dicionário contendo os parametros da instância informada
     dados={
@@ -40,13 +39,22 @@ def le_formato_variavel(diretorio, formato):
     for campo in ordem:
         if campo == "MNNO":
             # Aqui invertemos M e N, pois o formato do arquivo é: N M N0
-            N, M, N0 = map(int, linhas[linha_atual].split())
+            parts = linhas[linha_atual].split()
+            # Proteção contra linhas vazias ou malformadas
+            if not parts: 
+                linha_atual += 1
+                parts = linhas[linha_atual].split()
+                
+            N, M, N0 = map(int, parts)
             dados["M"] = list(range(1, M + 1))  # máquinas: 1..M
             dados["N"] = list(range(1, N + 1))  # jobs: 1..N
             dados["N0"] = [0] + dados["N"]      # inclui dummy job 0
             linha_atual += 1
 
         elif campo == "V":
+            # Pula linhas vazias se houver
+            while not linhas[linha_atual].strip():
+                linha_atual += 1
             V = int(linhas[linha_atual])
             dados["V"] = V
             linha_atual += 1
@@ -66,7 +74,11 @@ def le_formato_variavel(diretorio, formato):
             dados["p"] = p
 
         elif campo == "S":
-            if linhas[linha_atual].strip() != "SSD":
+            # Pula linhas vazias até achar SSD ou fim
+            while linha_atual < len(linhas) and not linhas[linha_atual].strip():
+                linha_atual += 1
+                
+            if linha_atual < len(linhas) and linhas[linha_atual].strip() != "SSD":
                 raise ValueError("Esperado marcador 'SSD' não encontrado")
             linha_atual += 1
 
@@ -77,15 +89,20 @@ def le_formato_variavel(diretorio, formato):
             for m_index in range(len(M_ids)):
                 maquina = M_ids[m_index]
 
+                if linha_atual >= len(linhas): break
                 marcador_maquina = linhas[linha_atual].strip()
                 if not marcador_maquina.startswith("M"):
                     raise ValueError(f"Esperado marcador de máquina, obtido '{marcador_maquina}'")
                 linha_atual += 1
 
                 for i_index, j in enumerate(N_ids):  # para cada linha da matriz (job j)
+                    if linha_atual >= len(linhas): break
                     valores = list(map(int, linhas[linha_atual].split()))
                     for k_index, k in enumerate(N_ids):  # para cada coluna da matriz (job k)
-                        S[(maquina, j, k)] = valores[k_index]
+                        # A matriz de setup no arquivo geralmente inclui o dummy? 
+                        # Assumindo que a leitura segue a lógica original 1:1
+                        if k_index < len(valores):
+                            S[(maquina, j, k)] = valores[k_index]
                     linha_atual += 1
             dados["S"] = S
          
@@ -93,19 +110,14 @@ def le_formato_variavel(diretorio, formato):
     return dados
 
 #
-# Verifica se o arquivo informado existe. Caso exista, devolve 
+# Verifica se o arquivo informado existe. 
 #
 def le_arquivo(args):
-
-    # Primeiro verifica se o arquivo do dataset precisa ser baixado do Kaggle
-    if not(os.path.exists(args.nome_instancia)):
-        import input_output.dataset_via_kaggle as dataset
+    
+    caminho = args.nome_instancia
+    
+    if not os.path.exists(caminho):
+        # Lança erro limpo para que o rko_gui_start.py possa tratar
+        raise FileNotFoundError(f"Arquivo não encontrado: {caminho}")
         
-        dataset.download_file(args.nome_instancia)
-
-    # Depois confirma se o arquivo passou a existir
-    if not(os.path.exists(args.nome_instancia)):
-        print(f"O arquivo '{args.nome_instancia}' não existe!")
-        exit()
-    else:
-        return le_formato_variavel(args.nome_instancia, "MNNO;V;p;S")
+    return le_formato_variavel(caminho, "MNNO;V;p;S")

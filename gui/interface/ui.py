@@ -597,6 +597,8 @@ def manipulador_retorno_interface(dados):
     nome_pacote = dados.get("instancia") 
     
     COR_NEUTRA = "#333333"
+    # Adicione a cor de Stop para usar abaixo
+    COR_STOP = "#C0392B" 
 
     if tipo_status == "running":
         if nome_pacote: NOME_INSTANCIA_ATUAL = nome_pacote
@@ -605,6 +607,13 @@ def manipulador_retorno_interface(dados):
         if MONOTONIC_FILTER: MONOTONIC_FILTER.reset()
             
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
+        
+        # --- BLINDAGEM: Garante que o botão esteja como STOP ---
+        if START_BUTTON_GLOBAL:
+            START_BUTTON_GLOBAL.configure(text="STOP EXECUTION", fg_color=COR_STOP, state="normal")
+        if PAUSE_BUTTON_GLOBAL:
+            PAUSE_BUTTON_GLOBAL.configure(state="normal")
+        # -----------------------------------------------------
         
         if CANVAS_GLOBAL:
             LINHA_GLOBAL.set_data([], [])
@@ -650,31 +659,20 @@ def manipulador_retorno_interface(dados):
     elif tipo_status == "paused":
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
         if PAUSE_BUTTON_GLOBAL and hasattr(PAUSE_BUTTON_GLOBAL, 'icons'):
-            PAUSE_BUTTON_GLOBAL.configure(
-                text="RESUME", state="normal", 
-                image=PAUSE_BUTTON_GLOBAL.icons["resume"], 
-                fg_color=COR_NEUTRA, 
-                text_color="white"
-            )
-        if SAVE_BUTTON_GLOBAL:
-            SAVE_BUTTON_GLOBAL.configure(state="normal", fg_color=COR_NEUTRA)
-        if START_BUTTON_GLOBAL:
-            # MUDANÇA: Mantém o Start/Stop habilitado durante a pausa
-            START_BUTTON_GLOBAL.configure(state="normal") 
+            PAUSE_BUTTON_GLOBAL.configure(text="RESUME", state="normal", image=PAUSE_BUTTON_GLOBAL.icons["resume"], fg_color=COR_NEUTRA, text_color="white")
+        if SAVE_BUTTON_GLOBAL: SAVE_BUTTON_GLOBAL.configure(state="normal", fg_color=COR_NEUTRA)
+        if START_BUTTON_GLOBAL: START_BUTTON_GLOBAL.configure(state="normal") 
 
     elif tipo_status == "resumed":
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
         if PAUSE_BUTTON_GLOBAL and hasattr(PAUSE_BUTTON_GLOBAL, 'icons'):
-            PAUSE_BUTTON_GLOBAL.configure(
-                text="PAUSE", state="normal", 
-                image=PAUSE_BUTTON_GLOBAL.icons["pause"], 
-                fg_color=COR_NEUTRA, 
-                text_color="white"
-            )
-        if SAVE_BUTTON_GLOBAL:
-            SAVE_BUTTON_GLOBAL.configure(state="disabled")
-        if START_BUTTON_GLOBAL:
-            START_BUTTON_GLOBAL.configure(state="normal") 
+            PAUSE_BUTTON_GLOBAL.configure(text="PAUSE", state="normal", image=PAUSE_BUTTON_GLOBAL.icons["pause"], fg_color=COR_NEUTRA, text_color="white")
+        if SAVE_BUTTON_GLOBAL: SAVE_BUTTON_GLOBAL.configure(state="disabled")
+        
+        # --- BLINDAGEM: Garante que ao resumir, o botão volta a ser STOP ---
+        if START_BUTTON_GLOBAL: 
+            START_BUTTON_GLOBAL.configure(text="STOP EXECUTION", fg_color=COR_STOP, state="normal") 
+        # -----------------------------------------------------------------
 
     elif tipo_status == "instancia_concluida":
         nome_base = dados.get("instancia"); gantt_final = dados.get("gantt_data")
@@ -1293,7 +1291,6 @@ def criar_aba_base(pai):
     for i in range(10): f.grid_rowconfigure(i, weight=1, minsize=20); f.grid_columnconfigure(i, weight=1, minsize=20)
     return f
 
-# FUNCAO PRINCIPAL REFATORADA (Para uso do Launcher) 
 def configurar_interface(janela):
     
     # 1. Configuração do Grid Principal da Janela
