@@ -100,6 +100,9 @@ VAR_FILTRO_INSTANCIA = None
 VAR_FILTRO_DECODER = None
 VARS_FILTRO_AGENTES = {}
 CHAVE_SELECIONADA_ATUAL = None
+
+LISTA_REF_WORKERS = []
+
 COMBO_INSTANCIAS = None
 VAR_ORDENACAO_HISTORICO = None
 
@@ -739,6 +742,10 @@ def configurar_aba_parametros(aba):
     aba.widgets_armazenados["execution_times"] = entrada_execucoes
     
 def configurar_aba_agentes(aba):
+    # 1. Reseta a lista global de referências (CRUCIAL para a lógica de soma de workers)
+    global LISTA_REF_WORKERS
+    LISTA_REF_WORKERS = [] 
+
     area_rolagem = ctk.CTkScrollableFrame(aba, width=1160, height=860, fg_color="transparent")
     area_rolagem.grid(row=0, column=0, columnspan=10, rowspan=10, padx=10, pady=10, sticky="nsew")
     for i in range(3): area_rolagem.grid_columnconfigure(i, weight=1, minsize=400)
@@ -755,89 +762,157 @@ def configurar_aba_agentes(aba):
         "VNS":   {"linha": 2, "coluna": 2, "titulo": "VARIABLE NEIGHBORHOOD SEARCH (VNS)", "campos": [("kMax", "5"), ("betaMin", "0.05")]},
         "ILS":   {"linha": 3, "coluna": 2, "titulo": "ITERATED LOCAL SEARCH (ILS)", "campos": [("betaMin", "0.1"), ("betaMax", "0.20")]},
     }
+
+    # --- LÓGICA INTELIGENTE DE ATIVAÇÃO ---
+    nucleos_reais = os.cpu_count() or 4
+    
+    # Ordem de prioridade: quais ativar primeiro se faltar núcleo
+    prioridade = ["BRKGA", "PSO", "SA", "GA", "LNS", "VNS", "ILS"]
+    
+    # Define quais nomes devem estar True
+    agentes_para_ativar = set(prioridade[:nucleos_reais])
+    # --------------------------------------
+
     for nome, config in configuracao_agentes.items():
+        # Injeta a configuração de ativação baseada no hardware
+        if nome in agentes_para_ativar:
+            config["padrao_ativado"] = True
+        else:
+            config["padrao_ativado"] = False
+
         aba.parametros_agentes[nome] = criar_cartao_agente(area_rolagem, config)
 
 def criar_cartao_agente(conteiner_pai, config):
+    # Limpa referências mortas
+    global LISTA_REF_WORKERS
+    LISTA_REF_WORKERS = [ref for ref in LISTA_REF_WORKERS if ref[1].winfo_exists()]
+    
     frame = ctk.CTkFrame(conteiner_pai, fg_color=CORES["fundo_cartao"], width=LARGURA_CARTAO_AGENTE, height=ALTURA_CARTAO_AGENTE, border_width=1, border_color=CORES["borda"])
     frame.grid(row=config["linha"], column=config["coluna"], padx=8, pady=8, sticky="n")
     frame.grid_propagate(False) 
     
-    # Header: Título + Checkbox
     ctk.CTkLabel(frame, text=config["titulo"], font=FONTES["corpo_negrito"], text_color=CORES["destaque"]).grid(row=0, column=0, sticky="w", padx=10, pady=(8,4))
     
-    var_chk = tk.BooleanVar(value=True)
-    chk_enable = ctk.CTkCheckBox(frame, text="", variable=var_chk, width=20)
-    chk_enable.grid(row=0, column=1, sticky="e", padx=10, pady=(8,4))
+    # Estado inicial
+    estado_inicial = config.get("padrao_ativado", True)
+    var_chk = tk.BooleanVar(value=estado_inicial)
     
-    # --- CONTROLE DE WORKERS (THREADS) ---
+    # --- CONTROLE DE WORKERS ---
     frm_workers = ctk.CTkFrame(frame, fg_color="transparent")
     frm_workers.grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=2)
     
-    ctk.CTkLabel(frm_workers, text="Workers/Threads:", font=FONTES["pequena"], text_color="gray").pack(side="left", padx=(0,5))
+    ctk.CTkLabel(frm_workers, text="Workers:", font=FONTES["pequena"], text_color="gray").pack(side="left", padx=(0,5))
     
-    # Botão Menos
     btn_minus = ctk.CTkButton(frm_workers, text="-", width=25, height=20, fg_color="#333333", font=("Arial", 12, "bold"))
     btn_minus.pack(side="left")
     
-    # Entrada Numérica
     ent_workers = ctk.CTkEntry(frm_workers, width=40, height=20, font=("Arial", 12), justify="center")
     ent_workers.insert(0, "1")
     ent_workers.pack(side="left", padx=2)
     
-    # Botão Mais
     btn_plus = ctk.CTkButton(frm_workers, text="+", width=25, height=20, fg_color="#333333", font=("Arial", 12, "bold"))
     btn_plus.pack(side="left")
     
-    # Label Max CPU
     max_cpu = os.cpu_count() or 4
     ctk.CTkLabel(frm_workers, text=f"(Max: {max_cpu})", font=("Arial", 9), text_color="gray").pack(side="left", padx=5)
 
-    # Lógica dos Botões +/-
+    # Adiciona à lista global
+    LISTA_REF_WORKERS.append((var_chk, ent_workers))
+
+    # --- LÓGICA DE TRAVAMENTO DO CHECKBOX (A CORREÇÃO) ---
+    def validar_ativacao():
+        # Se o usuário tentou marcar (estava False, virou True)
+        if var_chk.get():
+            # 1. Conta quantos núcleos JÁ estão ocupados pelos OUTROS
+            total_ocupado = 0
+            for r_chk, r_ent in LISTA_REF_WORKERS:
+                # Soma se: existe, não é o atual, e está marcado
+                if r_ent.winfo_exists() and r_ent != ent_workers and r_chk.get():
+                    try: total_ocupado += int(r_ent.get())
+                    except: pass
+            
+            # 2. Se já lotou (saldo <= 0), impede a ativação
+            if total_ocupado >= max_cpu:
+                var_chk.set(False) # Força desmarcar imediatamente
+                
+                # Feedback Visual: Pisca o frame em vermelho
+                cor_original = frame.cget("fg_color")
+                frame.configure(fg_color="#521818") # Vermelho escuro
+                frame.after(300, lambda: frame.configure(fg_color=cor_original))
+                
+                # Não deixa prosseguir para o toggle_state habilitar os campos
+                toggle_state() 
+                return
+
+        # Se passou na validação, atualiza visual
+        toggle_state()
+
+    # O Checkbox agora chama a validação ao ser clicado
+    chk_enable = ctk.CTkCheckBox(frame, text="", variable=var_chk, width=20, command=validar_ativacao)
+    chk_enable.grid(row=0, column=1, sticky="e", padx=10, pady=(8,4))
+
+    # --- LÓGICA +/- ---
     def alterar_workers(delta):
-        try:
-            val = int(ent_workers.get())
-            novo = val + delta
-            if 1 <= novo <= max_cpu:
-                ent_workers.delete(0, "end")
-                ent_workers.insert(0, str(novo))
-        except:
-            ent_workers.delete(0, "end"); ent_workers.insert(0, "1")
+        # Só funciona se estiver ativado
+        if not var_chk.get(): return
+
+        try: val_atual = int(ent_workers.get())
+        except: val_atual = 1
+
+        if delta < 0:
+            novo = max(1, val_atual + delta)
+            ent_workers.delete(0, "end"); ent_workers.insert(0, str(novo))
+            return
+
+        if delta > 0:
+            total_usados = 0
+            for r_chk, r_ent in LISTA_REF_WORKERS:
+                if r_ent.winfo_exists() and r_ent != ent_workers and r_chk.get():
+                    try: total_usados += int(r_ent.get())
+                    except: pass
+            
+            saldo = max_cpu - total_usados
+            novo = val_atual + delta
+            # Só aumenta se couber no saldo E for menor que o teto absoluto
+            if novo <= saldo and novo <= max_cpu:
+                ent_workers.delete(0, "end"); ent_workers.insert(0, str(novo))
+            else:
+                # Feedback visual de limite atingido nos botões também
+                ent_workers.configure(text_color="#FF5555")
+                frame.after(200, lambda: ent_workers.configure(text_color="white"))
 
     btn_minus.configure(command=lambda: alterar_workers(-1))
     btn_plus.configure(command=lambda: alterar_workers(1))
     
-    # Lógica de Habilitar/Desabilitar baseada no Checkbox
+    # Lógica Visual (Enable/Disable)
     def toggle_state(*args):
-        estado = "normal" if var_chk.get() else "disabled"
+        st = "normal" if var_chk.get() else "disabled"
+        # Ajusta cores para parecer desabilitado de verdade
         cor_txt = "white" if var_chk.get() else "gray"
         
-        ent_workers.configure(state=estado, text_color=cor_txt)
-        btn_minus.configure(state=estado)
-        btn_plus.configure(state=estado)
+        ent_workers.configure(state=st, text_color=cor_txt)
+        btn_minus.configure(state=st)
+        btn_plus.configure(state=st)
         
-        # Desabilita também os outros campos de parâmetros
-        for k_widget, w_widget in widgets.items():
-            if isinstance(w_widget, ctk.CTkEntry) and k_widget != "workers_entry":
-                w_widget.configure(state=estado, text_color=cor_txt)
-
-    var_chk.trace_add("write", toggle_state)
-    chk_enable.configure(command=toggle_state) # Trigger extra para garantir
-
-    widgets = {
-        "frame_conteiner": frame, 
-        "variavel_controle": var_chk,
-        "workers_entry": ent_workers # Guardamos referência para coletar depois
-    }
+        for k, w in widgets.items():
+            if isinstance(w, ctk.CTkEntry) and k != "workers_entry": 
+                w.configure(state=st, text_color=cor_txt)
+            
+    # Removemos o trace no var_chk para evitar loops, usamos o command do checkbox
+    # Mas chamamos uma vez para inicializar
     
-    # Cria os campos normais de parâmetros (Population, Alpha, etc.)
+    widgets = {"frame_conteiner": frame, "variavel_controle": var_chk, "workers_entry": ent_workers}
+    
+    # Campos Extras
     row_start = 2
     for i, (txt, val) in enumerate(config["campos"], start=row_start):
-        ctk.CTkLabel(frame, text=txt, anchor="w", font=FONTES["pequena"]).grid(row=i, column=0, sticky="w", padx=70+20, pady=4)
-        ent = ctk.CTkEntry(frame, width=70, height=22)
-        ent.insert(0, val)
-        ent.grid(row=i, column=0, sticky="w", padx=10 if config.get("coluna",0) != 0 else 0, pady=4)
+        ctk.CTkLabel(frame, text=txt, anchor="w", font=FONTES["pequena"]).grid(row=i, column=0, sticky="w", padx=90, pady=4)
+        ent = ctk.CTkEntry(frame, width=70, height=22); ent.insert(0, val)
+        ent.grid(row=i, column=0, sticky="w", padx=10 if config.get("coluna",0)!=0 else 0, pady=4)
         widgets[txt] = ent
+        
+    # Inicializa estado visual correto
+    toggle_state()
         
     return widgets
 
