@@ -958,14 +958,23 @@ def manipulador_retorno_interface(dados):
         ESCRITOR_TERMINAL_GLOBAL.write(f"\n{'='*40}\n{texto_log}\n{'='*40}\n")
         try: START_BUTTON_GLOBAL.resetar_estado()
         except: pass
+        # Habilita salvar após parar manualmente
+        if SAVE_BUTTON_GLOBAL: SAVE_BUTTON_GLOBAL.configure(state="normal", fg_color=COR_NEUTRA)
+
     elif tipo_status == "error": 
         ESCRITOR_TERMINAL_GLOBAL.write(f"ERRO: {texto_log}\n")
         try: START_BUTTON_GLOBAL.resetar_estado()
         except: pass   
+        # Habilita salvar mesmo com erro (para preservar o que rodou antes)
+        if SAVE_BUTTON_GLOBAL: SAVE_BUTTON_GLOBAL.configure(state="normal", fg_color=COR_NEUTRA)
+
     elif tipo_status == "completed_all":
         ESCRITOR_TERMINAL_GLOBAL.write(f"\n>>> {texto_log} <<<\n")
         try: START_BUTTON_GLOBAL.resetar_estado()
         except: pass
+        # Habilita salvar após terminar tudo com sucesso
+        if SAVE_BUTTON_GLOBAL: SAVE_BUTTON_GLOBAL.configure(state="normal", fg_color=COR_NEUTRA)
+
     elif tipo_status == "log": 
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
 
@@ -1367,16 +1376,24 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
             btn_start.configure(state="normal")
 
     def acao_salvar_experimento():
-        # 1. Pega a janela real (Toplevel) onde o botão está
+        # Pega a janela real
         janela_pai = aba.winfo_toplevel()
     
-        if not controles["paused"]:
-            # Adicione parent=janela_pai aqui também para o aviso não ir para trás
-            messagebox.showwarning("Warning", "You must PAUSE before saving.", parent=janela_pai)
+        # --- NOVA LÓGICA DE SEGURANÇA ---
+        # Só impedimos o salvamento se o sistema estiver RODANDO ATIVAMENTE (Botão diz STOP)
+        # e NÃO estiver pausado.
+        # Se o botão diz "START..." significa que o sistema está Parado/Ocioso, então pode salvar.
+        
+        esta_rodando = (START_BUTTON_GLOBAL.cget("text") == "STOP EXECUTION")
+        esta_pausado = controles.get("paused", False)
+    
+        if esta_rodando and not esta_pausado:
+            messagebox.showwarning("Warning", "You must PAUSE the experiment before saving while it's running.\n(Or wait for it to finish)", parent=janela_pai)
             return
-            
+        # --------------------------------
+    
         caminho = filedialog.asksaveasfilename(
-            parent=janela_pai, # <--- AQUI A CORREÇÃO PRINCIPAL
+            parent=janela_pai,
             defaultextension=".rko",
             filetypes=[("RKO Exp", "*.rko")]
         )
@@ -1387,6 +1404,9 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
             btn_save.configure(text="SAVING...", state="disabled"); aba.update_idletasks()
             
             estado_ui = {"historico": HISTORICO_DATA, "dados_grafico_x": DADOS_X, "dados_grafico_y": DADOS_Y, "melhor": MELHOR_MAKESPAN_ATUAL, "instancia": NOME_INSTANCIA_ATUAL}
+            
+            # Se estiver finalizado, o backend pode não ter estado para checkpoint (fila vazia),
+            # mas salvamos o estado vazio mesmo assim para manter consistência do arquivo.
             estado_backend = rko_gui_start.obter_estado_checkpoint() if hasattr(rko_gui_start, 'obter_estado_checkpoint') else {}
             
             dados_visuais = coletar_dados_interface(aba_p, aba_a, aba_io)
@@ -1396,17 +1416,14 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
             with open(caminho, "wb") as f: pickle.dump(dump, f)
             
             ESCRITOR_TERMINAL_GLOBAL.write(f"\n>>> SAVED: {os.path.basename(caminho)}\n")
-            
-            # Parent aqui também
-            messagebox.showinfo("Saved", "Success!", parent=janela_pai)
+            messagebox.showinfo("Saved", "Experiment saved successfully!", parent=janela_pai)
             
         except Exception as e: 
-            # Parent aqui também
             messagebox.showerror("Error", str(e), parent=janela_pai)
             
         finally: 
             btn_save.configure(text="SAVE EXP.", state="normal")
-
+    
     def acao_carregar_experimento():
         if controles["running"]: return
         
