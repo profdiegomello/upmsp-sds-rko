@@ -2,6 +2,7 @@ import threading
 import os
 import time
 import traceback
+import multiprocessing
 from datetime import datetime
 from queue import Queue, Empty
 
@@ -23,6 +24,35 @@ SOLVER_THREAD = None
 # Estado Global para Checkpoint
 FILA_TAREFAS = [] 
 PARAMS_ATUAIS = {} 
+
+# --- CLASSE AUXILIAR PARA O CACHE DE SEGURANÇA (GLOBAL) ---
+class SafetyCallbackWrapper:
+    """
+    Wrapper para interceptar atualizações do solver.
+    Precisa ser uma classe global para funcionar com o Pickle/Multiprocessing.
+    """
+    def __init__(self, cache_compartilhado, callback_original):
+        self.cache = cache_compartilhado
+        self.callback_original = callback_original
+
+    def __call__(self, dados):
+        # 1. Executa o callback original (Manda pra UI/Log)
+        if self.callback_original:
+            self.callback_original(dados)
+
+        # 2. Intercepta e salva no cache compartilhado se for melhor
+        if dados.get("status") == "update":
+            try:
+                mksp = float(dados.get("makespan", float('inf')))
+                # Acessa o valor atual do cache (Manager Dict)
+                melhor_atual = self.cache.get("makespan", float('inf'))
+                
+                if mksp < melhor_atual:
+                    self.cache["makespan"] = mksp
+                    self.cache["gantt_data"] = dados.get("gantt_data")
+                    self.cache["encontrado_por"] = dados.get("agent")
+            except: 
+                pass
 
 # --- FUNCOES DE COMUNICACAO COM A GUI ---
 def atualizar_parametros_runtime(novos_dados):
@@ -165,166 +195,171 @@ def _consumir_fila_tarefas(callback_interface):
 
     threading.Thread(target=logger_worker, args=(callback_interface,), daemon=True).start()
 
-    try:
-        if run_rko is None:
-            raise Exception("Dependency 'run_rko' not found.")
+    # Gerenciador de memória compartilhada entre processos
+    with multiprocessing.Manager() as manager:
+        try:
+            if run_rko is None:
+                raise Exception("Dependency 'run_rko' not found.")
 
-        data_inicio = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        LOG_QUEUE.put({"status": "log", "message": f"Starting experiment at: {data_inicio}"})
-        
-        while len(FILA_TAREFAS) > 0:
+            data_inicio = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            LOG_QUEUE.put({"status": "log", "message": f"Starting experiment at: {data_inicio}"})
             
-            if STOP_EVENT.is_set(): break
-
-            if not RESUME_EVENT.is_set():
-                LOG_QUEUE.put({"status": "paused", "message": ">>> SYSTEM PAUSED (Queue held)."})
-            
-            RESUME_EVENT.wait() 
-            
-            if STOP_EVENT.is_set(): break
-
-            # --- LEITURA DINÂMICA ---
-            output_path = PARAMS_ATUAIS.get('io', {}).get('output_path', '').strip()
-            gantt_path = PARAMS_ATUAIS.get('io', {}).get('gantt_path', '').strip()
-            decoder = str(PARAMS_ATUAIS.get('hyper_parameters', {}).get('decoder', 'ect')).lower()
-            time_limit = int(PARAMS_ATUAIS.get('hyper_parameters', {}).get('time_limit', 60))
-            agents = PARAMS_ATUAIS.get('agents', {})
-            
-            # Pega o caminho atual da interface para tentar recuperar arquivos perdidos
-            path_interface_atual = PARAMS_ATUAIS.get('io', {}).get('instance_path', '').strip()
-            # ------------------------
-
-            tarefa = FILA_TAREFAS.pop(0) 
-            
-            arquivo = tarefa["arquivo"]
-            
-            if not os.path.exists(arquivo):
-                nome_base = os.path.basename(arquivo)
+            while len(FILA_TAREFAS) > 0:
                 
-                # Tenta construir um novo caminho baseando-se na configuração atual da UI
-                candidato = ""
-                if os.path.isdir(path_interface_atual):
-                    candidato = os.path.join(path_interface_atual, nome_base)
-                elif os.path.isfile(path_interface_atual):
-                    candidato = os.path.join(os.path.dirname(path_interface_atual), nome_base)
+                if STOP_EVENT.is_set(): break
+
+                if not RESUME_EVENT.is_set():
+                    LOG_QUEUE.put({"status": "paused", "message": ">>> SYSTEM PAUSED (Queue held)."})
                 
-                if candidato and os.path.exists(candidato):
-                    # LOG_QUEUE.put({"status": "log", "message": f"[INFO] Path recovered for: {nome_base}"})
-                    arquivo = candidato
-                else:
-                    LOG_QUEUE.put({"status": "log", "message": f"File not found (skipped): {nome_base}"})
-                    continue # Pula esta tarefa se não achar o arquivo
-            # ------------------------------------------------------
+                RESUME_EVENT.wait() 
+                
+                if STOP_EVENT.is_set(): break
 
-            run_idx = tarefa["run_atual"]
-            total_runs = tarefa["total_runs"]
-            inst_idx = tarefa.get("inst_idx", "?")
-            inst_total = tarefa.get("inst_total", "?")
-            nome = os.path.basename(arquivo)
+                # --- LEITURA DINÂMICA ---
+                output_path = PARAMS_ATUAIS.get('io', {}).get('output_path', '').strip()
+                gantt_path = PARAMS_ATUAIS.get('io', {}).get('gantt_path', '').strip()
+                decoder = str(PARAMS_ATUAIS.get('hyper_parameters', {}).get('decoder', 'ect')).lower()
+                time_limit = int(PARAMS_ATUAIS.get('hyper_parameters', {}).get('time_limit', 60))
+                agents = PARAMS_ATUAIS.get('agents', {})
+                path_interface_atual = PARAMS_ATUAIS.get('io', {}).get('instance_path', '').strip()
 
-            LOG_QUEUE.put({
-                "status": "running", 
-                "message": f"Processing: {nome} (Inst {inst_idx}/{inst_total}) [Run {run_idx}/{total_runs}]... (Decoder: {decoder.upper()})",
-                "instancia": nome
-            })
+                tarefa = FILA_TAREFAS.pop(0) 
+                arquivo = tarefa["arquivo"]
+                
+                # Smart Path Recovery
+                if not os.path.exists(arquivo):
+                    nome_base = os.path.basename(arquivo)
+                    candidato = ""
+                    if os.path.isdir(path_interface_atual):
+                        candidato = os.path.join(path_interface_atual, nome_base)
+                    elif os.path.isfile(path_interface_atual):
+                        candidato = os.path.join(os.path.dirname(path_interface_atual), nome_base)
+                    
+                    if candidato and os.path.exists(candidato):
+                        arquivo = candidato
+                    else:
+                        LOG_QUEUE.put({"status": "log", "message": f"File not found (skipped): {nome_base}"})
+                        continue 
 
-            try:
-                resultado = run_rko(
-                    instance_path=arquivo, 
-                    decoder=decoder, 
-                    time_limit=time_limit,
-                    agents=agents, 
-                    callback=solver_callback, 
-                    save_path=output_path, 
-                    gantt_path=gantt_path
-                )
+                run_idx = tarefa["run_atual"]
+                total_runs = tarefa["total_runs"]
+                inst_idx = tarefa.get("inst_idx", "?")
+                inst_total = tarefa.get("inst_total", "?")
+                nome = os.path.basename(arquivo)
 
                 LOG_QUEUE.put({
-                    "status": "final_plateau",
-                    "instancia": nome,
-                    "final_time": float(time_limit), 
-                    "final_makespan": resultado["makespan"]
+                    "status": "running", 
+                    "message": f"Processing: {nome} (Inst {inst_idx}/{inst_total}) [Run {run_idx}/{total_runs}]... (Decoder: {decoder.upper()})",
+                    "instancia": nome
                 })
 
-                LOG_QUEUE.put({
-                    "status": "update",
-                    "makespan": resultado["makespan"],
-                    "instancia": nome,
-                    "gantt_data": resultado.get("gantt_data"),
-                    "time_to_best": resultado.get("time_to_best"),
-                    "agent": resultado.get("agent", "Final") 
-                })
+                try:
+                    # --- CACHE DE SEGURANÇA (MULTIPROCESSING SAFE) ---
+                    # Criamos um dict compartilhado que funciona entre processos
+                    cache_compartilhado = manager.dict()
+                    cache_compartilhado["makespan"] = float('inf')
+                    cache_compartilhado["gantt_data"] = None
+                    cache_compartilhado["encontrado_por"] = None
 
-                # Filtro de agentes ativos para o Log
-                lista_agentes_detalhada = []
-                if agents:
-                    for nome_agente, config in agents.items():
-                        # Pega o número de workers
-                        workers = 0
-                        if isinstance(config, dict):
-                            workers = int(config.get("workers", 0))
-                        elif isinstance(config, int):
-                            workers = config
+                    # Instanciamos a classe GLOBAL passando o cache compartilhado
+                    wrapper = SafetyCallbackWrapper(cache_compartilhado, solver_callback)
+
+                    resultado = run_rko(
+                        instance_path=arquivo, 
+                        decoder=decoder, 
+                        time_limit=time_limit,
+                        agents=agents, 
+                        callback=wrapper, 
+                        save_path=output_path, 
+                        gantt_path=gantt_path
+                    )
+
+                    mksp_final = float(resultado.get("makespan", float('inf')))
+                    mksp_melhor = cache_compartilhado["makespan"] # Lê do manager
+
+                    if mksp_melhor < mksp_final and cache_compartilhado["gantt_data"] is not None:
+                        diff = mksp_final - mksp_melhor
+                        agente = cache_compartilhado.get("encontrado_por", "Unknown")
                         
-                        if workers > 0:
-                            # Monta uma string de detalhe: "BRKGA (W:4, Pop:100, El:0.2)"
-                            detalhes_extras = []
+                        LOG_QUEUE.put({
+                            "status": "log", 
+                            "message": f"[SYSTEM FIX] Final result corrected! Solver returned {mksp_final}, but {agente} found {mksp_melhor} earlier. Restoring best."
+                        })
+                        
+                        resultado["makespan"] = mksp_melhor
+                        resultado["gantt_data"] = cache_compartilhado["gantt_data"]
+                    # ------------------------------------
+
+                    LOG_QUEUE.put({
+                        "status": "final_plateau",
+                        "instancia": nome,
+                        "final_time": float(time_limit), 
+                        "final_makespan": resultado["makespan"]
+                    })
+
+                    LOG_QUEUE.put({
+                        "status": "update",
+                        "makespan": resultado["makespan"],
+                        "instancia": nome,
+                        "gantt_data": resultado.get("gantt_data"),
+                        "time_to_best": resultado.get("time_to_best"),
+                        "agent": "Best Final" 
+                    })
+
+                    # Lista Detalhada (Tooltip)
+                    lista_agentes_detalhada = []
+                    if agents:
+                        for nome_agente, config in agents.items():
+                            workers = 0
+                            if isinstance(config, dict): workers = int(config.get("workers", 0))
+                            elif isinstance(config, int): workers = config
                             
-                            # Adiciona Workers
-                            detalhes_extras.append(f"Threads: {workers}")
-                            
-                            # Adiciona outros parâmetros específicos se existirem no dicionário
-                            if isinstance(config, dict):
-                                for k, v in config.items():
-                                    if k != "workers" and k != "enabled": # Ignora chaves de controle
-                                        # Abreviações para ficar compacto
-                                        chave_fmt = k.capitalize()
-                                        if "population" in k.lower(): chave_fmt = "Pop"
-                                        elif "generations" in k.lower(): chave_fmt = "Gen"
-                                        elif "iterations" in k.lower(): chave_fmt = "Iter"
-                                        elif "temperature" in k.lower(): chave_fmt = "Temp"
-                                        elif "probability" in k.lower(): chave_fmt = "Prob"
-                                        
-                                        detalhes_extras.append(f"{chave_fmt}: {v}")
-                            
-                            str_full = f"{nome_agente} [" + ", ".join(detalhes_extras) + "]"
-                            lista_agentes_detalhada.append(str_full)
+                            if workers > 0:
+                                detalhes_extras = [f"Threads: {workers}"]
+                                if isinstance(config, dict):
+                                    for k, v in config.items():
+                                        if k not in ["workers", "enabled"]:
+                                            k_fmt = k.capitalize()
+                                            if "population" in k.lower(): k_fmt = "Pop"
+                                            elif "generations" in k.lower(): k_fmt = "Gen"
+                                            elif "iterations" in k.lower(): k_fmt = "Iter"
+                                            elif "temperature" in k.lower(): k_fmt = "Temp"
+                                            elif "probability" in k.lower(): k_fmt = "Prob"
+                                            detalhes_extras.append(f"{k_fmt}: {v}")
+                                lista_agentes_detalhada.append(f"{nome_agente} [" + ", ".join(detalhes_extras) + "]")
 
-                if not lista_agentes_detalhada: 
-                    lista_agentes_detalhada = ["None"]
-                # ---------------------------------------------------
+                    if not lista_agentes_detalhada: lista_agentes_detalhada = ["None"]
 
-                LOG_QUEUE.put({
-                    "status": "instancia_concluida",
-                    "instancia": nome,
-                    "makespan": resultado["makespan"],
-                    "history_curve": resultado.get("history_data", []), 
-                    "gantt_data": resultado.get("gantt_data"),
-                    "decoder": decoder,            
-                    "agentes": lista_agentes_detalhada, # ENVIA A LISTA DETALHADA AGORA
-                })
+                    LOG_QUEUE.put({
+                        "status": "instancia_concluida",
+                        "instancia": nome,
+                        "makespan": resultado["makespan"],
+                        "history_curve": resultado.get("history_data", []), 
+                        "gantt_data": resultado.get("gantt_data"),
+                        "decoder": decoder,            
+                        "agentes": lista_agentes_detalhada,
+                    })
 
+                    LOG_QUEUE.put({"status": "log", "message": f"Finished: {nome} - Makespan: {resultado['makespan']}"})
+                    LOG_QUEUE.put({"status": "log", "message": "==================================================\n"})
 
-                LOG_QUEUE.put({"status": "log", "message": f"Finished: {nome} - Makespan: {resultado['makespan']}"})
-                LOG_QUEUE.put({"status": "log", "message": "==================================================\n"})
+                except Exception as e:
+                    import traceback
+                    tb = traceback.format_exc()
+                    LOG_QUEUE.put({"status": "error", "message": f"Failure in {nome}: {e}\n{tb}"})
 
-            except Exception as e:
-                import traceback
-                tb = traceback.format_exc()
-                LOG_QUEUE.put({"status": "error", "message": f"Failure in {nome}: {e}\n{tb}"})
+                time.sleep(0.1)
 
-            time.sleep(0.1)
+            if STOP_EVENT.is_set():
+                LOG_QUEUE.put({"status": "finished", "message": "EXECUTION ABORTED BY USER"})
+            elif len(FILA_TAREFAS) == 0:
+                agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                LOG_QUEUE.put({"status": "completed_all", "message": f"All tasks completed at: {agora}"})
 
-        if STOP_EVENT.is_set():
-             LOG_QUEUE.put({"status": "finished", "message": "EXECUTION ABORTED BY USER"})
-        elif len(FILA_TAREFAS) == 0:
-             agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-             LOG_QUEUE.put({"status": "completed_all", "message": f"All tasks completed at: {agora}"})
-
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        LOG_QUEUE.put({"status": "error", "message": f"Fatal error in worker: {e}\n{tb}"})
-    
-    finally:
-        LOG_QUEUE.put(None)
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            LOG_QUEUE.put({"status": "error", "message": f"Fatal error in worker: {e}\n{tb}"})
+        
+        finally:
+            LOG_QUEUE.put(None)

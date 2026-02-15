@@ -106,6 +106,7 @@ VARS_FILTRO_AGENTES = {}
 CHAVE_SELECIONADA_ATUAL = None
 
 LISTA_REF_WORKERS = []
+TEMPO_FINAL_CACHE = 0.0
 
 COMBO_INSTANCIAS = None
 VAR_ORDENACAO_HISTORICO = None
@@ -455,6 +456,14 @@ def atualizar_grafico_comparativo():
 
     AX_HIST_LINHA.set_title(titulo, color="white", fontsize=10)
     AX_HIST_LINHA.grid(True, linestyle='--', alpha=0.3)
+
+    # --- CORREÇÃO DO ZOOM AUTOMÁTICO ---
+    # Recalcula os limites dos eixos baseados nos dados plotados
+    AX_HIST_LINHA.relim()
+    # Aplica os novos limites para ajustar a visualização
+    AX_HIST_LINHA.autoscale_view()
+    # -----------------------------------
+
     CANVAS_HIST_LINHA.draw()
 
 def aplicar_filtros_historico(evento=None):
@@ -807,7 +816,7 @@ def atualizar_desenho_gantt(dados_gantt, nome_instancia, tempo_decorrido):
             AX_GANTT.barh(y=f'M{i}', width=proc, left=start, height=0.6, color=colors(j), edgecolor='black', alpha=0.9)
             if proc > 0: AX_GANTT.text(start + proc/2, f'M{i}', f'{j}', ha='center', va='center', color='white', fontsize=7, fontweight='bold')
     AX_GANTT.set_facecolor('#212121'); AX_GANTT.invert_yaxis()
-    AX_GANTT.set_title(f"Instance: {nome_instancia}  |  Makespan: {max_completion_time}  |  Elapsed Time: {tempo_decorrido:.2f}s", color="white", fontsize=11, fontweight="bold")
+    AX_GANTT.set_title(f"Instance: {nome_instancia}  |  Makespan: {max_completion_time}  |  Time to Best: {tempo_decorrido:.2f}s", color="white", fontsize=11, fontweight="bold")
     AX_GANTT.set_xlabel("Horizon", fontsize=9, color="white")
     AX_GANTT.set_ylabel("Machines", fontsize=9, color="white")
     AX_GANTT.tick_params(axis='x', colors='white', labelsize=8); AX_GANTT.tick_params(axis='y', colors='white', labelsize=8)
@@ -820,6 +829,7 @@ def manipulador_retorno_interface(dados):
     global CANVAS_GANTT, MELHOR_MAKESPAN_ATUAL, TEMPO_INICIO_BATERIA, HISTORICO_DATA, FILA_BOTOES_PENDENTES
     global CANVAS_GLOBAL, AX_GLOBAL, LINHA_GLOBAL, AX_GANTT, MONOTONIC_FILTER
     global PAUSE_BUTTON_GLOBAL, SAVE_BUTTON_GLOBAL
+    global TEMPO_FINAL_CACHE 
 
     if ESCRITOR_TERMINAL_GLOBAL is None: return
 
@@ -828,7 +838,6 @@ def manipulador_retorno_interface(dados):
     nome_pacote = dados.get("instancia") 
     
     COR_NEUTRA = "#333333"
-    # Adicione a cor de Stop para usar abaixo
     COR_STOP = "#C0392B" 
 
     if tipo_status == "running":
@@ -839,12 +848,10 @@ def manipulador_retorno_interface(dados):
             
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
         
-        # --- BLINDAGEM: Garante que o botão esteja como STOP ---
         if START_BUTTON_GLOBAL:
             START_BUTTON_GLOBAL.configure(text="STOP EXECUTION", fg_color=COR_STOP, state="normal")
         if PAUSE_BUTTON_GLOBAL:
             PAUSE_BUTTON_GLOBAL.configure(state="normal")
-        # -----------------------------------------------------
         
         if CANVAS_GLOBAL:
             LINHA_GLOBAL.set_data([], [])
@@ -872,20 +879,9 @@ def manipulador_retorno_interface(dados):
                 if gantt_data and CANVAS_GANTT: CANVAS_GANTT.get_tk_widget().after(0, lambda: atualizar_desenho_gantt(gantt_data, nome_pacote, time_to_best))
     
     elif tipo_status == "final_plateau":
+        # Guarda o tempo, mas deixa o trabalho pesado para o instancia_concluida garantir a consistência
         final_time = float(dados.get("final_time", 0))
-        final_mksp = float(dados.get("final_makespan", 0))
-        nome_inst = dados.get("instancia")
-        if nome_inst == NOME_INSTANCIA_ATUAL and DADOS_X:
-            if final_time > DADOS_X[-1]:
-                DADOS_X.append(final_time); DADOS_Y.append(final_mksp)
-                if CANVAS_GLOBAL and LINHA_GLOBAL:
-                    LINHA_GLOBAL.set_data(DADOS_X, DADOS_Y)
-                    AX_GLOBAL.set_xlim(left=0, right=final_time * 1.02)
-                    if DADOS_Y:
-                        min_y, max_y = min(DADOS_Y), max(DADOS_Y)
-                        margem = (max_y - min_y) * 0.1 if max_y != min_y else 1
-                        AX_GLOBAL.set_ylim(bottom=max(0, min_y - margem), top=max_y + margem)
-                    AX_GLOBAL.set_title(f"Instance: {NOME_INSTANCIA_ATUAL} (Completed)", fontsize=10, color="white", fontweight="bold"); CANVAS_GLOBAL.draw()
+        TEMPO_FINAL_CACHE = final_time
 
     elif tipo_status == "paused":
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
@@ -899,21 +895,57 @@ def manipulador_retorno_interface(dados):
         if PAUSE_BUTTON_GLOBAL and hasattr(PAUSE_BUTTON_GLOBAL, 'icons'):
             PAUSE_BUTTON_GLOBAL.configure(text="PAUSE", state="normal", image=PAUSE_BUTTON_GLOBAL.icons["pause"], fg_color=COR_NEUTRA, text_color="white")
         if SAVE_BUTTON_GLOBAL: SAVE_BUTTON_GLOBAL.configure(state="disabled")
-        
-        # --- BLINDAGEM: Garante que ao resumir, o botão volta a ser STOP ---
         if START_BUTTON_GLOBAL: 
             START_BUTTON_GLOBAL.configure(text="STOP EXECUTION", fg_color=COR_STOP, state="normal") 
-        # -----------------------------------------------------------------
 
     elif tipo_status == "instancia_concluida":
-        nome_base = dados.get("instancia"); gantt_final = dados.get("gantt_data")
-        if nome_base == NOME_INSTANCIA_ATUAL and len(DADOS_X) > 0: eixo_x_final = list(DADOS_X); eixo_y_final = list(DADOS_Y)
-        else: eixo_x_final = []; eixo_y_final = []
-        decoder_usado = dados.get("decoder", "Dec"); agentes_usados = dados.get("agentes", ["Agentes"]) 
-        if isinstance(agentes_usados, list): str_agentes = "-".join(agentes_usados)
-        else: str_agentes = str(agentes_usados)
+        nome_base = dados.get("instancia")
+        gantt_final = dados.get("gantt_data")
+        makespan_final = dados.get("makespan")
+
+        if nome_base == NOME_INSTANCIA_ATUAL:
+            
+            # 1. CAPTURA O TEMPO "REAL" DA ÚLTIMA MELHORIA (Antes de criar o platô)
+            # Se a lista tiver dados, o último ponto atual é o momento que achou o best.
+            tempo_to_best = DADOS_X[-1] if DADOS_X else 0.0
+
+            # 2. LÓGICA DO PLATÔ (Adiciona a linha reta até o fim do tempo limite)
+            tempo_limite = TEMPO_FINAL_CACHE if 'TEMPO_FINAL_CACHE' in globals() and TEMPO_FINAL_CACHE > 0 else 0
+            
+            # Se o gráfico parou antes do tempo limite (ex: achou em 15s, mas rodou até 60s)
+            if DADOS_X and tempo_limite > DADOS_X[-1]:
+                 DADOS_X.append(tempo_limite)
+                 DADOS_Y.append(makespan_final)
+                 
+                 # Atualiza o desenho da linha
+                 if CANVAS_GLOBAL and LINHA_GLOBAL:
+                     LINHA_GLOBAL.set_data(DADOS_X, DADOS_Y)
+                     AX_GLOBAL.set_xlim(left=0, right=tempo_limite * 1.02)
+                     if DADOS_Y:
+                        min_y, max_y = min(DADOS_Y), max(DADOS_Y)
+                        margem = (max_y - min_y) * 0.1 if max_y != min_y else 1
+                        AX_GLOBAL.set_ylim(bottom=max(0, min_y - margem), top=max_y + margem)
+                     CANVAS_GLOBAL.draw()
+            
+            # 3. PREPARA DADOS FINAIS (Com o platô incluído para o histórico visual)
+            eixo_x_final = list(DADOS_X) if DADOS_X else []
+            eixo_y_final = list(DADOS_Y) if DADOS_Y else []
+            
+            # 4. ATUALIZA O TÍTULO (Usando o tempo_to_best capturado no passo 1)
+            if CANVAS_GLOBAL:
+                # Usei "Time to Best" que é o termo padrão para "instante do último makespan achado"
+                titulo_final = f"Instance: {nome_base}  |  Best: {makespan_final}  |  Time to Best: {tempo_to_best:.2f}s"
+                AX_GLOBAL.set_title(titulo_final, fontsize=10, color="#00FF00", fontweight="bold")
+                CANVAS_GLOBAL.draw()
+
+        # --- SALVA NO HISTÓRICO ---
+        decoder_usado = dados.get("decoder", "Dec")
+        agentes_usados = dados.get("agentes", ["Agentes"]) 
+        str_agentes = "-".join(agentes_usados) if isinstance(agentes_usados, list) else str(agentes_usados)
         hora_termino = time.strftime("%d/%m/%y %H:%M:%S")
+        
         chave_unica = f"{nome_base} [{decoder_usado}] ({str_agentes}) @{hora_termino}"
+        
         if nome_base:
             HISTORICO_DATA[chave_unica] = {
                 'x': eixo_x_final, 'y': eixo_y_final, 'gantt': gantt_final,
