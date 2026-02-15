@@ -62,6 +62,10 @@ FONTES = {
     "pequena": ("Roboto", 11)
 }
 
+SUPPRESS_DELETE_WARNING = False
+INSTANCIAS_OCULTAS = set() # Guarda as chaves que não devem aparecer no gráfico
+ICONES_UI = {} # Cache para não recarregar imagens toda hora
+
 LARGURA_JANELA = 1375
 ALTURA_JANELA = 975
 LARGURA_CARTAO_AGENTE = 360
@@ -138,6 +142,63 @@ class MonotonicFilter:
             self.widget.configure(state="disabled")
         except: pass
 
+class CTkTooltip:
+    """
+    Cria uma janela de 'dica' (tooltip) que aparece após um delay
+    ao passar o mouse sobre um widget.
+    """
+    def __init__(self, widget, text, delay=500):
+        self.widget = widget
+        self.text = text
+        self.delay = delay
+        self.tooltip_window = None
+        self.id_after = None
+        
+        # Adiciona eventos com add="+" para não sobrescrever os binds existentes do card
+        self.widget.bind("<Enter>", self.schedule, add="+")
+        self.widget.bind("<Leave>", self.hide, add="+")
+        self.widget.bind("<ButtonPress>", self.hide, add="+")
+
+    def schedule(self, event=None):
+        self.unschedule()
+        self.id_after = self.widget.after(self.delay, self.show)
+
+    def unschedule(self):
+        if self.id_after:
+            self.widget.after_cancel(self.id_after)
+            self.id_after = None
+
+    def show(self):
+        if not self.text: return
+        
+        # Cria a janela flutuante
+        self.tooltip_window = ctk.CTkToplevel(self.widget)
+        self.tooltip_window.wm_overrideredirect(True) # Remove barra de título
+        self.tooltip_window.wm_attributes("-topmost", True) # Sempre no topo
+        
+        # Pega posição do mouse
+        x = self.widget.winfo_pointerx() + 15
+        y = self.widget.winfo_pointery() + 10
+        self.tooltip_window.wm_geometry(f"+{x}+{y}")
+
+        # Label dentro do tooltip
+        label = ctk.CTkLabel(
+            self.tooltip_window, 
+            text=self.text, 
+            fg_color="#111111",      # Fundo quase preto
+            text_color="#E0E0E0",    # Texto claro
+            corner_radius=6,
+            font=("Roboto", 10),
+            padx=10, pady=5
+        )
+        label.pack()
+
+    def hide(self, event=None):
+        self.unschedule()
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+            self.tooltip_window = None
+
 class StdoutRedirector:
     def __init__(self, filtro):
         self.filtro = filtro
@@ -184,6 +245,85 @@ class CustomToolbar(NavigationToolbar2Tk):
                 self.canvas.figure.savefig(fname)
             except Exception as e:
                 messagebox.showerror("Error saving file", str(e), parent=top_level)
+
+class ConfirmDeleteDialog(ctk.CTkToplevel):
+    def __init__(self, parent, on_confirm_callback):
+        super().__init__(parent)
+        
+        self.on_confirm = on_confirm_callback
+        
+        # 1. Configurações Iniciais
+        self.title("Safety Check")
+        self.geometry("350x200") # Aumentei um pouco a altura para caber a imagem confortavelmente
+        self.resizable(False, False)
+        
+        try:
+            x = parent.winfo_rootx() + (parent.winfo_width() // 2) - 175
+            y = parent.winfo_rooty() + (parent.winfo_height() // 2) - 100
+            self.geometry(f"+{x}+{y}")
+        except: pass
+        
+        # 2. CONSTRÓI A INTERFACE
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1) 
+        
+        frm = ctk.CTkFrame(self, fg_color="transparent")
+        frm.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # --- ÍCONE DE ALERTA (IMAGEM COM FALLBACK) ---
+        try:
+            # Tenta carregar a imagem 'warning.png' da pasta assets
+            # Defini um tamanho de 48x48, ajuste se necessário.
+            img_warning = ctk.CTkImage(Image.open("assets/warning.png"), size=(48, 48))
+            
+            # Cria o label com a imagem e sem texto
+            lbl_icon = ctk.CTkLabel(frm, text="", image=img_warning)
+            lbl_icon.pack(pady=(0, 10))
+        except Exception as e:
+            # Se der erro (ex: arquivo não existe), usa o emoji antigo como fallback
+            print(f"Aviso: Não foi possível carregar assets/warning.png: {e}")
+            ctk.CTkLabel(frm, text="⚠️", font=("Arial", 35)).pack(pady=(0, 5))
+        # -------------------------------------------
+        
+        # Mensagem
+        ctk.CTkLabel(frm, text="Are you sure you want to delete this item?", 
+                     font=("Roboto", 13, "bold"), text_color="white").pack(pady=(0, 10))
+        
+        # Checkbox
+        self.var_suppress = ctk.BooleanVar(value=False)
+        chk = ctk.CTkCheckBox(frm, text="Don't show this message again", 
+                              variable=self.var_suppress, 
+                              font=("Roboto", 11), text_color="gray",
+                              checkbox_width=18, checkbox_height=18, border_width=2)
+        chk.pack(pady=(0, 15))
+        
+        # Botões
+        frm_btns = ctk.CTkFrame(frm, fg_color="transparent")
+        frm_btns.pack(fill="x")
+        
+        btn_cancel = ctk.CTkButton(frm_btns, text="Cancel", fg_color="transparent", 
+                                   border_width=1, border_color="gray", 
+                                   width=100, command=self.destroy)
+        btn_cancel.pack(side="left", padx=(0, 10), expand=True)
+        
+        btn_delete = ctk.CTkButton(frm_btns, text="Delete", fg_color="#C0392B", 
+                                   hover_color="#E74C3C", width=100, 
+                                   command=self.acao_confirmar)
+        btn_delete.pack(side="right", padx=(0, 0), expand=True)
+
+        # 3. APLICA A MODALIDADE COM SEGURANÇA
+        self.transient(parent) 
+        self.wait_visibility() 
+        self.grab_set() 
+        self.focus_force()
+
+    def acao_confirmar(self):
+        global SUPPRESS_DELETE_WARNING
+        if self.var_suppress.get():
+            SUPPRESS_DELETE_WARNING = True
+            
+        self.on_confirm()
+        self.destroy()
 
 def carregar_cache_caminhos():
     if os.path.exists(CAMINHO_CACHE_IO):
@@ -256,18 +396,80 @@ def configurar_aba_gantt_live(aba):
     CustomToolbar(CANVAS_GANTT, frame).pack(side="bottom", fill="x")
     return frame
 
+def atualizar_grafico_comparativo():
+    """
+    Redesenha apenas o gráfico de linhas, respeitando os filtros atuais
+    e a lista de instâncias ocultas (olho).
+    """
+    global AX_HIST_LINHA, CANVAS_HIST_LINHA, HISTORICO_DATA, INSTANCIAS_OCULTAS
+    global VAR_FILTRO_INSTANCIA, VAR_FILTRO_DECODER, VARS_FILTRO_AGENTES, CHAVE_SELECIONADA_ATUAL
+
+    if not AX_HIST_LINHA: return
+
+    AX_HIST_LINHA.clear()
+    
+    # --- REAPLICA OS FILTROS GLOBAIS PARA SABER O QUE PLOTAR ---
+    f_inst = VAR_FILTRO_INSTANCIA.get()
+    f_dec = VAR_FILTRO_DECODER.get()
+    agentes_requeridos = [nome for nome, var in VARS_FILTRO_AGENTES.items() if var.get()]
+
+    plotados = 0
+    ocultos_pelo_olho = 0
+
+    for chave, dados in HISTORICO_DATA.items():
+        # 1. Filtros da Interface (Dropdowns/Checkboxes)
+        if f_inst != "all" and dados['meta_nome'] != f_inst: continue
+        if f_dec != "all" and dados['meta_decoder'].lower() != f_dec.lower(): continue
+        
+        if agentes_requeridos:
+            raw = dados.get('meta_agentes', '')
+            lst = [ag for ag in raw.split("-") if ag]
+            if not all(req in lst for req in agentes_requeridos): continue
+        
+        # 2. Filtro de Visibilidade (Botão Olho)
+        if chave in INSTANCIAS_OCULTAS:
+            ocultos_pelo_olho += 1
+            continue
+
+        # 3. Plotagem
+        raw_x, raw_y = dados['x'], dados['y']
+        if not raw_x: continue
+        
+        eixo_x, eixo_y = zip(*sorted(zip(raw_x, raw_y), key=lambda p: p[0]))
+        
+        if chave == CHAVE_SELECIONADA_ATUAL:
+            AX_HIST_LINHA.plot(eixo_x, eixo_y, color='#00FF00', linewidth=2.5, marker='o', markersize=4, label="Selected", zorder=10)
+        else:
+            AX_HIST_LINHA.plot(eixo_x, eixo_y, color='white', alpha=0.4, linewidth=1.5)
+        
+        plotados += 1
+
+    # --- CONFIGURAÇÃO VISUAL ---
+    titulo = f"Convergence Curves (Visible: {plotados} | Hidden: {ocultos_pelo_olho})"
+    if CHAVE_SELECIONADA_ATUAL and CHAVE_SELECIONADA_ATUAL in HISTORICO_DATA:
+        if CHAVE_SELECIONADA_ATUAL not in INSTANCIAS_OCULTAS:
+             # Se a selecionada estiver visível, mostra info extra no título
+             dados_sel = HISTORICO_DATA[CHAVE_SELECIONADA_ATUAL]
+             best_val = min(dados_sel['y']) if dados_sel['y'] else "?"
+             titulo = f"Selected: {dados_sel['meta_nome']} (Best: {best_val})"
+
+    AX_HIST_LINHA.set_title(titulo, color="white", fontsize=10)
+    AX_HIST_LINHA.grid(True, linestyle='--', alpha=0.3)
+    CANVAS_HIST_LINHA.draw()
+
 def aplicar_filtros_historico(evento=None):
     global FRAME_LISTA_HISTORICO, HISTORICO_DATA, VAR_FILTRO_INSTANCIA, VAR_FILTRO_DECODER, VARS_FILTRO_AGENTES, CHAVE_SELECIONADA_ATUAL, COMBO_INSTANCIAS, VAR_ORDENACAO_HISTORICO
+    global INSTANCIAS_OCULTAS, AX_HIST_LINHA, CANVAS_HIST_LINHA, SUPPRESS_DELETE_WARNING
 
-    # Limpa a lista atual
+    carregar_icones()
+
     for widget in FRAME_LISTA_HISTORICO.winfo_children():
         widget.destroy()
 
-    # Pega os valores dos filtros
+    # --- (FILTROS - MANTIDOS) ---
     f_inst = VAR_FILTRO_INSTANCIA.get()
     f_dec = VAR_FILTRO_DECODER.get()
-    f_sort = VAR_ORDENACAO_HISTORICO.get() # Criterio de ordenacao
-    
+    f_sort = VAR_ORDENACAO_HISTORICO.get()
     agentes_requeridos = [nome for nome, var in VARS_FILTRO_AGENTES.items() if var.get()]
     
     if COMBO_INSTANCIAS and HISTORICO_DATA:
@@ -278,148 +480,177 @@ def aplicar_filtros_historico(evento=None):
     for chave, dados in HISTORICO_DATA.items():
         if f_inst != "all" and dados['meta_nome'] != f_inst: continue
         if f_dec != "all" and dados['meta_decoder'].lower() != f_dec.lower(): continue
-        
         if agentes_requeridos:
-            raw_agentes_run = dados.get('meta_agentes', '')
-            lista_agentes_na_run = [ag for ag in raw_agentes_run.split("-") if ag]
-            if not all(req in lista_agentes_na_run for req in agentes_requeridos):
-                continue
-             
+            raw = dados.get('meta_agentes', '')
+            lst = [ag for ag in raw.split("-") if ag]
+            if not all(req in lst for req in agentes_requeridos): continue
         chaves_filtradas.append(chave)
 
-    def natural_keys(chave):
-        texto = HISTORICO_DATA[chave]['meta_nome']
-        return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', texto)]
-
-    def get_makespan(chave):
-        lista_y = HISTORICO_DATA[chave]['y']
-        if lista_y:
-            return min(lista_y)
-        return float('inf') # Se nao tiver dados, joga pro final
-
+    def get_mksp(k): return min(HISTORICO_DATA[k]['y']) if HISTORICO_DATA[k]['y'] else float('inf')
+    
     if f_sort == "Descending Date/Hour":
-        try:
-            chaves_filtradas.sort(
-                key=lambda k: datetime.strptime(HISTORICO_DATA[k]['meta_hora'], "%d/%m/%y %H:%M:%S"), 
-                reverse=True
-            )
+        try: chaves_filtradas.sort(key=lambda k: datetime.strptime(HISTORICO_DATA[k]['meta_hora'], "%d/%m/%y %H:%M:%S"), reverse=True)
         except: chaves_filtradas.sort()
+    elif f_sort == "Ascending Makespan": chaves_filtradas.sort(key=get_mksp, reverse=False)
+    elif f_sort == "Descending Makespan": chaves_filtradas.sort(key=get_mksp, reverse=True)
+    elif f_sort == "Ascending Instance": chaves_filtradas.sort(key=lambda k: HISTORICO_DATA[k]['meta_nome'])
+    elif f_sort == "Descending Instance": chaves_filtradas.sort(key=lambda k: HISTORICO_DATA[k]['meta_nome'], reverse=True)
+    elif f_sort == "Decoder": chaves_filtradas.sort(key=lambda k: HISTORICO_DATA[k]['meta_decoder'])
+    else: chaves_filtradas.sort(reverse=True)
 
-    elif f_sort == "Ascending Date/Hour":
-        try:
-            chaves_filtradas.sort(
-                key=lambda k: datetime.strptime(HISTORICO_DATA[k]['meta_hora'], "%d/%m/%y %H:%M:%S"), 
-                reverse=False
-            )
-        except: chaves_filtradas.sort()
-            
-    elif f_sort == "Ascending Instance":
-        try: chaves_filtradas.sort(key=natural_keys, reverse=False)
-        except: chaves_filtradas.sort()
+    atualizar_grafico_comparativo()
 
-    elif f_sort == "Descending Instance":
-        try: chaves_filtradas.sort(key=natural_keys, reverse=True)
-        except: chaves_filtradas.sort()
-    
-    elif f_sort == "Ascending Makespan":
-        # Do MELHOR (menor valor) para o PIOR (maior valor)
-        try: chaves_filtradas.sort(key=get_makespan, reverse=False)
-        except: chaves_filtradas.sort()
+    estado_hover_global = [] 
+    def limpar_hover_anterior():
+        if estado_hover_global:
+            saved = estado_hover_global[0]
+            f_ant, b_ant, b_eye, b_trash, c_bg_ant, c_txt_ant, k_ant = saved
+            try:
+                if f_ant.winfo_exists(): f_ant.configure(fg_color=c_bg_ant)
+                if b_ant.winfo_exists(): b_ant.configure(text_color=c_txt_ant, hover_color=c_bg_ant)
+                
+                # Restaura ícones ORIGINAIS
+                if b_trash.winfo_exists(): b_trash.configure(image=ICONES_UI["trash"])
+                if b_eye.winfo_exists():
+                    sufixo = "eye_closed" if k_ant in INSTANCIAS_OCULTAS else "eye"
+                    b_eye.configure(image=ICONES_UI[sufixo])
+            except: pass
+            estado_hover_global.clear()
 
-    elif f_sort == "Descending Makespan":
-        # Do PIOR (maior valor) para o MELHOR (menor valor)
-        try: chaves_filtradas.sort(key=get_makespan, reverse=True)
-        except: chaves_filtradas.sort()
-
-    elif f_sort == "Decoder":
-        chaves_filtradas.sort(key=lambda k: HISTORICO_DATA[k]['meta_decoder'])
-    
-    else:
-        # Fallback
-        try:
-            chaves_filtradas.sort(
-                key=lambda k: datetime.strptime(HISTORICO_DATA[k]['meta_hora'], "%d/%m/%y %H:%M:%S"), 
-                reverse=True
-            )
-        except: chaves_filtradas.sort()
-
-    AX_HIST_LINHA.clear()
-    
+    # --- CRIAÇÃO DOS CARDS ---
     for chave in chaves_filtradas:
         dados = HISTORICO_DATA[chave]
-        raw_x, raw_y = dados['x'], dados['y']
+        is_selected = (chave == CHAVE_SELECIONADA_ATUAL)
         
-        if not raw_x: continue
+        cor_bg_normal = "#6D28D9" if is_selected else "#333333"
+        cor_bg_hover = "#FFFFFF"
+        cor_txt_normal = "#FFFFFF"
+        cor_txt_hover = "#000000"
         
-        eixo_x, eixo_y = zip(*sorted(zip(raw_x, raw_y), key=lambda p: p[0]))
-        if chave != CHAVE_SELECIONADA_ATUAL:
-            AX_HIST_LINHA.plot(eixo_x, eixo_y, color='white', alpha=0.6, linewidth=1.7)
+        card_frame = ctk.CTkFrame(FRAME_LISTA_HISTORICO, fg_color=cor_bg_normal, corner_radius=6)
+        card_frame.pack(fill="x", pady=2, padx=5)
+        card_frame.grid_columnconfigure(0, weight=1)
+        card_frame.grid_columnconfigure(1, weight=0)
 
+        # Preparação do Texto
         raw_agentes = dados.get('meta_agentes', 'N/A')
-        lista_nomes = [x for x in raw_agentes.split("-") if x]
         
-        linhas_agentes = []
-        linha_atual = ""
-        limite_char = 28
-        
-        for nome in lista_nomes:
-            if len(linha_atual) + len(nome) + 2 > limite_char:
-                linhas_agentes.append(linha_atual.strip(", "))
-                linha_atual = nome + ", "
-            else:
-                linha_atual += nome + ", "
-        
-        if linha_atual:
-            linhas_agentes.append(linha_atual.strip(", "))
-            
-        texto_agentes_formatado = "\n".join(linhas_agentes)
-        qtd_linhas_extras = len(linhas_agentes)
-        altura_dinamica = 65 + (qtd_linhas_extras * 15)
+        # O backend pode mandar como lista ou string unida por hifens.
+        # Vamos garantir que seja uma lista de strings.
+        if isinstance(raw_agentes, list):
+            lista_full_detalhada = raw_agentes
+        else:
+            lista_full_detalhada = [x for x in str(raw_agentes).split("-") if x]
 
-        melhor_mksp = min(eixo_y) if eixo_y else "?"
-        hora = dados.get('meta_hora', '')
+        # 1. Para o CARD (Resumo): Extrai apenas o nome do agente (tudo antes do "[")
+        lista_nomes_curtos = []
+        for item in lista_full_detalhada:
+            nome_limpo = item.split("[")[0].strip()
+            lista_nomes_curtos.append(nome_limpo)
+            
+        agentes_str_card = ", ".join(lista_nomes_curtos)
+        if len(agentes_str_card) > 25: agentes_str_card = agentes_str_card[:25] + "..."
+
+        # 2. Para o TOOLTIP (Detalhe): Usa a string completa formatada
+        # Vamos quebrar linhas para ficar legível
+        detalhes_formatados = []
+        for item in lista_full_detalhada:
+            # item vem como: "BRKGA [Threads: 4, Pop: 100]"
+            # Vamos separar nome e params
+            if "[" in item:
+                nome, params = item.split("[", 1)
+                params = params.rstrip("]") # Remove o fecha colchete
+                # Formata:
+                # • BRKGA
+                #    └ Threads: 4, Pop: 100
+                detalhes_formatados.append(f"• {nome.strip()}\n   └ {params}")
+            else:
+                detalhes_formatados.append(f"• {item}")
+
+        texto_completo_tooltip = f"Instance: {dados['meta_nome']}\n" \
+                                 f"Decoder: {dados['meta_decoder']}\n" \
+                                 f"Date: {dados['meta_hora']}\n\n" \
+                                 f"Detailed Configuration:\n" + \
+                                 "\n".join(detalhes_formatados)
+
+        # --- RESTO DO CÓDIGO (Igual) ---
+        melhor = min(dados['y']) if dados['y'] else "?"
+        hora = dados.get('meta_hora', '').split(" ")[1]
         
-        txt_btn = f"{dados['meta_nome']}\n" \
-                  f"Time: {hora}\n" \
-                  f"Best: {melhor_mksp} | {dados['meta_decoder']}\n" \
-                  f"[{texto_agentes_formatado}]"
-                  
-        cor_btn_normal = "#6D28D9" if chave == CHAVE_SELECIONADA_ATUAL else "#333333"
-        
-        btn = ctk.CTkButton(
-            FRAME_LISTA_HISTORICO, 
-            text=txt_btn, 
-            font=("Roboto", 11),
-            fg_color=cor_btn_normal, 
-            text_color="#FFFFFF", 
-            hover_color="#FFFFFF",
-            height=altura_dinamica, 
-            anchor="w",
+        txt_info = f"{dados['meta_nome']}\n{hora} | Best: {melhor}\n[{agentes_str_card}]"
+
+        #----
+
+        btn_info = ctk.CTkButton(
+            card_frame, text=txt_info, font=("Roboto", 11),
+            fg_color="transparent", text_color=cor_txt_normal, 
+            hover_color=cor_bg_normal, anchor="w", height=50,
             command=lambda k=chave: carregar_instancia_historico(k)
         )
-        btn.chave_privada = chave
+        btn_info.grid(row=0, column=0, sticky="nsew", padx=5)
         
-        def on_enter(e, b=btn):
-            b.configure(fg_color="#FFFFFF", text_color="#000000")
+        # --- APLICA O TOOLTIP AQUI ---
+        # Ele vai aparecer se o mouse ficar 500ms parado sobre o texto
+        CTkTooltip(btn_info, text=texto_completo_tooltip, delay=500)
+        # -----------------------------
+
+        frame_botoes = ctk.CTkFrame(card_frame, fg_color="transparent", height=20)
+        frame_botoes.grid(row=0, column=1, sticky="ne", padx=2, pady=2)
+        
+        # --- BOTÕES DE AÇÃO ---
+        def toggle_eye(k=chave, btn_ref=None):
+            is_black = (estado_hover_global and estado_hover_global[0][0] == card_frame)
+            if k in INSTANCIAS_OCULTAS:
+                INSTANCIAS_OCULTAS.remove(k)
+                novo_icone = ICONES_UI["eye_black"] if is_black else ICONES_UI["eye"]
+            else:
+                INSTANCIAS_OCULTAS.add(k)
+                novo_icone = ICONES_UI["eye_closed_black"] if is_black else ICONES_UI["eye_closed"]
+            if btn_ref: btn_ref.configure(image=novo_icone)
+            atualizar_grafico_comparativo()
+
+        sufixo_inicial = "eye_closed" if chave in INSTANCIAS_OCULTAS else "eye"
+        btn_eye = ctk.CTkButton(frame_botoes, text="", image=ICONES_UI[sufixo_inicial], width=20, height=20, fg_color="transparent", hover_color="#555555")
+        btn_eye.configure(command=lambda k=chave, b=btn_eye: toggle_eye(k, b))
+        btn_eye.pack(side="left", padx=1)
+
+        def delete_item(k=chave, f=card_frame):
+            def real_delete():
+                if k in HISTORICO_DATA: del HISTORICO_DATA[k]
+                if k in INSTANCIAS_OCULTAS: INSTANCIAS_OCULTAS.remove(k)
+                if k == CHAVE_SELECIONADA_ATUAL: 
+                    if AX_HIST_GANTT: AX_HIST_GANTT.clear(); CANVAS_HIST_GANTT.draw()
+                if estado_hover_global and estado_hover_global[0][0] == f: estado_hover_global.clear()
+                f.destroy() 
+                atualizar_grafico_comparativo()
+
+            if SUPPRESS_DELETE_WARNING: real_delete()
+            else: ConfirmDeleteDialog(f.winfo_toplevel(), real_delete)
+
+        btn_trash = ctk.CTkButton(frame_botoes, text="", image=ICONES_UI["trash"], width=20, height=20, fg_color="transparent", hover_color="#8B0000")
+        btn_trash.configure(command=lambda k=chave, f=card_frame: delete_item(k, f))
+        btn_trash.pack(side="left", padx=1)
+
+        # --- EVENTOS HOVER (MANTIDOS) ---
+        def on_enter(e, f=card_frame, b=btn_info, b_eye=btn_eye, b_trash=btn_trash, c_bg_norm=cor_bg_normal, c_txt_norm=cor_txt_normal, k=chave):
+            if estado_hover_global and estado_hover_global[0][0] == f: return
+            limpar_hover_anterior()
+            f.configure(fg_color=cor_bg_hover)
+            b.configure(text_color=cor_txt_hover, hover_color=cor_bg_hover)
+            b_trash.configure(image=ICONES_UI["trash_black"])
+            sufixo = "eye_closed_black" if k in INSTANCIAS_OCULTAS else "eye_black"
+            b_eye.configure(image=ICONES_UI[sufixo])
+            estado_hover_global.append([f, b, b_eye, b_trash, c_bg_norm, c_txt_norm, k])
             
-        def on_leave(e, b=btn, cor_orig=cor_btn_normal):
-            b.configure(fg_color=cor_orig, text_color="#FFFFFF")
+        def on_leave(e, f=card_frame):
+            if estado_hover_global and estado_hover_global[0][0] == f:
+                limpar_hover_anterior()
 
-        btn.bind("<Enter>", on_enter)
-        btn.bind("<Leave>", on_leave)
-        
-        btn.pack(fill="x", pady=2, padx=5)
-
-    if CHAVE_SELECIONADA_ATUAL and CHAVE_SELECIONADA_ATUAL in chaves_filtradas:
-        dados = HISTORICO_DATA[CHAVE_SELECIONADA_ATUAL]
-        eixo_x, eixo_y = zip(*sorted(zip(dados['x'], dados['y']), key=lambda p: p[0]))
-        AX_HIST_LINHA.plot(eixo_x, eixo_y, color='#00FF00', linewidth=2.5, marker='o', markersize=4, label="Selected")
-        AX_HIST_LINHA.set_title(f"Convergence Curves | Selected: {dados['meta_nome']} (Makespan: {min(eixo_y)})", color="white", fontsize=10)
-    else:
-        AX_HIST_LINHA.set_title(f"Convergence Curves (Total: {len(chaves_filtradas)})", color="white", fontsize=10)
-
-    AX_HIST_LINHA.grid(True, linestyle='--', alpha=0.3)
-    CANVAS_HIST_LINHA.draw()
+        for w in [btn_info, frame_botoes, card_frame, btn_eye, btn_trash]:
+            w.bind("<Enter>", on_enter)
+            
+        btn_info.bind("<Leave>", on_leave)
+        card_frame.bind("<Leave>", on_leave)
 
 def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     global FRAME_LISTA_HISTORICO, FIG_HIST_LINHA, AX_HIST_LINHA, CANVAS_HIST_LINHA, FIG_HIST_GANTT, AX_HIST_GANTT, CANVAS_HIST_GANTT
@@ -814,44 +1045,51 @@ def criar_cartao_agente(conteiner_pai, config):
     max_cpu = os.cpu_count() or 4
     ctk.CTkLabel(frm_workers, text=f"(Max: {max_cpu})", font=("Arial", 9), text_color="gray").pack(side="left", padx=5)
 
-    # Adiciona à lista global
     LISTA_REF_WORKERS.append((var_chk, ent_workers))
 
-    # --- LÓGICA DE TRAVAMENTO DO CHECKBOX (A CORREÇÃO) ---
+    # Variável para controlar o timer do pisca (evita bug de cor travada)
+    id_flash = None
+
+    # --- LÓGICA DE TRAVAMENTO DO CHECKBOX ---
     def validar_ativacao():
-        # Se o usuário tentou marcar (estava False, virou True)
+        nonlocal id_flash # Permite modificar a variável externa
+        
         if var_chk.get():
-            # 1. Conta quantos núcleos JÁ estão ocupados pelos OUTROS
             total_ocupado = 0
             for r_chk, r_ent in LISTA_REF_WORKERS:
-                # Soma se: existe, não é o atual, e está marcado
                 if r_ent.winfo_exists() and r_ent != ent_workers and r_chk.get():
                     try: total_ocupado += int(r_ent.get())
                     except: pass
             
-            # 2. Se já lotou (saldo <= 0), impede a ativação
             if total_ocupado >= max_cpu:
-                var_chk.set(False) # Força desmarcar imediatamente
+                var_chk.set(False) 
                 
-                # Feedback Visual: Pisca o frame em vermelho
-                cor_original = frame.cget("fg_color")
-                frame.configure(fg_color="#521818") # Vermelho escuro
-                frame.after(300, lambda: frame.configure(fg_color=cor_original))
+                # --- CORREÇÃO DO PISCA-PISCA ---
+                # 1. Se já tiver um agendamento pendente, cancela ele
+                if id_flash is not None:
+                    try: frame.after_cancel(id_flash)
+                    except: pass
                 
-                # Não deixa prosseguir para o toggle_state habilitar os campos
+                # 2. Define cor vermelha
+                frame.configure(fg_color="#521818") 
+                
+                # 3. Define função de restauração para a cor FIXA do tema
+                def restaurar():
+                    frame.configure(fg_color=CORES["fundo_cartao"])
+                
+                # 4. Agenda a restauração e guarda o ID
+                id_flash = frame.after(300, restaurar)
+                
                 toggle_state() 
                 return
 
-        # Se passou na validação, atualiza visual
         toggle_state()
 
-    # O Checkbox agora chama a validação ao ser clicado
     chk_enable = ctk.CTkCheckBox(frame, text="", variable=var_chk, width=20, command=validar_ativacao)
     chk_enable.grid(row=0, column=1, sticky="e", padx=10, pady=(8,4))
 
     # --- LÓGICA +/- ---
     def alterar_workers(delta):
-        # Só funciona se estiver ativado
         if not var_chk.get(): return
 
         try: val_atual = int(ent_workers.get())
@@ -871,21 +1109,18 @@ def criar_cartao_agente(conteiner_pai, config):
             
             saldo = max_cpu - total_usados
             novo = val_atual + delta
-            # Só aumenta se couber no saldo E for menor que o teto absoluto
+            
             if novo <= saldo and novo <= max_cpu:
                 ent_workers.delete(0, "end"); ent_workers.insert(0, str(novo))
             else:
-                # Feedback visual de limite atingido nos botões também
                 ent_workers.configure(text_color="#FF5555")
                 frame.after(200, lambda: ent_workers.configure(text_color="white"))
 
     btn_minus.configure(command=lambda: alterar_workers(-1))
     btn_plus.configure(command=lambda: alterar_workers(1))
     
-    # Lógica Visual (Enable/Disable)
     def toggle_state(*args):
         st = "normal" if var_chk.get() else "disabled"
-        # Ajusta cores para parecer desabilitado de verdade
         cor_txt = "white" if var_chk.get() else "gray"
         
         ent_workers.configure(state=st, text_color=cor_txt)
@@ -896,12 +1131,8 @@ def criar_cartao_agente(conteiner_pai, config):
             if isinstance(w, ctk.CTkEntry) and k != "workers_entry": 
                 w.configure(state=st, text_color=cor_txt)
             
-    # Removemos o trace no var_chk para evitar loops, usamos o command do checkbox
-    # Mas chamamos uma vez para inicializar
-    
     widgets = {"frame_conteiner": frame, "variavel_controle": var_chk, "workers_entry": ent_workers}
     
-    # Campos Extras
     row_start = 2
     for i, (txt, val) in enumerate(config["campos"], start=row_start):
         ctk.CTkLabel(frame, text=txt, anchor="w", font=FONTES["pequena"]).grid(row=i, column=0, sticky="w", padx=90, pady=4)
@@ -909,9 +1140,7 @@ def criar_cartao_agente(conteiner_pai, config):
         ent.grid(row=i, column=0, sticky="w", padx=10 if config.get("coluna",0)!=0 else 0, pady=4)
         widgets[txt] = ent
         
-    # Inicializa estado visual correto
     toggle_state()
-        
     return widgets
 
 def configurar_aba_entrada_saida(aba):
@@ -1106,13 +1335,22 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
             btn_start.configure(state="normal")
 
     def acao_salvar_experimento():
+        # 1. Pega a janela real (Toplevel) onde o botão está
+        janela_pai = aba.winfo_toplevel()
+    
         if not controles["paused"]:
-            messagebox.showwarning("Warning", "You must PAUSE before saving.")
+            # Adicione parent=janela_pai aqui também para o aviso não ir para trás
+            messagebox.showwarning("Warning", "You must PAUSE before saving.", parent=janela_pai)
             return
-        caminho = filedialog.asksaveasfilename(parent=aba, 
-                                               defaultextension=".rko",
-                                               filetypes=[("RKO Exp", "*.rko")])
+            
+        caminho = filedialog.asksaveasfilename(
+            parent=janela_pai, # <--- AQUI A CORREÇÃO PRINCIPAL
+            defaultextension=".rko",
+            filetypes=[("RKO Exp", "*.rko")]
+        )
+        
         if not caminho: return
+    
         try:
             btn_save.configure(text="SAVING...", state="disabled"); aba.update_idletasks()
             
@@ -1121,13 +1359,21 @@ def configurar_aba_execucao(aba, aba_p, aba_a, aba_io):
             
             dados_visuais = coletar_dados_interface(aba_p, aba_a, aba_io)
             estado_backend["params"] = dados_visuais 
-
+    
             dump = {"timestamp": datetime.now().strftime("%Y-%m-%d"), "ui": estado_ui, "backend": estado_backend}
             with open(caminho, "wb") as f: pickle.dump(dump, f)
+            
             ESCRITOR_TERMINAL_GLOBAL.write(f"\n>>> SAVED: {os.path.basename(caminho)}\n")
-            messagebox.showinfo("Saved", "Success!")
-        except Exception as e: messagebox.showerror("Error", str(e))
-        finally: btn_save.configure(text="SAVE EXP.", state="normal")
+            
+            # Parent aqui também
+            messagebox.showinfo("Saved", "Success!", parent=janela_pai)
+            
+        except Exception as e: 
+            # Parent aqui também
+            messagebox.showerror("Error", str(e), parent=janela_pai)
+            
+        finally: 
+            btn_save.configure(text="SAVE EXP.", state="normal")
 
     def acao_carregar_experimento():
         if controles["running"]: return
@@ -1360,8 +1606,42 @@ def resetar_variaveis_globais():
     if MONOTONIC_FILTER:
         MONOTONIC_FILTER.reset()
 
+def carregar_icones():
+    global ICONES_UI
+    if ICONES_UI: return
+
+    def criar_versao_preta(img_pil):
+        """Cria uma silhueta preta da imagem preservando a transparência."""
+        # Cria uma imagem preta do mesmo tamanho
+        black_img = Image.new("RGBA", img_pil.size, (0, 0, 0, 255))
+        # Usa o canal Alpha (transparência) da original como máscara
+        black_img.putalpha(img_pil.getchannel("A"))
+        return black_img
+
+    try:
+        # Carrega originais (Brancos/Cinzas)
+        pil_trash = Image.open("assets/trash.png")
+        pil_eye = Image.open("assets/eye.png")
+        pil_eye_closed = Image.open("assets/eye_closed.png")
+        
+        pil_warning = Image.open("assets/warning.png") # Se tiver usando no popup
+
+        # Salva versões normais
+        ICONES_UI["trash"] = ctk.CTkImage(pil_trash, size=(16, 16))
+        ICONES_UI["eye"] = ctk.CTkImage(pil_eye, size=(16, 16))
+        ICONES_UI["eye_closed"] = ctk.CTkImage(pil_eye_closed, size=(16, 16))
+        
+        # --- GERA VERSÕES PRETAS AUTOMATICAMENTE ---
+        ICONES_UI["trash_black"] = ctk.CTkImage(criar_versao_preta(pil_trash), size=(16, 16))
+        ICONES_UI["eye_black"] = ctk.CTkImage(criar_versao_preta(pil_eye), size=(16, 16))
+        ICONES_UI["eye_closed_black"] = ctk.CTkImage(criar_versao_preta(pil_eye_closed), size=(16, 16))
+        
+    except Exception as e:
+        print(f"Erro ao carregar ícones: {e}")
+
 def abrir_benchmark(root_parent=None):
     resetar_variaveis_globais()
+    carregar_icones()
     # Se receber um pai (Launcher), cria como Toplevel (Janela Filha)
     # Se não receber (teste isolado), cria como CTk (Janela Principal)
     if root_parent:

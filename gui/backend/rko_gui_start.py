@@ -256,15 +256,43 @@ def _consumir_fila_tarefas(callback_interface):
                 })
 
                 # Filtro de agentes ativos para o Log
-                lista_agentes_ativos = []
+                lista_agentes_detalhada = []
                 if agents:
-                    for k, v in agents.items():
-                        qtd = 0
-                        if isinstance(v, dict): qtd = int(v.get("workers", 0))
-                        elif isinstance(v, int): qtd = v
-                        if qtd > 0: lista_agentes_ativos.append(k)
+                    for nome_agente, config in agents.items():
+                        # Pega o número de workers
+                        workers = 0
+                        if isinstance(config, dict):
+                            workers = int(config.get("workers", 0))
+                        elif isinstance(config, int):
+                            workers = config
+                        
+                        if workers > 0:
+                            # Monta uma string de detalhe: "BRKGA (W:4, Pop:100, El:0.2)"
+                            detalhes_extras = []
                             
-                if not lista_agentes_ativos: lista_agentes_ativos = ["None"]
+                            # Adiciona Workers
+                            detalhes_extras.append(f"Threads: {workers}")
+                            
+                            # Adiciona outros parâmetros específicos se existirem no dicionário
+                            if isinstance(config, dict):
+                                for k, v in config.items():
+                                    if k != "workers" and k != "enabled": # Ignora chaves de controle
+                                        # Abreviações para ficar compacto
+                                        chave_fmt = k.capitalize()
+                                        if "population" in k.lower(): chave_fmt = "Pop"
+                                        elif "generations" in k.lower(): chave_fmt = "Gen"
+                                        elif "iterations" in k.lower(): chave_fmt = "Iter"
+                                        elif "temperature" in k.lower(): chave_fmt = "Temp"
+                                        elif "probability" in k.lower(): chave_fmt = "Prob"
+                                        
+                                        detalhes_extras.append(f"{chave_fmt}: {v}")
+                            
+                            str_full = f"{nome_agente} [" + ", ".join(detalhes_extras) + "]"
+                            lista_agentes_detalhada.append(str_full)
+
+                if not lista_agentes_detalhada: 
+                    lista_agentes_detalhada = ["None"]
+                # ---------------------------------------------------
 
                 LOG_QUEUE.put({
                     "status": "instancia_concluida",
@@ -273,8 +301,9 @@ def _consumir_fila_tarefas(callback_interface):
                     "history_curve": resultado.get("history_data", []), 
                     "gantt_data": resultado.get("gantt_data"),
                     "decoder": decoder,            
-                    "agentes": lista_agentes_ativos,
+                    "agentes": lista_agentes_detalhada, # ENVIA A LISTA DETALHADA AGORA
                 })
+
 
                 LOG_QUEUE.put({"status": "log", "message": f"Finished: {nome} - Makespan: {resultado['makespan']}"})
                 LOG_QUEUE.put({"status": "log", "message": "==================================================\n"})
