@@ -120,6 +120,119 @@ class InstanceEditor(ctk.CTkToplevel):
         self.criar_tabela_sheet()
         self.criar_area_estatisticas()
         
+    def _get_cor_heatmap(self, valor, v_min, v_max):
+        """
+        Retorna cor Hex baseada em gradiente: Gelo -> Pele -> Vermelho Escuro.
+        """
+        if v_max == v_min: return None
+        
+        try:
+            ratio = (valor - v_min) / (v_max - v_min)
+        except ZeroDivisionError:
+            return None
+        
+        # --- DEFINIÇÃO DA PALETA (RGB) ---
+        
+        # 1. Mínimo: "Cinza Gelo" (Frio/Neutro)
+        # Ex: (220, 225, 230) é um cinza quase branco, levemente azulado
+        low = (220, 226, 230)  
+        
+        # 2. Médio: "Tom de Pele/Salmão" (Transição Quente)
+        # Ex: (240, 160, 110) traz aquela cor de pele bronzeada/salmão
+        mid = (240, 160, 110)   
+        
+        # 3. Máximo: "Vermelho Escuro/Vinho" (Crítico)
+        # Ex: (130, 20, 20) é um vermelho bem fechado
+        high = (140, 20, 20)    
+        
+        r, g, b = 0, 0, 0
+        
+        # Interpolação Linear por canais
+        if ratio < 0.5:
+            # Do Gelo (0.0) até a Pele (0.5)
+            p = ratio * 2
+            r = int(low[0] + (mid[0] - low[0]) * p)
+            g = int(low[1] + (mid[1] - low[1]) * p)
+            b = int(low[2] + (mid[2] - low[2]) * p)
+        else:
+            # Da Pele (0.5) até o Vermelho Escuro (1.0)
+            p = (ratio - 0.5) * 2
+            r = int(mid[0] + (high[0] - mid[0]) * p)
+            g = int(mid[1] + (high[1] - mid[1]) * p)
+            b = int(mid[2] + (high[2] - mid[2]) * p)
+            
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    def aplicar_heatmap_visual(self):
+        if not self.sheet or not self.dados_instancia["loaded"]: return
+        
+        # 1. Limpeza (Reset)
+        try:
+            self.sheet.dehighlight_all() 
+        except: 
+            pass 
+
+        if not self.var_heatmap.get():
+            self.sheet.refresh()
+            return
+
+        # 2. Aplicação
+        try:
+            data = self.sheet.get_sheet_data()
+            if not data: return
+            
+            # Coleta valores numéricos
+            vals = []
+            for row in data:
+                for c in row:
+                    try: vals.append(float(c))
+                    except: pass
+            
+            if not vals: return
+                
+            v_min = min(vals)
+            v_max = max(vals)
+            
+            # Itera e pinta
+            for r_idx, row in enumerate(data):
+                for c_idx, val in enumerate(row):
+                    try:
+                        v = float(val)
+                        
+                        # Ignora zeros no Setup
+                        if v == 0 and self.view_atual[0] == "setup":
+                            continue
+                            
+                        # Calcula a cor do Fundo
+                        cor_bg = self._get_cor_heatmap(v, v_min, v_max)
+                        
+                        if cor_bg:
+                            # --- LÓGICA DE CONTRASTE DO TEXTO ---
+                            # Calcula a proporção (0.0 a 1.0) novamente
+                            ratio = (v - v_min) / (v_max - v_min) if v_max != v_min else 0
+                            
+                            # Se ratio > 0.7 (70%), o fundo já é um vermelho bem escuro -> Texto Branco
+                            # Caso contrário (Gelo ou Pele) -> Texto Preto
+                            cor_texto = "white" if ratio > 0.7 else "black"
+                            
+                            self.sheet.highlight_cells(
+                                row=r_idx, 
+                                column=c_idx, 
+                                bg=cor_bg, 
+                                fg=cor_texto, # Aplica a cor do texto
+                                redraw=False
+                            )
+                            
+                    except ValueError:
+                        pass 
+
+            self.sheet.refresh() 
+            
+        except Exception as e:
+            print(f"ERRO CRÍTICO no Heatmap: {e}")
+            import traceback
+            traceback.print_exc()
+
     def ao_fechar(self):
         self.destroy()
    
@@ -171,10 +284,27 @@ class InstanceEditor(ctk.CTkToplevel):
     def criar_header_botoes(self):
         frm_btns = ctk.CTkFrame(self.frm_main, fg_color="transparent", height=50)
         frm_btns.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 10))
+        
+        # Botões existentes
         btn_load = ctk.CTkButton(frm_btns, text="LOAD INSTANCE", fg_color=CORES_EDITOR["btn_primary"], hover_color=CORES_EDITOR["btn_hover"], width=120, height=35, font=("Roboto", 12, "bold"), command=self.acao_load_instance)
         btn_load.pack(side="left", padx=(0, 10))
+        
         btn_save = ctk.CTkButton(frm_btns, text="SAVE", fg_color=CORES_EDITOR["btn_primary"], hover_color=CORES_EDITOR["btn_hover"], width=80, height=35, font=("Roboto", 12, "bold"), command=self.acao_save_instance)
-        btn_save.pack(side="left")
+        btn_save.pack(side="left", padx=(0, 20))
+
+        # --- NOVO CHECKBOX HEATMAP ---
+        self.var_heatmap = ctk.BooleanVar(value=False)
+        self.chk_heatmap = ctk.CTkCheckBox(
+            frm_btns, 
+            text="Heatmap Mode", 
+            variable=self.var_heatmap,
+            command=self.aplicar_heatmap_visual, # Chama a função ao clicar
+            font=("Roboto", 12, "bold"),
+            text_color="white",
+            fg_color="#E74C3C", # Cor do check quando marcado (Vermelho pra combinar com 'crítico')
+            hover_color="#C0392B"
+        )
+        self.chk_heatmap.pack(side="left")
 
     def criar_info_block(self):
         frm_info = ctk.CTkFrame(self.frm_main, fg_color="transparent")
@@ -701,27 +831,66 @@ class InstanceEditor(ctk.CTkToplevel):
             if tipo == "proc": self.exibir_processing_times()
             elif tipo == "setup" and tag != "none": self.exibir_setup_times(int(tag))
 
-    def exibir_processing_times(self):
+    def exibir_processing_times(self, manter_scroll=False):
         if not Sheet or not self.dados_instancia["loaded"]: return
+        
+        # Salva scroll atual se pedido
+        y_scroll = self.sheet.yview()[0] if manter_scroll and hasattr(self.sheet, 'yview') else 0
+        x_scroll = self.sheet.xview()[0] if manter_scroll and hasattr(self.sheet, 'xview') else 0
+
         self.view_atual = ("proc", "all")
         dados = self.dados_instancia["processing"]
         n_jobs = self.dados_instancia["N"]; n_maquinas = self.dados_instancia["M"]
         col_headers = [f"J{i}" for i in range(n_jobs)]
         row_indices = [f"M{i}" for i in range(n_maquinas)]
+        
         self.lbl_context.configure(text="Editing: Processing Times")
-        self.sheet.headers(col_headers); self.sheet.row_index(row_indices); self.sheet.set_sheet_data(dados)
+        self.sheet.headers(col_headers)
+        self.sheet.row_index(row_indices)
+        self.sheet.set_sheet_data(dados) # Isso reseta as cores automaticamente
+        
+        # Reaplica Heatmap se estiver ativado
+        if self.var_heatmap.get():
+            self.aplicar_heatmap_visual()
 
-    def exibir_setup_times(self, maquina_idx):
+        # Restaura scroll
+        if manter_scroll:
+            try:
+                self.sheet.yview_moveto(y_scroll)
+                self.sheet.xview_moveto(x_scroll)
+            except: pass
+
+    def exibir_setup_times(self, maquina_idx, manter_scroll=False):
         if not Sheet or not self.dados_instancia["loaded"]: return
+        
+        # Salva scroll atual
+        y_scroll = self.sheet.yview()[0] if manter_scroll and hasattr(self.sheet, 'yview') else 0
+        x_scroll = self.sheet.xview()[0] if manter_scroll and hasattr(self.sheet, 'xview') else 0
+
         self.view_atual = ("setup", str(maquina_idx))
         dados = self.dados_instancia["setup"].get(maquina_idx, [])
         if not dados:
             n_jobs = self.dados_instancia["N"]; dados = [[0]*n_jobs for _ in range(n_jobs)]
             self.dados_instancia["setup"][maquina_idx] = dados
+            
         n_jobs = self.dados_instancia["N"]
         headers = [f"J{i}" for i in range(n_jobs)]; row_indices = [f"J{i}" for i in range(n_jobs)]
+        
         self.lbl_context.configure(text=f"Editing: Setup Times (Machine {maquina_idx})")
-        self.sheet.headers(headers); self.sheet.row_index(row_indices); self.sheet.set_sheet_data(dados)
+        self.sheet.headers(headers)
+        self.sheet.row_index(row_indices)
+        self.sheet.set_sheet_data(dados) # Reseta cores
+        
+        # Reaplica Heatmap se estiver ativado
+        if self.var_heatmap.get():
+            self.aplicar_heatmap_visual()
+
+        # Restaura scroll
+        if manter_scroll:
+            try:
+                self.sheet.yview_moveto(y_scroll)
+                self.sheet.xview_moveto(x_scroll)
+            except: pass
 
     def acao_save_instance(self):
         if not self.dados_instancia["loaded"]: return
