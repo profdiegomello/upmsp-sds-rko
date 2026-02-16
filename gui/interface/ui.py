@@ -475,10 +475,12 @@ def aplicar_filtros_historico(evento=None):
     for widget in FRAME_LISTA_HISTORICO.winfo_children():
         widget.destroy()
 
-    # --- (FILTROS - MANTIDOS) ---
+    # --- (FILTROS) ---
     f_inst = VAR_FILTRO_INSTANCIA.get()
     f_dec = VAR_FILTRO_DECODER.get()
     f_sort = VAR_ORDENACAO_HISTORICO.get()
+    
+    # Lista de agentes marcados no checkbox (Ex: ['BRKGA', 'PSO'])
     agentes_requeridos = [nome for nome, var in VARS_FILTRO_AGENTES.items() if var.get()]
     
     if COMBO_INSTANCIAS and HISTORICO_DATA:
@@ -489,14 +491,35 @@ def aplicar_filtros_historico(evento=None):
     for chave, dados in HISTORICO_DATA.items():
         if f_inst != "all" and dados['meta_nome'] != f_inst: continue
         if f_dec != "all" and dados['meta_decoder'].lower() != f_dec.lower(): continue
+        
+        # --- CORREÇÃO DO FILTRO DE AGENTES ---
         if agentes_requeridos:
-            raw = dados.get('meta_agentes', '')
-            lst = [ag for ag in raw.split("-") if ag]
-            if not all(req in lst for req in agentes_requeridos): continue
+            raw_agentes = dados.get('meta_agentes', [])
+            
+            # 1. Garante que temos uma lista (para compatibilidade com dumps antigos)
+            if isinstance(raw_agentes, str):
+                lista_no_historico = [x.strip() for x in raw_agentes.split("-") if x]
+            else:
+                lista_no_historico = raw_agentes # Já é a lista detalhada ["BRKGA [Pars...]", ...]
+
+            # 2. Normaliza: Remove os detalhes [...] para comparar apenas o nome base
+            # Ex: Transforma "BRKGA [Threads:4]" em "BRKGA"
+            nomes_limpos_no_historico = []
+            for item in lista_no_historico:
+                nome_base = item.split("[")[0].strip() # Pega tudo antes do '['
+                nomes_limpos_no_historico.append(nome_base)
+
+            # 3. Verifica se TODOS os requeridos estão presentes na lista limpa
+            # (Lógica AND: Se marcou BRKGA e PSO, tem que ter os dois na execução)
+            if not all(req in nomes_limpos_no_historico for req in agentes_requeridos):
+                continue
+        # -------------------------------------
+
         chaves_filtradas.append(chave)
 
     def get_mksp(k): return min(HISTORICO_DATA[k]['y']) if HISTORICO_DATA[k]['y'] else float('inf')
     
+    # --- (ORDENAÇÃO - MANTIDA IGUAL) ---
     if f_sort == "Descending Date/Hour":
         try: chaves_filtradas.sort(key=lambda k: datetime.strptime(HISTORICO_DATA[k]['meta_hora'], "%d/%m/%y %H:%M:%S"), reverse=True)
         except: chaves_filtradas.sort()
@@ -509,6 +532,10 @@ def aplicar_filtros_historico(evento=None):
 
     atualizar_grafico_comparativo()
 
+    # --- (RESTO DA FUNÇÃO IGUAL: ESTADO_HOVER, CRIAÇÃO DE CARDS, TOOLTIPS...) ---
+    # Copie o restante da função da nossa última versão (que tem os tooltips e icones pretos)
+    # Vou resumir aqui para não ficar gigante, mas o segredo foi o bloco acima.
+    
     estado_hover_global = [] 
     def limpar_hover_anterior():
         if estado_hover_global:
@@ -517,8 +544,6 @@ def aplicar_filtros_historico(evento=None):
             try:
                 if f_ant.winfo_exists(): f_ant.configure(fg_color=c_bg_ant)
                 if b_ant.winfo_exists(): b_ant.configure(text_color=c_txt_ant, hover_color=c_bg_ant)
-                
-                # Restaura ícones ORIGINAIS
                 if b_trash.winfo_exists(): b_trash.configure(image=ICONES_UI["trash"])
                 if b_eye.winfo_exists():
                     sufixo = "eye_closed" if k_ant in INSTANCIAS_OCULTAS else "eye"
@@ -526,7 +551,6 @@ def aplicar_filtros_historico(evento=None):
             except: pass
             estado_hover_global.clear()
 
-    # --- CRIAÇÃO DOS CARDS ---
     for chave in chaves_filtradas:
         dados = HISTORICO_DATA[chave]
         is_selected = (chave == CHAVE_SELECIONADA_ATUAL)
@@ -541,55 +565,36 @@ def aplicar_filtros_historico(evento=None):
         card_frame.grid_columnconfigure(0, weight=1)
         card_frame.grid_columnconfigure(1, weight=0)
 
-        # Preparação do Texto
+        # Preparação do Texto (COM SUPORTE A NOVA LISTA DETALHADA)
         raw_agentes = dados.get('meta_agentes', 'N/A')
-        
-        # O backend pode mandar como lista ou string unida por hifens.
-        # Vamos garantir que seja uma lista de strings.
-        if isinstance(raw_agentes, list):
-            lista_full_detalhada = raw_agentes
-        else:
-            lista_full_detalhada = [x for x in str(raw_agentes).split("-") if x]
+        if isinstance(raw_agentes, list): lista_full_detalhada = raw_agentes
+        else: lista_full_detalhada = [x for x in str(raw_agentes).split("-") if x]
 
-        # 1. Para o CARD (Resumo): Extrai apenas o nome do agente (tudo antes do "[")
+        # 1. Para o CARD (Resumo Limpo)
         lista_nomes_curtos = []
+        detalhes_formatados = []
         for item in lista_full_detalhada:
             nome_limpo = item.split("[")[0].strip()
             lista_nomes_curtos.append(nome_limpo)
             
-        agentes_str_card = ", ".join(lista_nomes_curtos)
-        if len(agentes_str_card) > 25: agentes_str_card = agentes_str_card[:25] + "..."
-
-        # 2. Para o TOOLTIP (Detalhe): Usa a string completa formatada
-        # Vamos quebrar linhas para ficar legível
-        detalhes_formatados = []
-        for item in lista_full_detalhada:
-            # item vem como: "BRKGA [Threads: 4, Pop: 100]"
-            # Vamos separar nome e params
+            # Formata para o Tooltip
             if "[" in item:
                 nome, params = item.split("[", 1)
-                params = params.rstrip("]") # Remove o fecha colchete
-                # Formata:
-                # • BRKGA
-                #    └ Threads: 4, Pop: 100
+                params = params.rstrip("]")
                 detalhes_formatados.append(f"• {nome.strip()}\n   └ {params}")
             else:
                 detalhes_formatados.append(f"• {item}")
+            
+        agentes_str_card = ", ".join(lista_nomes_curtos)
+        if len(agentes_str_card) > 25: agentes_str_card = agentes_str_card[:25] + "..."
 
-        texto_completo_tooltip = f"Instance: {dados['meta_nome']}\n" \
-                                 f"Decoder: {dados['meta_decoder']}\n" \
-                                 f"Date: {dados['meta_hora']}\n\n" \
-                                 f"Detailed Configuration:\n" + \
-                                 "\n".join(detalhes_formatados)
-
-        # --- RESTO DO CÓDIGO (Igual) ---
+        texto_completo_tooltip = f"Instance: {dados['meta_nome']}\nDecoder: {dados['meta_decoder']}\nDate: {dados['meta_hora']}\n\nDetailed Configuration:\n" + "\n".join(detalhes_formatados)
+        
         melhor = min(dados['y']) if dados['y'] else "?"
         hora = dados.get('meta_hora', '').split(" ")[1]
         
         txt_info = f"{dados['meta_nome']}\n{hora} | Best: {melhor}\n[{agentes_str_card}]"
-
-        #----
-
+        
         btn_info = ctk.CTkButton(
             card_frame, text=txt_info, font=("Roboto", 11),
             fg_color="transparent", text_color=cor_txt_normal, 
@@ -598,15 +603,11 @@ def aplicar_filtros_historico(evento=None):
         )
         btn_info.grid(row=0, column=0, sticky="nsew", padx=5)
         
-        # --- APLICA O TOOLTIP AQUI ---
-        # Ele vai aparecer se o mouse ficar 500ms parado sobre o texto
         CTkTooltip(btn_info, text=texto_completo_tooltip, delay=500)
-        # -----------------------------
 
         frame_botoes = ctk.CTkFrame(card_frame, fg_color="transparent", height=20)
         frame_botoes.grid(row=0, column=1, sticky="ne", padx=2, pady=2)
         
-        # --- BOTÕES DE AÇÃO ---
         def toggle_eye(k=chave, btn_ref=None):
             is_black = (estado_hover_global and estado_hover_global[0][0] == card_frame)
             if k in INSTANCIAS_OCULTAS:
@@ -640,7 +641,6 @@ def aplicar_filtros_historico(evento=None):
         btn_trash.configure(command=lambda k=chave, f=card_frame: delete_item(k, f))
         btn_trash.pack(side="left", padx=1)
 
-        # --- EVENTOS HOVER (MANTIDOS) ---
         def on_enter(e, f=card_frame, b=btn_info, b_eye=btn_eye, b_trash=btn_trash, c_bg_norm=cor_bg_normal, c_txt_norm=cor_txt_normal, k=chave):
             if estado_hover_global and estado_hover_global[0][0] == f: return
             limpar_hover_anterior()
