@@ -4,6 +4,7 @@ import tkinter as tk
 import os
 import sys
 import statistics 
+import math 
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -67,7 +68,7 @@ class InstanceEditor(ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self.ao_fechar)
         
         self.title("RKO Instance Editor")
-        self.geometry("1100x800")
+        self.geometry("1200x800") 
         
         self.dados_instancia = {
             "loaded": False,
@@ -91,6 +92,21 @@ class InstanceEditor(ctk.CTkToplevel):
         self.grid_columnconfigure(0, weight=0, minsize=260) 
         self.grid_columnconfigure(1, weight=1)              
         self.grid_rowconfigure(0, weight=1)
+        
+        # --- CONFIGURAÇÃO DE ORDEM E VARIÁVEL DE LAYOUT ---
+        self.layout_var = ctk.StringVar(value="Horizontal") 
+        
+        self.STATS_CONFIG = [
+            ("Min", 'min', ""),
+            ("Mean", 'mean', ".2f"),
+            ("Median", 'median', ".2f"),
+            ("P95", 'p95', ".2f"),
+            ("Max", 'max', ""),
+            ("StDev", 'stdev', ".2f"),
+            ("Variance", 'var', ".2f"),
+            ("Count", 'count', ""),
+            ("CV (%)", 'cv', ".2f")
+        ]
 
         self.criar_sidebar()
 
@@ -122,8 +138,11 @@ class InstanceEditor(ctk.CTkToplevel):
         if tipo == "proc":
             self.dados_instancia["processing"] = dados_int
         elif tipo == "setup":
-            maquina_id = int(tag)
-            self.dados_instancia["setup"][maquina_id] = dados_int
+            try:
+                maquina_id = int(tag)
+                self.dados_instancia["setup"][maquina_id] = dados_int
+            except ValueError:
+                pass
 
     def criar_sidebar(self):
         self.frm_side = ctk.CTkFrame(self, fg_color=CORES_EDITOR["sidebar_bg"], corner_radius=0, width=260)
@@ -185,47 +204,125 @@ class InstanceEditor(ctk.CTkToplevel):
 
     def criar_area_estatisticas(self):
         self.frm_stats_container = ctk.CTkScrollableFrame(self.frm_main, fg_color="transparent")
-        self.frm_stats_container.grid_rowconfigure(0, weight=0)
-        self.frm_stats_container.grid_rowconfigure(1, weight=0)
+        self.frm_stats_container.grid_rowconfigure(0, weight=0) # Controles
+        self.frm_stats_container.grid_rowconfigure(1, weight=0) # Gráficos
+        self.frm_stats_container.grid_rowconfigure(2, weight=0) # Tabelas
         self.frm_stats_container.grid_columnconfigure(0, weight=1)
+        
+        # --- BARRA DE CONTROLE ---
+        self.frm_controls = ctk.CTkFrame(self.frm_stats_container, fg_color="transparent")
+        self.frm_controls.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
+        
+        ctk.CTkLabel(self.frm_controls, text="Table Layout:", font=("Roboto", 12, "bold")).pack(side="left", padx=(0, 10))
+        
+        self.cmb_layout = ctk.CTkComboBox(
+            self.frm_controls, 
+            values=["Horizontal", "Vertical"],
+            variable=self.layout_var,
+            command=self.ao_mudar_layout_tabela,
+            width=120,
+            state="readonly"
+        )
+        self.cmb_layout.pack(side="left")
+        
         self.subfrm_graphs = ctk.CTkFrame(self.frm_stats_container, fg_color="transparent")
-        self.subfrm_graphs.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        self.subfrm_graphs.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
+        
         self.subfrm_table = ctk.CTkFrame(self.frm_stats_container, fg_color=CORES_EDITOR["grid_bg"], corner_radius=6)
-        self.subfrm_table.grid(row=1, column=0, sticky="ew", padx=10, pady=(10, 40))
+        self.subfrm_table.grid(row=2, column=0, sticky="ew", padx=10, pady=(10, 40))
+
+    def ao_mudar_layout_tabela(self, escolha):
+        if self.view_atual and self.view_atual[0].startswith("stats"):
+            tipo, tag = self.view_atual
+            maquina = None if tag == "all" else int(tag)
+            self.gerar_tabela_estatistica(maquina_foco=maquina)
+
+    def calcular_percentil(self, dados, percentil=0.95):
+        """Calcula o percentil P de uma lista de dados."""
+        if not dados: return 0
+        dados_sorted = sorted(dados)
+        k = (len(dados) - 1) * percentil
+        f = math.floor(k)
+        c = math.ceil(k)
+        if f == c:
+            return dados_sorted[int(k)]
+        d0 = dados_sorted[int(f)] * (c - k)
+        d1 = dados_sorted[int(c)] * (k - f)
+        return d0 + d1
+
+    def _get_dados_raw(self, tipo_dado, maquina_idx):
+        dados = []
+        
+        # --- PROCESSING TIMES ---
+        if tipo_dado == "proc":
+            if maquina_idx is None:
+                try: dados = np.array(self.dados_instancia["processing"]).flatten().tolist()
+                except: pass
+            else:
+                try: 
+                    m_idx = int(maquina_idx)
+                    dados = self.dados_instancia["processing"][m_idx]
+                except: pass
+        
+        # --- SETUP TIMES ---
+        else: 
+            s_dict = self.dados_instancia.get("setup", {})
+            
+            # GLOBAL SETUP
+            if maquina_idx is None: 
+                try:
+                    all_setups = []
+                    for matriz in s_dict.values():
+                        vals = [x for x in np.array(matriz).flatten() if x > 0]
+                        all_setups.extend(vals)
+                    dados = all_setups
+                except: pass
+            
+            # LOCAL SETUP
+            else: 
+                matriz = None
+                
+                # 1. Busca Direta
+                try: matriz = s_dict.get(int(maquina_idx))
+                except: pass
+                
+                if matriz is None: matriz = s_dict.get(str(maquina_idx))
+
+                # 2. Processamento
+                if matriz is not None:
+                    if isinstance(matriz, list):
+                        try:
+                            flat_vals = np.array(matriz).flatten()
+                            filtrados = [x for x in flat_vals if x > 0]
+                            
+                            if len(filtrados) == 0:
+                                # Matriz só tem zeros. Retorna [0] para evitar 'No Data'.
+                                dados = [0]
+                            else:
+                                dados = filtrados
+                        except Exception:
+                            dados = []
+                    else:
+                        dados = []
+                else:
+                    dados = []
+                    
+        return dados
 
     def gerar_graficos_estatisticas(self, maquina_idx=None):
-        """Gera histogramas e boxplots com tamanhos e estilos originais restaurados."""
+        """Gera histogramas e boxplots."""
         
         for w in self.subfrm_graphs.winfo_children(): w.destroy()
         if self.fig_stats: plt.close(self.fig_stats); self.fig_stats = None
         if not self.dados_instancia["loaded"]: return
 
-        # PREPARACAO DOS DADOS
-        proc_flat, setup_flat, titulo_sufixo = [], [], "Global"
-        if maquina_idx is None:
-            titulo_sufixo = "Global"
-            try: proc_flat = np.array(self.dados_instancia["processing"]).flatten()
-            except: pass
-            try:
-                all_setups = []
-                for matriz in self.dados_instancia["setup"].values():
-                    all_setups.extend(np.array(matriz).flatten())
-                setup_flat = [x for x in all_setups if x > 0]
-            except: pass
-        else:
-            titulo_sufixo = f"Machine {maquina_idx}"
-            try:
-                if maquina_idx < len(self.dados_instancia["processing"]):
-                    proc_flat = np.array(self.dados_instancia["processing"][maquina_idx])
-            except: pass
-            try:
-                matriz = self.dados_instancia["setup"].get(maquina_idx, [])
-                if matriz: setup_flat = [x for x in np.array(matriz).flatten() if x > 0]
-            except: pass
+        proc_flat = self._get_dados_raw("proc", maquina_idx)
+        setup_flat = self._get_dados_raw("setup", maquina_idx)
+        
+        titulo_sufixo = "Global" if maquina_idx is None else f"Machine {maquina_idx}"
 
         plt.style.use('dark_background')
         
-        # --- RESTAURAÇÃO DO TAMANHO ORIGINAL (10x6) ---
         self.fig_stats, axes = plt.subplots(2, 2, figsize=(10, 6), dpi=100, 
                                             sharex='col', 
                                             gridspec_kw={'height_ratios': [0.60, 0.40], 'hspace': 0.4, 'wspace': 0.2})
@@ -240,7 +337,6 @@ class InstanceEditor(ctk.CTkToplevel):
         if len(proc_flat) > 0:
             ax_hist_p.hist(proc_flat, bins=15, color=cor_proc, edgecolor='black', alpha=0.8)
             media_p = np.mean(proc_flat)
-            # RESTAURADO: Label Avg + Legenda
             ax_hist_p.axvline(media_p, color='white', linestyle='dashed', linewidth=1, label=f'Avg: {media_p:.1f}')
             ax_hist_p.legend(fontsize=7, facecolor=cor_grid, edgecolor="white", loc='upper right')
             
@@ -253,7 +349,6 @@ class InstanceEditor(ctk.CTkToplevel):
         if len(proc_flat) > 0:
             props = dict(color='white')
             flier_props = dict(marker='o', markerfacecolor='white', markersize=3, linestyle='none', markeredgecolor='none')
-            # RESTAURADO: Widths=0.5
             ax_box_p.boxplot(proc_flat, vert=False, patch_artist=True, 
                              boxprops=dict(facecolor=cor_proc, alpha=0.6), 
                              medianprops=props, capprops=props, whiskerprops=props, flierprops=flier_props,
@@ -267,7 +362,6 @@ class InstanceEditor(ctk.CTkToplevel):
         if len(setup_flat) > 0:
             ax_hist_s.hist(setup_flat, bins=20, color=cor_setup, edgecolor='black', alpha=0.8)
             media_s = np.mean(setup_flat)
-            # RESTAURADO: Label Avg + Legenda
             ax_hist_s.axvline(media_s, color='white', linestyle='dashed', linewidth=1, label=f'Avg: {media_s:.1f}')
             ax_hist_s.legend(fontsize=7, facecolor=cor_grid, edgecolor="white", loc='upper right')
         else: 
@@ -281,7 +375,6 @@ class InstanceEditor(ctk.CTkToplevel):
         if len(setup_flat) > 0:
             props = dict(color='white')
             flier_props = dict(marker='o', markerfacecolor='white', markersize=3, linestyle='none', markeredgecolor='none')
-            # RESTAURADO: Widths=0.5
             ax_box_s.boxplot(setup_flat, vert=False, patch_artist=True, 
                              boxprops=dict(facecolor=cor_setup, alpha=0.6), 
                              medianprops=props, capprops=props, whiskerprops=props, flierprops=flier_props,
@@ -299,54 +392,279 @@ class InstanceEditor(ctk.CTkToplevel):
         self.toolbar_stats = CustomToolbar(self.canvas_stats, self.subfrm_graphs)
         self.toolbar_stats.update(); self.toolbar_stats.pack(side="bottom", fill="x", pady=5)
 
-    def gerar_tabela_estatistica(self, maquina_foco=None):
-        for w in self.subfrm_table.winfo_children(): w.destroy()
-        if not self.dados_instancia["loaded"]: return
+    def _construir_tabela_horizontal(self, parent, titulo, tipo_dado, maquina_foco, cor_titulo):
+        ctk.CTkLabel(parent, text=titulo, font=("Roboto", 13, "bold"), text_color=cor_titulo).pack(pady=(0, 5), anchor="w")
+        
+        grid = ctk.CTkFrame(parent, fg_color="transparent")
+        grid.pack(fill="x", expand=True)
 
-        titulo = "GLOBAL STATISTICS" if maquina_foco is None else f"MACHINE {maquina_foco} STATISTICS"
-        ctk.CTkLabel(self.subfrm_table, text=titulo, font=("Roboto", 14, "bold"), text_color="#5CAEC4").pack(pady=10)
-
-        grid = ctk.CTkFrame(self.subfrm_table, fg_color="transparent")
-        grid.pack(fill="x", expand=True, padx=10, pady=(0, 10))
-
-        cols = ["Scope", "Count", "Min", "Max", "Mean", "Median", "StDev", "Variance"]
+        cols = ["Scope"] + [item[0] for item in self.STATS_CONFIG]
         for i, c in enumerate(cols):
             lbl = ctk.CTkLabel(grid, text=c, font=("Roboto", 11, "bold"), text_color="white", fg_color="#333333", corner_radius=4)
             lbl.grid(row=0, column=i, sticky="ew", padx=1, pady=1, ipady=3)
             grid.grid_columnconfigure(i, weight=1)
 
-        def criar_linha(idx_row, nome, valores, destaque=False):
-            if not valores: return
-            try:
-                v_min = min(valores); v_max = max(valores); v_mean = statistics.mean(valores)
-                v_median = statistics.median(valores); v_count = len(valores)
-                v_stdev = statistics.stdev(valores) if v_count > 1 else 0.0
-                v_var = statistics.variance(valores) if v_count > 1 else 0.0
-            except: return 
-            dados = [nome, f"{v_count}", f"{v_min}", f"{v_max}", f"{v_mean:.2f}", f"{v_median:.2f}", f"{v_stdev:.2f}", f"{v_var:.2f}"]
-            bg = "#1F1F1F" if destaque else ("#2b2b2b" if idx_row % 2 == 0 else "transparent")
-            fg = "#5CAEC4" if destaque else ("silver" if idx_row % 2 == 0 else "gray70")
-            for j, val in enumerate(dados):
-                lbl = ctk.CTkLabel(grid, text=val, font=("Roboto", 11), text_color=fg, fg_color=bg)
-                lbl.grid(row=idx_row, column=j, sticky="ew", padx=1, pady=1)
-
         row_counter = 1
+        
+        def add_row(nome, dados_raw, destaque):
+            stats = self._calcular_stats(dados_raw)
+            if not stats: return
+            
+            valores_fmt = [nome]
+            for _, key, fmt in self.STATS_CONFIG:
+                val = stats[key]
+                txt = f"{val:{fmt}}" if fmt else str(val)
+                if key == 'cv': txt += "%"
+                valores_fmt.append(txt)
 
-        if maquina_foco is None:
-            try:
-                matriz = self.dados_instancia["processing"]
-                flat_global = np.array(matriz).flatten().tolist()
-                criar_linha(row_counter, "GLOBAL (All)", flat_global, destaque=True)
-                row_counter += 1
-            except: pass
+            bg = "#1F1F1F" if destaque else ("#2b2b2b" if row_counter % 2 == 0 else "transparent")
+            fg = cor_titulo if destaque else ("silver" if row_counter % 2 == 0 else "gray70")
 
+            for j, val in enumerate(valores_fmt):
+                cor_txt = fg
+                # Coluna CV é a última
+                if j == 9: 
+                    cv_val = stats['cv']
+                    if cv_val > 15: cor_txt = "#E74C3C"
+                    elif cv_val < 5: cor_txt = "#2ECC71"
+                
+                ctk.CTkLabel(grid, text=val, font=("Roboto", 11), text_color=cor_txt, fg_color=bg).grid(row=row_counter, column=j, sticky="ew", padx=1, pady=1)
+
+        # 1. Linha Global
+        raw_global = self._get_dados_raw(tipo_dado, None)
+        add_row("GLOBAL", raw_global, False) 
+        row_counter += 1
+
+        # 2. Linhas por Máquina
+        for m in range(self.dados_instancia["M"]):
+            raw_m = self._get_dados_raw(tipo_dado, m)
+            add_row(f"Machine {m}", raw_m, False)
+            row_counter += 1
+
+    def _renderizar_modo_global(self):
+        # Tabela 1: Processing
+        COR_PROC_GLOBAL = "#5CAEC4" 
+        frm_proc = ctk.CTkFrame(self.subfrm_table, fg_color="transparent")
+        frm_proc.pack(fill="x", expand=True, padx=0, pady=(0, 20))
+        self._construir_tabela_horizontal(frm_proc, "PROCESSING TIMES (Global Breakdown)", "proc", None, COR_PROC_GLOBAL)
+
+        ttk.Separator(self.subfrm_table, orient="horizontal").pack(fill="x", padx=20, pady=10)
+
+        # Tabela 2: Setup
+        COR_SETUP_GLOBAL = "#E74C3C"
+        frm_setup = ctk.CTkFrame(self.subfrm_table, fg_color="transparent")
+        frm_setup.pack(fill="x", expand=True, padx=0, pady=(10, 0))
+        self._construir_tabela_horizontal(frm_setup, "SETUP TIMES (Global Breakdown)", "setup", None, COR_SETUP_GLOBAL)    
+
+    def _renderizar_modo_maquina(self, maquina_foco):
+        # Container para colocar lado a lado
+        frm_container = ctk.CTkFrame(self.subfrm_table, fg_color="transparent")
+        frm_container.pack(fill="both", expand=True, padx=0, pady=0)
+        frm_container.grid_columnconfigure(0, weight=1)
+        frm_container.grid_columnconfigure(1, weight=1)
+
+        # Cores Locais
+        COR_PROC_LOCAL = "#9C27B0"
+        COR_SETUP_LOCAL = "#FF9800"
+
+        # Lado Esquerdo: Processing
+        frm_left = ctk.CTkFrame(frm_container, fg_color="transparent")
+        frm_left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        self._construir_tabela_vertical(frm_left, f"PROCESSING (Machine {maquina_foco})", "proc", maquina_foco, COR_PROC_LOCAL)
+
+        # Lado Direito: Setup
+        frm_right = ctk.CTkFrame(frm_container, fg_color="transparent")
+        frm_right.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
+        self._construir_tabela_vertical(frm_right, f"SETUP (Machine {maquina_foco})", "setup", maquina_foco, COR_SETUP_LOCAL)
+
+    def _construir_tabela_vertical(self, parent, titulo, tipo_dado, maquina_idx, cor_titulo):
+        ctk.CTkLabel(parent, text=titulo, font=("Roboto", 13, "bold"), text_color=cor_titulo).pack(pady=(0, 5), anchor="w")
+        
+        grid = ctk.CTkFrame(parent, fg_color="#1A1A1D", border_width=1, border_color="#333333")
+        grid.pack(fill="x", expand=True)
+        grid.grid_columnconfigure(1, weight=1)
+
+        raw_data = self._get_dados_raw(tipo_dado, maquina_idx)
+        stats = self._calcular_stats(raw_data)
+
+        if not stats:
+            ctk.CTkLabel(grid, text="No Data Available", text_color="gray").pack(pady=10)
+            return
+
+        for i, (label, key, fmt) in enumerate(self.STATS_CONFIG):
+            bg = "#252525" if i % 2 == 0 else "transparent"
+            lbl_k = ctk.CTkLabel(grid, text=label, font=("Roboto", 11, "bold"), text_color="silver", fg_color=bg, anchor="w")
+            lbl_k.grid(row=i, column=0, sticky="ew", padx=(10, 5), pady=1, ipady=2)
+            
+            val_raw = stats[key]
+            val_txt = f"{val_raw:{fmt}}" if fmt else str(val_raw)
+            if key == 'cv': val_txt += "%"
+            
+            cor_val = "white"
+            if key == 'cv':
+                if val_raw > 15: cor_val = "#E74C3C"
+                elif val_raw < 5: cor_val = "#2ECC71"
+            
+            lbl_v = ctk.CTkLabel(grid, text=val_txt, font=("Roboto", 11), text_color=cor_val, fg_color=bg, anchor="e")
+            lbl_v.grid(row=i, column=1, sticky="ew", padx=(5, 10), pady=1)
+
+    def _calcular_stats(self, lista_valores):
+        """Calcula o dict de estatísticas com conversão segura de tipos."""
+        if not lista_valores: return None
+        
         try:
+            # Converte para float nativo para evitar erros do Statistics com Numpy
+            dados_clean = [float(x) for x in lista_valores]
+            n = len(dados_clean)
+            
+            if n < 2:
+                val = dados_clean[0]
+                return {
+                    'count': n, 'min': val, 'max': val, 'mean': val, 'median': val,
+                    'stdev': 0.0, 'var': 0.0, 'cv': 0.0, 'p95': val
+                }
+
+            media = statistics.mean(dados_clean)
+            desvio = statistics.stdev(dados_clean)
+            cv = (desvio / media * 100) if abs(media) > 1e-9 else 0.0
+            
+            stats = {
+                'count': n,
+                'min': min(dados_clean),
+                'max': max(dados_clean),
+                'mean': media,
+                'median': statistics.median(dados_clean),
+                'stdev': desvio,
+                'var': statistics.variance(dados_clean),
+                'cv': cv,
+                'p95': self.calcular_percentil(dados_clean, 0.95)
+            }
+            return stats
+
+        except Exception:
+            return None
+
+    def gerar_tabela_estatistica(self, maquina_foco=None):
+        for w in self.subfrm_table.winfo_children(): w.destroy()
+        if not self.dados_instancia["loaded"]: return
+
+        layout = self.layout_var.get()
+        
+        C_PROC = "#5CAEC4" if maquina_foco is None else "#9C27B0"
+        C_SETUP = "#E74C3C" if maquina_foco is None else "#FF9800"
+        
+        suffix = "(Global)" if maquina_foco is None else f"(Machine {maquina_foco})"
+        t_proc = f"PROCESSING TIMES {suffix}"
+        t_setup = f"SETUP TIMES {suffix}"
+        
+        use_side_by_side = (maquina_foco is not None)
+        
+        if use_side_by_side:
+            frm_container = ctk.CTkFrame(self.subfrm_table, fg_color="transparent")
+            frm_container.pack(fill="both", expand=True)
+            frm_container.grid_columnconfigure(0, weight=1); frm_container.grid_columnconfigure(1, weight=1)
+            
+            f_left = ctk.CTkFrame(frm_container, fg_color="transparent")
+            f_left.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+            
+            f_right = ctk.CTkFrame(frm_container, fg_color="transparent")
+            f_right.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+            
+            self._construir_tabela_dinamica(f_left, t_proc, "proc", maquina_foco, C_PROC, layout)
+            self._construir_tabela_dinamica(f_right, t_setup, "setup", maquina_foco, C_SETUP, layout)
+            
+        else:
+            f_top = ctk.CTkFrame(self.subfrm_table, fg_color="transparent")
+            f_top.pack(fill="x", pady=(0, 20))
+            self._construir_tabela_dinamica(f_top, t_proc, "proc", maquina_foco, C_PROC, layout)
+            
+            ttk.Separator(self.subfrm_table, orient="horizontal").pack(fill="x", padx=20, pady=10)
+            
+            f_bot = ctk.CTkFrame(self.subfrm_table, fg_color="transparent")
+            f_bot.pack(fill="x", pady=(10, 0))
+            self._construir_tabela_dinamica(f_bot, t_setup, "setup", maquina_foco, C_SETUP, layout)
+
+    def _construir_tabela_dinamica(self, parent, titulo, tipo_dado, maquina_foco, cor_titulo, layout):
+        ctk.CTkLabel(parent, text=titulo, font=("Roboto", 13, "bold"), text_color=cor_titulo).pack(pady=(0, 5), anchor="w")
+        
+        grid = ctk.CTkFrame(parent, fg_color="#1A1A1D", border_width=1, border_color="#333333")
+        grid.pack(fill="x", expand=True)
+
+        lista_entidades = []
+        
+        if maquina_foco is None:
+            lista_entidades.append(("GLOBAL", self._get_dados_raw(tipo_dado, None), False))
             for m in range(self.dados_instancia["M"]):
-                if maquina_foco is not None and m != maquina_foco: continue
-                linha_dados = self.dados_instancia["processing"][m]
-                criar_linha(row_counter, f"Machine {m}", linha_dados, destaque=False)
-                row_counter += 1
-        except: pass
+                lista_entidades.append((f"M{m}", self._get_dados_raw(tipo_dado, m), False))
+        else:
+            lista_entidades.append(("Current", self._get_dados_raw(tipo_dado, maquina_foco), False))
+
+        if layout == "Horizontal":
+            headers = ["Scope"] + [item[0] for item in self.STATS_CONFIG]
+            for i, h in enumerate(headers):
+                bg = "#333333"
+                lbl = ctk.CTkLabel(grid, text=h, font=("Roboto", 11, "bold"), text_color="white", fg_color=bg, corner_radius=4)
+                lbl.grid(row=0, column=i, sticky="ew", padx=1, pady=1, ipady=3)
+                grid.grid_columnconfigure(i, weight=1)
+
+            for r_idx, (nome_entidade, dados_raw, destaque) in enumerate(lista_entidades):
+                row = r_idx + 1
+                stats = self._calcular_stats(dados_raw)
+                
+                bg_row = "#1F1F1F" if destaque else ("#2b2b2b" if row % 2 == 0 else "transparent")
+                fg_row = cor_titulo if destaque else ("silver" if row % 2 == 0 else "gray70")
+                
+                ctk.CTkLabel(grid, text=nome_entidade, font=("Roboto", 11), text_color=fg_row, fg_color=bg_row).grid(row=row, column=0, sticky="ew", padx=1, pady=1)
+                
+                if stats:
+                    for c_idx, (_, key, fmt) in enumerate(self.STATS_CONFIG):
+                        val_raw = stats[key]
+                        val_txt = f"{val_raw:{fmt}}" if fmt else str(val_raw)
+                        if key == 'cv': val_txt += "%"
+                        
+                        cor_cell = fg_row
+                        if key == 'cv':
+                            if val_raw > 15: cor_cell = "#E74C3C"
+                            elif val_raw < 5: cor_cell = "#2ECC71"
+                        
+                        ctk.CTkLabel(grid, text=val_txt, font=("Roboto", 11), text_color=cor_cell, fg_color=bg_row).grid(row=row, column=c_idx+1, sticky="ew", padx=1, pady=1)
+                else:
+                    for c_idx in range(len(self.STATS_CONFIG)):
+                        ctk.CTkLabel(grid, text="-", text_color="gray", fg_color=bg_row).grid(row=row, column=c_idx+1, sticky="ew", padx=1, pady=1)
+
+        else:
+            ctk.CTkLabel(grid, text="Metric", font=("Roboto", 11, "bold"), text_color="white", fg_color="#333333").grid(row=0, column=0, sticky="ew", padx=1, pady=1, ipady=3)
+            grid.grid_columnconfigure(0, weight=0, minsize=80) 
+            
+            for i, (nome_ent, _, _) in enumerate(lista_entidades):
+                ctk.CTkLabel(grid, text=nome_ent, font=("Roboto", 11, "bold"), text_color="white", fg_color="#333333").grid(row=0, column=i+1, sticky="ew", padx=1, pady=1, ipady=3)
+                grid.grid_columnconfigure(i+1, weight=1)
+
+            cache_stats = []
+            for _, dados_raw, _ in lista_entidades:
+                cache_stats.append(self._calcular_stats(dados_raw))
+
+            for r_idx, (label_stat, key, fmt) in enumerate(self.STATS_CONFIG):
+                row = r_idx + 1
+                bg_row = "#2b2b2b" if row % 2 == 0 else "transparent"
+                
+                ctk.CTkLabel(grid, text=label_stat, font=("Roboto", 11, "bold"), text_color="silver", fg_color=bg_row, anchor="w").grid(row=row, column=0, sticky="ew", padx=(10,5), pady=1)
+                
+                for c_idx, stats in enumerate(cache_stats):
+                    val_txt = "-"
+                    cor_cell = "gray"
+                    
+                    if stats:
+                        val_raw = stats[key]
+                        val_txt = f"{val_raw:{fmt}}" if fmt else str(val_raw)
+                        if key == 'cv': val_txt += "%"
+                        
+                        cor_cell = "silver"
+                        if key == 'cv':
+                            if val_raw > 15: cor_cell = "#E74C3C"
+                            elif val_raw < 5: cor_cell = "#2ECC71"
+                            
+                    ctk.CTkLabel(grid, text=val_txt, font=("Roboto", 11), text_color=cor_cell, fg_color=bg_row).grid(row=row, column=c_idx+1, sticky="ew", padx=1, pady=1)
 
     def ao_selecionar_sidebar(self, event):
         sel = self.tree_side.selection()
@@ -368,11 +686,13 @@ class InstanceEditor(ctk.CTkToplevel):
                 self.gerar_graficos_estatisticas(maquina_idx=None)
                 self.gerar_tabela_estatistica(maquina_foco=None)
             else:
-                m_idx = int(tag)
-                self.view_atual = ("stats_mach", tag)
-                self.lbl_context.configure(text=f"Viewing: Machine {m_idx} Statistics")
-                self.gerar_graficos_estatisticas(maquina_idx=m_idx)
-                self.gerar_tabela_estatistica(maquina_foco=m_idx)
+                try:
+                    m_idx = int(tag)
+                    self.view_atual = ("stats_mach", tag)
+                    self.lbl_context.configure(text=f"Viewing: Machine {m_idx} Statistics")
+                    self.gerar_graficos_estatisticas(maquina_idx=m_idx)
+                    self.gerar_tabela_estatistica(maquina_foco=m_idx)
+                except ValueError: pass
             
         else:
             self.frm_stats_container.grid_forget()
@@ -423,8 +743,8 @@ class InstanceEditor(ctk.CTkToplevel):
                 for m in range(M):
                     f.write(f"M{m}\n"); matriz = s_dict.get(m, [])
                     if not matriz: matriz = [[0]*N for _ in range(N)]
-                    for idx_linha, row in enumerate(matriz):
-                        linha_valores = [str(idx_linha)] + [str(v) for v in row]
+                    for row in matriz:
+                        linha_valores = [str(v) for v in row]
                         f.write("\t".join(linha_valores) + "\n")
             messagebox.showinfo("Saved", "Instance saved successfully!", parent=self)
         except Exception as e: messagebox.showerror("Error", f"Failed to save file:\n{e}")
@@ -433,42 +753,91 @@ class InstanceEditor(ctk.CTkToplevel):
         caminho = filedialog.askopenfilename(parent=self, filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
         if not caminho: return
         try:
-            with open(caminho, 'r') as f: linhas = [l.strip() for l in f.readlines() if l.strip()]
+            with open(caminho, 'r') as f: 
+                # Remove espaços em branco das extremidades e linhas vazias
+                linhas = [l.strip() for l in f.readlines() if l.strip()]
+            
             if not linhas: return
-            cabecalho = list(map(int, linhas[0].split())); n_jobs = cabecalho[0]; n_maquinas = cabecalho[1]
+            
+            # --- HEADER & PROCESSING TIMES ---
+            cabecalho = list(map(int, linhas[0].split()))
+            n_jobs = cabecalho[0]
+            n_maquinas = cabecalho[1]
+            
             segunda_linha = list(map(int, linhas[1].split()))
             inicio_proc = 2 if len(segunda_linha) == 1 else 1
+            
             matriz_proc = [[0]*n_jobs for _ in range(n_maquinas)]
+            
             for j in range(n_jobs):
                 if (inicio_proc + j) >= len(linhas): break
                 linha_raw = list(map(int, linhas[inicio_proc + j].split()))
+                
+                # Parsing: maquina tempo maquina tempo ...
                 for k in range(0, len(linha_raw), 2):
                     if k+1 >= len(linha_raw): break
-                    maq_idx = linha_raw[k]; tempo = linha_raw[k+1]
-                    if maq_idx < n_maquinas: matriz_proc[maq_idx][j] = tempo
+                    maq_idx = linha_raw[k]
+                    tempo = linha_raw[k+1]
+                    if maq_idx < n_maquinas: 
+                        matriz_proc[maq_idx][j] = tempo
+            
+            # --- SETUP TIMES (PARSER ROBUSTO) ---
             setups = {} 
-            idx_busca_ssd = inicio_proc + n_jobs; idx_ssd = -1
-            for i in range(idx_busca_ssd, len(linhas)):
-                if linhas[i] == "SSD": idx_ssd = i; break
+            
+            # 1. Encontrar a linha "SSD"
+            idx_ssd = -1
+            for i in range(len(linhas)):
+                if "SSD" in linhas[i].upper(): # Procura SSD em qualquer lugar (case insensitive)
+                    idx_ssd = i
+                    break
+            
             if idx_ssd != -1:
-                idx_atual = idx_ssd + 1; maquina_atual = -1
+                idx_atual = idx_ssd + 1
+                
                 while idx_atual < len(linhas):
-                    conteudo = linhas[idx_atual]
+                    conteudo = linhas[idx_atual].upper().replace(" ", "") # Remove espaços e normaliza
+                    
+                    # Verifica se a linha parece um cabeçalho de máquina (Ex: "M0", "M1", "MACHINE0")
                     if conteudo.startswith("M"):
-                        try: maquina_atual = int(conteudo[1:])
-                        except: maquina_atual = -1
-                        idx_atual += 1
-                        if 0 <= maquina_atual < n_maquinas:
+                        try:
+                            # Tenta extrair o número removendo 'M' ou 'MACHINE'
+                            raw_num = conteudo.replace("MACHINE", "").replace("M", "")
+                            maquina_id = int(raw_num)
+                            
+                            # Lê as próximas N linhas como a matriz dessa máquina
+                            idx_atual += 1 # Pula a linha do "M..."
                             matriz_m = []
+                            
                             for _ in range(n_jobs):
                                 if idx_atual >= len(linhas): break
-                                vals = list(map(int, linhas[idx_atual].split())); matriz_m.append(vals); idx_atual += 1
-                            setups[maquina_atual] = matriz_m
-                        else: pass
-                    else: idx_atual += 1
-            self.dados_instancia = {"loaded": True, "nome": os.path.basename(caminho), "N": n_jobs, "M": n_maquinas, "processing": matriz_proc, "setup": setups}
+                                vals = list(map(int, linhas[idx_atual].split()))
+                                matriz_m.append(vals)
+                                idx_atual += 1
+                                
+                            setups[maquina_id] = matriz_m
+                            # Não incrementa idx_atual aqui pois o loop for já o fez
+                            continue 
+                            
+                        except ValueError:
+                            idx_atual += 1
+                    else:
+                        # Se não é linha de máquina, avança
+                        idx_atual += 1
+            else:
+                print("DEBUG: Nenhum bloco 'SSD' encontrado no arquivo.")
+
+            self.dados_instancia = {
+                "loaded": True, 
+                "nome": os.path.basename(caminho), 
+                "N": n_jobs, 
+                "M": n_maquinas, 
+                "processing": matriz_proc, 
+                "setup": setups
+            }
             self.atualizar_interface_pos_load()
-        except Exception as e: print(f"Erro ao ler instância: {e}"); messagebox.showerror("Error", f"Failed to parse instance:\n{e}")
+            
+        except Exception as e: 
+            messagebox.showerror("Error", f"Failed to parse instance:\n{e}")
 
     def atualizar_interface_pos_load(self):
         dados = self.dados_instancia
