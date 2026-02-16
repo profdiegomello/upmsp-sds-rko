@@ -2,6 +2,7 @@ import customtkinter as ctk
 from tkinter import ttk, filedialog, messagebox
 import tkinter as tk
 import os
+from tkinter.colorchooser import askcolor
 import sys
 import statistics 
 import math 
@@ -121,9 +122,7 @@ class InstanceEditor(ctk.CTkToplevel):
         self.criar_area_estatisticas()
         
     def _get_cor_heatmap(self, valor, v_min, v_max):
-        """
-        Retorna cor Hex baseada em gradiente: Gelo -> Pele -> Vermelho Escuro.
-        """
+        """Retorna cor interpolada: Cinza Claro -> Cor Selecionada."""
         if v_max == v_min: return None
         
         try:
@@ -131,57 +130,58 @@ class InstanceEditor(ctk.CTkToplevel):
         except ZeroDivisionError:
             return None
         
-        # --- DEFINIÇÃO DA PALETA (RGB) ---
+        # Cor Inicial (Baixo): Cinza Claro (Gelo/Fundo Neutro)
+        # Usando (230, 230, 230) dá um cinza bem claro, quase branco
+        start_rgb = (230, 230, 230) 
         
-        # 1. Mínimo: "Cinza Gelo" (Frio/Neutro)
-        # Ex: (220, 225, 230) é um cinza quase branco, levemente azulado
-        low = (220, 226, 230)  
+        # Cor Final (Alto): A cor escolhida pelo usuário
+        end_rgb = self.hex_to_rgb(self.cor_heatmap_atual)
         
-        # 2. Médio: "Tom de Pele/Salmão" (Transição Quente)
-        # Ex: (240, 160, 110) traz aquela cor de pele bronzeada/salmão
-        mid = (240, 160, 110)   
-        
-        # 3. Máximo: "Vermelho Escuro/Vinho" (Crítico)
-        # Ex: (130, 20, 20) é um vermelho bem fechado
-        high = (140, 20, 20)    
-        
-        r, g, b = 0, 0, 0
-        
-        # Interpolação Linear por canais
-        if ratio < 0.5:
-            # Do Gelo (0.0) até a Pele (0.5)
-            p = ratio * 2
-            r = int(low[0] + (mid[0] - low[0]) * p)
-            g = int(low[1] + (mid[1] - low[1]) * p)
-            b = int(low[2] + (mid[2] - low[2]) * p)
-        else:
-            # Da Pele (0.5) até o Vermelho Escuro (1.0)
-            p = (ratio - 0.5) * 2
-            r = int(mid[0] + (high[0] - mid[0]) * p)
-            g = int(mid[1] + (high[1] - mid[1]) * p)
-            b = int(mid[2] + (high[2] - mid[2]) * p)
+        # Interpolação Linear Simples
+        r = int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio)
+        g = int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio)
+        b = int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio)
             
         return f"#{r:02x}{g:02x}{b:02x}"
+
+    def hex_to_rgb(self, hex_color):
+        """Converte '#RRGGBB' para tupla (r, g, b)"""
+        hex_color = hex_color.lstrip('#')
+        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+    def escolher_cor_heatmap(self):
+        # Abre o seletor nativo
+        color = askcolor(color=self.cor_heatmap_atual, title="Choose Heatmap Max Color", parent=self)[1]
+
+        
+        if color:
+            self.cor_heatmap_atual = color
+            
+            # Atualiza a cor do botãozinho
+            self.btn_cor_picker.configure(fg_color=color, hover_color=color)
+            
+            # Atualiza a cor do checkbox para combinar
+            self.chk_heatmap.configure(fg_color=color)
+            
+            # Se o heatmap estiver ligado, reaplica imediatamente
+            if self.var_heatmap.get():
+                self.aplicar_heatmap_visual()
 
     def aplicar_heatmap_visual(self):
         if not self.sheet or not self.dados_instancia["loaded"]: return
         
-        # 1. Limpeza (Reset)
         try:
             self.sheet.dehighlight_all() 
-        except: 
-            pass 
+        except: pass 
 
         if not self.var_heatmap.get():
             self.sheet.refresh()
             return
 
-        # 2. Aplicação
         try:
             data = self.sheet.get_sheet_data()
             if not data: return
             
-            # Coleta valores numéricos
             vals = []
             for row in data:
                 for c in row:
@@ -193,45 +193,42 @@ class InstanceEditor(ctk.CTkToplevel):
             v_min = min(vals)
             v_max = max(vals)
             
-            # Itera e pinta
             for r_idx, row in enumerate(data):
                 for c_idx, val in enumerate(row):
                     try:
                         v = float(val)
-                        
-                        # Ignora zeros no Setup
                         if v == 0 and self.view_atual[0] == "setup":
                             continue
                             
-                        # Calcula a cor do Fundo
-                        cor_bg = self._get_cor_heatmap(v, v_min, v_max)
+                        # Pega a cor de fundo calculada
+                        cor_bg_hex = self._get_cor_heatmap(v, v_min, v_max)
                         
-                        if cor_bg:
-                            # --- LÓGICA DE CONTRASTE DO TEXTO ---
-                            # Calcula a proporção (0.0 a 1.0) novamente
-                            ratio = (v - v_min) / (v_max - v_min) if v_max != v_min else 0
+                        if cor_bg_hex:
+                            # Calcula LUMINOSIDADE para decidir a cor do texto
+                            # Converte hex de volta para RGB para calcular
+                            bg_rgb = self.hex_to_rgb(cor_bg_hex)
                             
-                            # Se ratio > 0.7 (70%), o fundo já é um vermelho bem escuro -> Texto Branco
-                            # Caso contrário (Gelo ou Pele) -> Texto Preto
-                            cor_texto = "white" if ratio > 0.7 else "black"
+                            # Fórmula de Luminância (Percepção humana)
+                            luminance = (0.299 * bg_rgb[0] + 0.587 * bg_rgb[1] + 0.114 * bg_rgb[2])
+                            
+                            # Se for escuro (< 128), texto branco. Se claro, texto preto.
+                            # Usamos 100 como limiar para garantir bom contraste em cores médias
+                            cor_texto = "white" if luminance < 130 else "black"
                             
                             self.sheet.highlight_cells(
                                 row=r_idx, 
                                 column=c_idx, 
-                                bg=cor_bg, 
-                                fg=cor_texto, # Aplica a cor do texto
+                                bg=cor_bg_hex, 
+                                fg=cor_texto,
                                 redraw=False
                             )
                             
-                    except ValueError:
-                        pass 
+                    except ValueError: pass 
 
             self.sheet.refresh() 
             
         except Exception as e:
-            print(f"ERRO CRÍTICO no Heatmap: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"ERRO Heatmap: {e}")
 
     def ao_fechar(self):
         self.destroy()
@@ -285,26 +282,46 @@ class InstanceEditor(ctk.CTkToplevel):
         frm_btns = ctk.CTkFrame(self.frm_main, fg_color="transparent", height=50)
         frm_btns.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 10))
         
-        # Botões existentes
+        # Botões Load/Save
         btn_load = ctk.CTkButton(frm_btns, text="LOAD INSTANCE", fg_color=CORES_EDITOR["btn_primary"], hover_color=CORES_EDITOR["btn_hover"], width=120, height=35, font=("Roboto", 12, "bold"), command=self.acao_load_instance)
         btn_load.pack(side="left", padx=(0, 10))
         
         btn_save = ctk.CTkButton(frm_btns, text="SAVE", fg_color=CORES_EDITOR["btn_primary"], hover_color=CORES_EDITOR["btn_hover"], width=80, height=35, font=("Roboto", 12, "bold"), command=self.acao_save_instance)
         btn_save.pack(side="left", padx=(0, 20))
 
-        # --- NOVO CHECKBOX HEATMAP ---
+        # --- HEATMAP CONTROLS ---
+        
+        # 1. Checkbox
         self.var_heatmap = ctk.BooleanVar(value=False)
         self.chk_heatmap = ctk.CTkCheckBox(
             frm_btns, 
-            text="Heatmap Mode", 
+            text="Heatmap", 
             variable=self.var_heatmap,
-            command=self.aplicar_heatmap_visual, # Chama a função ao clicar
+            command=self.aplicar_heatmap_visual,
             font=("Roboto", 12, "bold"),
             text_color="white",
-            fg_color="#E74C3C", # Cor do check quando marcado (Vermelho pra combinar com 'crítico')
+            fg_color="#E74C3C", # Será atualizado dinamicamente
             hover_color="#C0392B"
         )
-        self.chk_heatmap.pack(side="left")
+        self.chk_heatmap.pack(side="left", padx=(0, 10))
+
+        # 2. Cor Padrão Inicial (Vermelho Crítico)
+        self.cor_heatmap_atual = "#E74C3C" 
+
+        # 3. Botão "Color Picker" (Quadrado colorido)
+        self.btn_cor_picker = ctk.CTkButton(
+            frm_btns,
+            text="", # Sem texto, só cor
+            width=30,
+            height=30,
+            fg_color=self.cor_heatmap_atual, # Mostra a cor atual
+            hover_color=self.cor_heatmap_atual, # (Opcional: escurecer um pouco)
+            command=self.escolher_cor_heatmap,
+            corner_radius=4,
+            border_width=1,
+            border_color="white"
+        )
+        self.btn_cor_picker.pack(side="left")
 
     def criar_info_block(self):
         frm_info = ctk.CTkFrame(self.frm_main, fg_color="transparent")
