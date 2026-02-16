@@ -250,7 +250,16 @@ class InstanceCreator(ctk.CTkToplevel):
 
         if Sheet:
             self.sheet = Sheet(self.sheet_container, headers=[], data=[], theme="dark", empty_horizontal=0, empty_vertical=0)
-            self.sheet.enable_bindings(("single_select", "row_select", "column_select", "drag_select", "arrowkeys"))
+            self.sheet.enable_bindings(("single_select",
+                                         "row_select",
+                                         "column_select",
+                                         "drag_select",
+                                         "arrowkeys",
+                                         "edit_cell",      # Permite editar com duplo clique ou digitando
+                                         "delete",         # Permite deletar valor com Del
+                                         "copy",           # Ctrl+C
+                                         "paste",          # Ctrl+V
+                                         "undo"))
             self.sheet.set_options(
                 table_bg = CORES_CREATOR["sheet_bg"],
                 table_fg = CORES_CREATOR["sheet_fg"],
