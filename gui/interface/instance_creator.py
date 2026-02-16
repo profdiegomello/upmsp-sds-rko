@@ -4,6 +4,7 @@ import tkinter as tk
 import os
 import sys
 import random
+from PIL import Image # Import necessario para imagens
 
 # Tenta importar o tksheet
 try:
@@ -41,7 +42,7 @@ class InstanceCreator(ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self.ao_fechar)
         
         self.title("RKO Instance Creator")
-        self.geometry("1200x700") 
+        self.geometry("1250x700") 
         
         if os.name == 'nt':
             try: self.after(200, lambda: self.iconbitmap())
@@ -55,6 +56,10 @@ class InstanceCreator(ctk.CTkToplevel):
             "processing": [], 
             "setup": {} 
         }
+        
+        # Carregar icones (Cache)
+        self.icon_save = None
+        self.carregar_icones()
         
         # Rastreia o que está selecionado na árvore: ("tipo", "tag")
         self.selecao_atual = ("general", "root")
@@ -91,6 +96,27 @@ class InstanceCreator(ctk.CTkToplevel):
 
     def ao_fechar(self):
         self.destroy()
+
+    def carregar_icones(self):
+        """Carrega a imagem discket.png se existir."""
+        try:
+            # Pega o caminho do diretório onde o script está
+            caminho_script = os.path.dirname(os.path.abspath(__file__))
+            
+            # --- ALTERAÇÃO AQUI ---
+            # Sobe um nível (pega o diretório pai do script)
+            caminho_pai = os.path.dirname(caminho_script)
+            
+            # Agora busca assets a partir do pai
+            caminho_img = os.path.join(caminho_pai, "assets", "discket.png")
+            # ----------------------
+            
+            # Carrega e redimensiona
+            pil_img = Image.open(caminho_img)
+            self.icon_save = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(20, 20))
+        except Exception as e:
+            print(f"Aviso: Não foi possível carregar a imagem em {caminho_img}. Erro: {e}")
+            self.icon_save = None
 
     # SIDEBAR 
     def criar_sidebar(self):
@@ -144,31 +170,37 @@ class InstanceCreator(ctk.CTkToplevel):
         # Separador visual
         ctk.CTkFrame(self.frm_header, width=2, height=30, fg_color="gray30").pack(side="left", padx=15)
 
-        # Randomize Selected
-        self.btn_rand_sel = ctk.CTkButton(self.frm_header, text="RANDOMIZE SELECTED", width=120,
+        # --- BOTOES ---
+        
+        # 1. Randomize Selected
+        self.btn_rand_sel = ctk.CTkButton(self.frm_header, text="RANDOMIZE SELECTED CELLS", width=140,
                                           fg_color=CORES_CREATOR["btn_primary"], hover_color=CORES_CREATOR["btn_hover"],
                                           state="disabled", command=self.acao_randomizar_selecionado)
-        self.btn_rand_sel.pack(side="left", padx=(0, 10))
+        self.btn_rand_sel.pack(side="left", padx=(0, 5))
 
-        # Randomize Processing
-        self.btn_rand_proc = ctk.CTkButton(self.frm_header, text="RANDOMIZE PROCESSING", width=130,
+        # 2. Randomize Tab
+        self.btn_rand_tab = ctk.CTkButton(self.frm_header, text="RANDOMIZE TAB", width=120,
                                           fg_color=CORES_CREATOR["btn_primary"], hover_color=CORES_CREATOR["btn_hover"],
-                                          state="disabled", command=self.acao_randomizar_apenas_processing)
-        self.btn_rand_proc.pack(side="left", padx=(0, 10))
+                                          state="disabled", command=self.acao_randomizar_tab)
+        self.btn_rand_tab.pack(side="left", padx=(0, 5))
 
-        # Randomize All Setups
-        self.btn_rand_setups = ctk.CTkButton(self.frm_header, text="RANDOMIZE ALL SETUPS", width=130,
-                                          fg_color=CORES_CREATOR["btn_primary"], hover_color=CORES_CREATOR["btn_hover"],
-                                          state="disabled", command=self.acao_randomizar_apenas_setups)
-        self.btn_rand_setups.pack(side="left", padx=(0, 20))
+        # 3. Randomize ALL SETUPS
+        self.btn_rand_all_setups = ctk.CTkButton(self.frm_header, text="RANDOMIZE ALL SETUPS", width=160,
+                                          fg_color=CORES_CREATOR["btn_action"], hover_color=CORES_CREATOR["btn_action_hover"],
+                                          state="disabled", command=self.acao_randomizar_todos_setups_global)
+        self.btn_rand_all_setups.pack(side="left", padx=(0, 10))
 
-        # Save 
-        self.btn_save = ctk.CTkButton(self.frm_header, text="💾 SAVE", width=100,
+        # Save Button (COM IMAGEM)
+        self.btn_save = ctk.CTkButton(self.frm_header, 
+                                      text="SAVE", 
+                                      image=self.icon_save, # Imagem carregada
+                                      compound="left",      # Imagem a esquerda do texto
+                                      width=90,
                                       fg_color="green", hover_color="darkgreen",
                                       state="disabled", command=self.acao_salvar_arquivo)
         self.btn_save.pack(side="right", padx=15)
         
-        # Label de Status (Feedback sutil)
+        # Label de Status
         self.lbl_status = ctk.CTkLabel(self.frm_header, text="", font=("Roboto", 12, "italic"))
         self.lbl_status.pack(side="right", padx=10)
 
@@ -259,7 +291,8 @@ class InstanceCreator(ctk.CTkToplevel):
 
         if tipo == "general":
             self.mostrar_general()
-            self.btn_rand_sel.configure(state="disabled") 
+            self.btn_rand_sel.configure(state="disabled")
+            self.btn_rand_tab.configure(state="disabled")
         else:
             if not self.dados["created"]:
                 self.tree.selection_set(self.node_general)
@@ -267,6 +300,7 @@ class InstanceCreator(ctk.CTkToplevel):
                 return
             
             self.btn_rand_sel.configure(state="normal")
+            self.btn_rand_tab.configure(state="normal")
             
             self.mostrar_sheet()
             if tipo == "proc":
@@ -319,94 +353,120 @@ class InstanceCreator(ctk.CTkToplevel):
         for m in range(M):
             self.tree.insert(self.node_setup, "end", text=f"    📁 M{m}", values=("setup", f"{m}"))
 
-        # 3. Habilita Botões
-        self.btn_rand_proc.configure(state="normal")
-        self.btn_rand_setups.configure(state="normal")
+        # 3. Habilita Botões Globais
+        self.btn_rand_all_setups.configure(state="normal")
         self.btn_save.configure(state="normal")
         
         self.lbl_status.configure(text=f"Structure ({M}x{N}) generated", text_color=CORES_CREATOR["success_text"])
-
-        # --- NOVAS FUNCIONALIDADES DE UX ---
         
-        # A) Expande a árvore de Setup
+        # Expande e seleciona Proc
         self.tree.item(self.node_setup, open=True)
-
-        # B) Seleciona e foca na aba Processing Times automaticamente
-        self.selecao_atual = ("proc", "root")     # Atualiza estado interno
-        self.tree.selection_set(self.node_proc)   # Marca o item na árvore visualmente
-        self.carregar_proc_sheet()                # Carrega os dados na tabela
-        self.mostrar_sheet()                      # Troca a view (sai do General, vai pra Sheet)
+        self.selecao_atual = ("proc", "root")     
+        self.tree.selection_set(self.node_proc)   
+        self.carregar_proc_sheet()                
+        self.mostrar_sheet()                      
+        
+        # Habilita botões contextuais também
+        self.btn_rand_sel.configure(state="normal")
+        self.btn_rand_tab.configure(state="normal")
 
     def acao_randomizar_selecionado(self):
+        """Randomiza apenas as células selecionadas na tela atual, respeitando a diagonal se for setup."""
+        if not self.dados["created"] or not Sheet: return
+        
+        v_min, v_max = self._get_range()
+        if v_min is None: return
+
+        try:
+            selecionados = self.sheet.get_selected_cells(get_rows=True, get_columns=True, sort_by_row=True)
+        except:
+            return
+
+        if not selecionados:
+            self.lbl_status.configure(text="No cells selected.", text_color="orange")
+            return
+
+        tipo, tag = self.selecao_atual
+        count = 0
+        
+        for row, col in selecionados:
+            if tipo == "setup" and row == col:
+                novo_valor = 0
+            else:
+                novo_valor = random.randint(v_min, v_max)
+
+            # 1. Atualiza Visual
+            self.sheet.set_cell_data(row, col, value=novo_valor, redraw=False)
+
+            # 2. Atualiza Dados Internos
+            if tipo == "proc":
+                self.dados["processing"][row][col] = novo_valor
+            elif tipo == "setup":
+                m_id = int(tag)
+                self.dados["setup"][m_id][row][col] = novo_valor
+            
+            count += 1
+
+        self.sheet.refresh()
+        self.lbl_status.configure(text=f"Randomized {count} selected cells.", text_color=CORES_CREATOR["success_text"])
+
+    def acao_randomizar_tab(self):
+        """Randomiza TODOS os dados da aba atual (Processing inteiro OU Setup M(x) inteiro)."""
         if not self.dados["created"]: return
         v_min, v_max = self._get_range()
         if v_min is None: return
 
         tipo, tag = self.selecao_atual
         N, M = self.dados["N"], self.dados["M"]
-        msg = ""
-
+        
         if tipo == "proc":
-            # Randomiza Processing Times
+            # Contexto: Tabela de Processing Times (M x N)
             for r in range(M):
                 for c in range(N):
                     self.dados["processing"][r][c] = random.randint(v_min, v_max)
-            msg = "Selected: Processing Times Randomized"
+            
             self.carregar_proc_sheet()
+            self.lbl_status.configure(text="Tab: Processing Times randomized.", text_color=CORES_CREATOR["success_text"])
 
         elif tipo == "setup" and tag != "root":
-            # Randomiza Setup da Maquina Especifica
+            # Contexto: Tabela de Setup de UMA máquina específica (N x N)
             m_id = int(tag)
             for r in range(N):
                 for c in range(N):
-                    if r == c: self.dados["setup"][m_id][r][c] = 0
-                    else: self.dados["setup"][m_id][r][c] = random.randint(v_min, v_max)
-            msg = f"Selected: Setup Times for M{m_id} Randomized"
+                    if r == c: 
+                        self.dados["setup"][m_id][r][c] = 0
+                    else: 
+                        self.dados["setup"][m_id][r][c] = random.randint(v_min, v_max)
+            
             self.carregar_setup_sheet(m_id)
+            self.lbl_status.configure(text=f"Tab: Setup Times for M{m_id} randomized.", text_color=CORES_CREATOR["success_text"])
 
         else:
-            self.lbl_status.configure(text="Select a valid table on the left.", text_color="orange")
-            return
+            self.lbl_status.configure(text="Cannot randomize context (General).", text_color="orange")
 
-        self.lbl_status.configure(text=msg, text_color=CORES_CREATOR["success_text"])
-
-    def acao_randomizar_apenas_processing(self):
+    def acao_randomizar_todos_setups_global(self):
+        """Randomiza os Setups de TODAS as máquinas de uma só vez."""
         if not self.dados["created"]: return
         v_min, v_max = self._get_range()
         if v_min is None: return
 
         M, N = self.dados["M"], self.dados["N"]
 
-        # Randomiza APENAS Processing
-        for r in range(M):
-            for c in range(N):
-                self.dados["processing"][r][c] = random.randint(v_min, v_max)
-        
-        # Refresh se estiver vendo processing
-        tipo, _ = self.selecao_atual
-        if tipo == "proc": self.carregar_proc_sheet()
-
-        self.lbl_status.configure(text="Processing Times randomized successfully", text_color=CORES_CREATOR["success_text"])
-
-    def acao_randomizar_apenas_setups(self):
-        if not self.dados["created"]: return
-        v_min, v_max = self._get_range()
-        if v_min is None: return
-
-        M, N = self.dados["M"], self.dados["N"]
-
-        # Randomiza APENAS Setups (todas as maquinas)
+        # Loop em todas as máquinas
         for m in range(M):
             for r in range(N):
                 for c in range(N):
-                    if r == c: self.dados["setup"][m][r][c] = 0
-                    else: self.dados["setup"][m][r][c] = random.randint(v_min, v_max)
+                    if r == c: 
+                        self.dados["setup"][m][r][c] = 0
+                    else: 
+                        self.dados["setup"][m][r][c] = random.randint(v_min, v_max)
 
-        # Refresh se estiver vendo algum setup
+        # Se a visão atual for uma aba de Setup, atualiza ela pra refletir a mudança
         tipo, tag = self.selecao_atual
-        if tipo == "setup" and tag != "root": self.carregar_setup_sheet(int(tag))
+        if tipo == "setup" and tag != "root":
+            self.carregar_setup_sheet(int(tag))
 
-        self.lbl_status.configure(text="All Setup Times randomized successfully", text_color=CORES_CREATOR["success_text"])
+        self.lbl_status.configure(text=f"SUCCESS: Randomized setups for ALL {M} machines.", text_color=CORES_CREATOR["success_text"])
 
     def acao_salvar_arquivo(self):
         if not self.dados["created"]: return
@@ -448,7 +508,6 @@ class InstanceCreator(ctk.CTkToplevel):
             
             self.lbl_status.configure(text=f"Saved to: {os.path.basename(caminho)}", text_color=CORES_CREATOR["success_text"])
             
-            # Feedback Visual
             tk.messagebox.showinfo("Success", "Instance saved successfully!", parent=self)
 
         except Exception as e:
