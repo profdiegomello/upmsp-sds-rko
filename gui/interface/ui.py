@@ -418,21 +418,36 @@ def atualizar_grafico_comparativo():
     ocultos_pelo_olho = 0
 
     for chave, dados in HISTORICO_DATA.items():
-        # 1. Filtros da Interface (Dropdowns/Checkboxes)
+        # 1. Filtros da Interface (Dropdowns)
         if f_inst != "all" and dados['meta_nome'] != f_inst: continue
         if f_dec != "all" and dados['meta_decoder'].lower() != f_dec.lower(): continue
         
+        # 2. Filtro de Agentes (LÓGICA CORRIGIDA E SINCRONIZADA COM OS CARDS)
         if agentes_requeridos:
-            raw = dados.get('meta_agentes', '')
-            lst = [ag for ag in raw.split("-") if ag]
-            if not all(req in lst for req in agentes_requeridos): continue
-        
-        # 2. Filtro de Visibilidade (Botão Olho)
+            raw_agentes = dados.get('meta_agentes', [])
+            
+            # Garante lista
+            if isinstance(raw_agentes, str):
+                lista_no_historico = [x.strip() for x in raw_agentes.split("-") if x.strip()]
+            else:
+                lista_no_historico = raw_agentes
+
+            # Limpa nomes (Remove [Params])
+            nomes_limpos = []
+            for item in lista_no_historico:
+                nome_base = item.split("[")[0].strip()
+                nomes_limpos.append(nome_base)
+
+            # Lógica AND (all)
+            if not all(req in nomes_limpos for req in agentes_requeridos): 
+                continue
+
+        # 3. Filtro de Visibilidade (Botão Olho)
         if chave in INSTANCIAS_OCULTAS:
             ocultos_pelo_olho += 1
             continue
 
-        # 3. Plotagem
+        # 4. Plotagem
         raw_x, raw_y = dados['x'], dados['y']
         if not raw_x: continue
         
@@ -449,7 +464,6 @@ def atualizar_grafico_comparativo():
     titulo = f"Convergence Curves (Visible: {plotados} | Hidden: {ocultos_pelo_olho})"
     if CHAVE_SELECIONADA_ATUAL and CHAVE_SELECIONADA_ATUAL in HISTORICO_DATA:
         if CHAVE_SELECIONADA_ATUAL not in INSTANCIAS_OCULTAS:
-             # Se a selecionada estiver visível, mostra info extra no título
              dados_sel = HISTORICO_DATA[CHAVE_SELECIONADA_ATUAL]
              best_val = min(dados_sel['y']) if dados_sel['y'] else "?"
              titulo = f"Selected: {dados_sel['meta_nome']} (Best: {best_val})"
@@ -457,12 +471,8 @@ def atualizar_grafico_comparativo():
     AX_HIST_LINHA.set_title(titulo, color="white", fontsize=10)
     AX_HIST_LINHA.grid(True, linestyle='--', alpha=0.3)
 
-    # --- CORREÇÃO DO ZOOM AUTOMÁTICO ---
-    # Recalcula os limites dos eixos baseados nos dados plotados
     AX_HIST_LINHA.relim()
-    # Aplica os novos limites para ajustar a visualização
     AX_HIST_LINHA.autoscale_view()
-    # -----------------------------------
 
     CANVAS_HIST_LINHA.draw()
 
@@ -479,8 +489,6 @@ def aplicar_filtros_historico(evento=None):
     f_inst = VAR_FILTRO_INSTANCIA.get()
     f_dec = VAR_FILTRO_DECODER.get()
     f_sort = VAR_ORDENACAO_HISTORICO.get()
-    
-    # Lista de agentes marcados no checkbox (Ex: ['BRKGA', 'PSO'])
     agentes_requeridos = [nome for nome, var in VARS_FILTRO_AGENTES.items() if var.get()]
     
     if COMBO_INSTANCIAS and HISTORICO_DATA:
@@ -492,34 +500,35 @@ def aplicar_filtros_historico(evento=None):
         if f_inst != "all" and dados['meta_nome'] != f_inst: continue
         if f_dec != "all" and dados['meta_decoder'].lower() != f_dec.lower(): continue
         
-        # --- CORREÇÃO DO FILTRO DE AGENTES ---
+        # --- FILTRO DE AGENTES (LÓGICA 'E' / 'AND') ---
         if agentes_requeridos:
             raw_agentes = dados.get('meta_agentes', [])
             
-            # 1. Garante que temos uma lista (para compatibilidade com dumps antigos)
+            # 1. Padronização para lista
             if isinstance(raw_agentes, str):
-                lista_no_historico = [x.strip() for x in raw_agentes.split("-") if x]
+                # Remove espaços extras ao dividir
+                lista_no_historico = [x.strip() for x in raw_agentes.split("-") if x.strip()]
             else:
-                lista_no_historico = raw_agentes # Já é a lista detalhada ["BRKGA [Pars...]", ...]
+                lista_no_historico = raw_agentes 
 
-            # 2. Normaliza: Remove os detalhes [...] para comparar apenas o nome base
-            # Ex: Transforma "BRKGA [Threads:4]" em "BRKGA"
+            # 2. Limpeza profunda (Remove [Params] e espaços)
             nomes_limpos_no_historico = []
             for item in lista_no_historico:
-                nome_base = item.split("[")[0].strip() # Pega tudo antes do '['
+                # Pega nome base, remove colchetes e espaços
+                nome_base = item.split("[")[0].strip()
                 nomes_limpos_no_historico.append(nome_base)
 
-            # 3. Verifica se TODOS os requeridos estão presentes na lista limpa
-            # (Lógica AND: Se marcou BRKGA e PSO, tem que ter os dois na execução)
+            # 3. Lógica AND (all):
+            # O experimento deve conter TODOS os agentes marcados na checkbox.
+            # Ex: Se marcou BRKGA e SA, experimentos só com BRKGA serão ocultados.
             if not all(req in nomes_limpos_no_historico for req in agentes_requeridos):
                 continue
-        # -------------------------------------
+        # ----------------------------------------------
 
         chaves_filtradas.append(chave)
 
     def get_mksp(k): return min(HISTORICO_DATA[k]['y']) if HISTORICO_DATA[k]['y'] else float('inf')
     
-    # --- (ORDENAÇÃO - MANTIDA IGUAL) ---
     if f_sort == "Descending Date/Hour":
         try: chaves_filtradas.sort(key=lambda k: datetime.strptime(HISTORICO_DATA[k]['meta_hora'], "%d/%m/%y %H:%M:%S"), reverse=True)
         except: chaves_filtradas.sort()
@@ -532,19 +541,59 @@ def aplicar_filtros_historico(evento=None):
 
     atualizar_grafico_comparativo()
 
-    # --- (RESTO DA FUNÇÃO IGUAL: ESTADO_HOVER, CRIAÇÃO DE CARDS, TOOLTIPS...) ---
-    # Copie o restante da função da nossa última versão (que tem os tooltips e icones pretos)
-    # Vou resumir aqui para não ficar gigante, mas o segredo foi o bloco acima.
-    
+    # --- FUNÇÃO INTERNA DO EDITOR DE NOTAS (POSICIONADA) ---
+    def abrir_editor_notas(k, widget_origem=None):
+        top = ctk.CTkToplevel(FRAME_LISTA_HISTORICO)
+        top.title("Experiment Notes")
+        top.geometry("400x300")
+        
+        posicionado = False
+        if widget_origem:
+            try:
+                x = widget_origem.winfo_rootx()
+                y = widget_origem.winfo_rooty()
+                top.geometry(f"+{x}+{y}")
+                posicionado = True
+            except: pass
+        
+        if not posicionado:
+            try:
+                x = top.winfo_screenwidth() // 2 - 200
+                y = top.winfo_screenheight() // 2 - 150
+                top.geometry(f"+{x}+{y}")
+            except: pass
+
+        top.transient(FRAME_LISTA_HISTORICO.winfo_toplevel())
+        top.focus_force()
+        
+        ctk.CTkLabel(top, text=f"Notes for: {HISTORICO_DATA[k]['meta_nome']}", font=("Roboto", 12, "bold")).pack(pady=10)
+        
+        txt = ctk.CTkTextbox(top, width=360, height=180, border_width=2)
+        txt.pack(pady=5)
+        
+        nota_atual = HISTORICO_DATA[k].get("user_notes", "")
+        txt.insert("0.0", nota_atual)
+        
+        def salvar_e_fechar():
+            conteudo = txt.get("0.0", "end").strip()
+            HISTORICO_DATA[k]["user_notes"] = conteudo
+            top.destroy()
+            aplicar_filtros_historico() 
+            
+        ctk.CTkButton(top, text="SAVE NOTE", command=salvar_e_fechar, fg_color=CORES["primaria"]).pack(pady=10)
+    # -----------------------------------------------
+
     estado_hover_global = [] 
+    
     def limpar_hover_anterior():
         if estado_hover_global:
             saved = estado_hover_global[0]
-            f_ant, b_ant, b_eye, b_trash, c_bg_ant, c_txt_ant, k_ant = saved
+            f_ant, b_ant, b_eye, b_trash, b_write, c_bg_ant, c_txt_ant, k_ant = saved
             try:
                 if f_ant.winfo_exists(): f_ant.configure(fg_color=c_bg_ant)
                 if b_ant.winfo_exists(): b_ant.configure(text_color=c_txt_ant, hover_color=c_bg_ant)
                 if b_trash.winfo_exists(): b_trash.configure(image=ICONES_UI["trash"])
+                if b_write.winfo_exists(): b_write.configure(image=ICONES_UI["write"])
                 if b_eye.winfo_exists():
                     sufixo = "eye_closed" if k_ant in INSTANCIAS_OCULTAS else "eye"
                     b_eye.configure(image=ICONES_UI[sufixo])
@@ -561,23 +610,20 @@ def aplicar_filtros_historico(evento=None):
         cor_txt_hover = "#000000"
         
         card_frame = ctk.CTkFrame(FRAME_LISTA_HISTORICO, fg_color=cor_bg_normal, corner_radius=6)
-        card_frame.pack(fill="x", pady=2, padx=5)
+        card_frame.pack(fill="x", pady=4, padx=5)
         card_frame.grid_columnconfigure(0, weight=1)
         card_frame.grid_columnconfigure(1, weight=0)
 
-        # Preparação do Texto (COM SUPORTE A NOVA LISTA DETALHADA)
+        # Preparação do Texto
         raw_agentes = dados.get('meta_agentes', 'N/A')
         if isinstance(raw_agentes, list): lista_full_detalhada = raw_agentes
         else: lista_full_detalhada = [x for x in str(raw_agentes).split("-") if x]
 
-        # 1. Para o CARD (Resumo Limpo)
         lista_nomes_curtos = []
         detalhes_formatados = []
         for item in lista_full_detalhada:
             nome_limpo = item.split("[")[0].strip()
             lista_nomes_curtos.append(nome_limpo)
-            
-            # Formata para o Tooltip
             if "[" in item:
                 nome, params = item.split("[", 1)
                 params = params.rstrip("]")
@@ -588,7 +634,9 @@ def aplicar_filtros_historico(evento=None):
         agentes_str_card = ", ".join(lista_nomes_curtos)
         if len(agentes_str_card) > 25: agentes_str_card = agentes_str_card[:25] + "..."
 
-        texto_completo_tooltip = f"Instance: {dados['meta_nome']}\nDecoder: {dados['meta_decoder']}\nDate: {dados['meta_hora']}\n\nDetailed Configuration:\n" + "\n".join(detalhes_formatados)
+        tem_nota = "📝 Has Notes" if dados.get("user_notes") else ""
+
+        texto_completo_tooltip = f"Instance: {dados['meta_nome']}\nDecoder: {dados['meta_decoder']}\nDate: {dados['meta_hora']}\n{tem_nota}\n\nDetailed Configuration:\n" + "\n".join(detalhes_formatados)
         
         melhor = min(dados['y']) if dados['y'] else "?"
         hora = dados.get('meta_hora', '').split(" ")[1]
@@ -605,9 +653,11 @@ def aplicar_filtros_historico(evento=None):
         
         CTkTooltip(btn_info, text=texto_completo_tooltip, delay=500)
 
-        frame_botoes = ctk.CTkFrame(card_frame, fg_color="transparent", height=20)
-        frame_botoes.grid(row=0, column=1, sticky="ne", padx=2, pady=2)
+        # Frame lateral
+        frame_botoes = ctk.CTkFrame(card_frame, fg_color="transparent")
+        frame_botoes.grid(row=0, column=1, sticky="ns", padx=2, pady=2)
         
+        # 1. Eye
         def toggle_eye(k=chave, btn_ref=None):
             is_black = (estado_hover_global and estado_hover_global[0][0] == card_frame)
             if k in INSTANCIAS_OCULTAS:
@@ -622,8 +672,14 @@ def aplicar_filtros_historico(evento=None):
         sufixo_inicial = "eye_closed" if chave in INSTANCIAS_OCULTAS else "eye"
         btn_eye = ctk.CTkButton(frame_botoes, text="", image=ICONES_UI[sufixo_inicial], width=20, height=20, fg_color="transparent", hover_color="#555555")
         btn_eye.configure(command=lambda k=chave, b=btn_eye: toggle_eye(k, b))
-        btn_eye.pack(side="left", padx=1)
+        btn_eye.pack(side="top", padx=1, pady=(1, 1))
 
+        # 2. Write
+        btn_write = ctk.CTkButton(frame_botoes, text="", image=ICONES_UI["write"], width=20, height=20, fg_color="transparent", hover_color="#555555")
+        btn_write.configure(command=lambda k=chave, w=btn_write: abrir_editor_notas(k, w))
+        btn_write.pack(side="top", padx=1, pady=(1, 1))
+
+        # 3. Trash
         def delete_item(k=chave, f=card_frame):
             def real_delete():
                 if k in HISTORICO_DATA: del HISTORICO_DATA[k]
@@ -639,23 +695,25 @@ def aplicar_filtros_historico(evento=None):
 
         btn_trash = ctk.CTkButton(frame_botoes, text="", image=ICONES_UI["trash"], width=20, height=20, fg_color="transparent", hover_color="#8B0000")
         btn_trash.configure(command=lambda k=chave, f=card_frame: delete_item(k, f))
-        btn_trash.pack(side="left", padx=1)
+        btn_trash.pack(side="top", padx=1, pady=(1, 1))
 
-        def on_enter(e, f=card_frame, b=btn_info, b_eye=btn_eye, b_trash=btn_trash, c_bg_norm=cor_bg_normal, c_txt_norm=cor_txt_normal, k=chave):
+        # Hover
+        def on_enter(e, f=card_frame, b=btn_info, b_eye=btn_eye, b_trash=btn_trash, b_write=btn_write, c_bg_norm=cor_bg_normal, c_txt_norm=cor_txt_normal, k=chave):
             if estado_hover_global and estado_hover_global[0][0] == f: return
             limpar_hover_anterior()
             f.configure(fg_color=cor_bg_hover)
             b.configure(text_color=cor_txt_hover, hover_color=cor_bg_hover)
             b_trash.configure(image=ICONES_UI["trash_black"])
+            b_write.configure(image=ICONES_UI["write_black"])
             sufixo = "eye_closed_black" if k in INSTANCIAS_OCULTAS else "eye_black"
             b_eye.configure(image=ICONES_UI[sufixo])
-            estado_hover_global.append([f, b, b_eye, b_trash, c_bg_norm, c_txt_norm, k])
+            estado_hover_global.append([f, b, b_eye, b_trash, b_write, c_bg_norm, c_txt_norm, k])
             
         def on_leave(e, f=card_frame):
             if estado_hover_global and estado_hover_global[0][0] == f:
                 limpar_hover_anterior()
 
-        for w in [btn_info, frame_botoes, card_frame, btn_eye, btn_trash]:
+        for w in [btn_info, frame_botoes, card_frame, btn_eye, btn_trash, btn_write]:
             w.bind("<Enter>", on_enter)
             
         btn_info.bind("<Leave>", on_leave)
@@ -1672,19 +1730,21 @@ def carregar_icones():
         pil_trash = Image.open("assets/trash.png")
         pil_eye = Image.open("assets/eye.png")
         pil_eye_closed = Image.open("assets/eye_closed.png")
-        
+        pil_write = Image.open("assets/write.png") 
         pil_warning = Image.open("assets/warning.png") # Se tiver usando no popup
 
         # Salva versões normais
         ICONES_UI["trash"] = ctk.CTkImage(pil_trash, size=(16, 16))
         ICONES_UI["eye"] = ctk.CTkImage(pil_eye, size=(16, 16))
         ICONES_UI["eye_closed"] = ctk.CTkImage(pil_eye_closed, size=(16, 16))
+        ICONES_UI["write"] = ctk.CTkImage(pil_write, size=(16, 16))
         
         # --- GERA VERSÕES PRETAS AUTOMATICAMENTE ---
         ICONES_UI["trash_black"] = ctk.CTkImage(criar_versao_preta(pil_trash), size=(16, 16))
         ICONES_UI["eye_black"] = ctk.CTkImage(criar_versao_preta(pil_eye), size=(16, 16))
         ICONES_UI["eye_closed_black"] = ctk.CTkImage(criar_versao_preta(pil_eye_closed), size=(16, 16))
-        
+        ICONES_UI["write_black"] = ctk.CTkImage(criar_versao_preta(pil_write), size=(16, 16))
+
     except Exception as e:
         print(f"Erro ao carregar ícones: {e}")
 
