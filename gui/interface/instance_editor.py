@@ -338,6 +338,11 @@ class InstanceEditor(ctk.CTkToplevel):
         self.lbl_context = ctk.CTkLabel(frm_info, text="", text_color="gray60", font=("Roboto", 11, "italic"))
         self.lbl_context.pack(side="right", padx=10)
 
+    def ao_finalizar_edicao(self, event):
+        """Recalcula o heatmap assim que a edição da célula termina."""
+        if self.var_heatmap.get():
+            self.aplicar_heatmap_visual()
+
     def criar_tabela_sheet(self):
         self.frm_table_container = ctk.CTkFrame(self.frm_main, fg_color=CORES_EDITOR["grid_bg"], border_width=1, border_color="#333333", corner_radius=4)
         self.frm_table_container.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 20))
@@ -346,6 +351,9 @@ class InstanceEditor(ctk.CTkToplevel):
         if Sheet:
             self.sheet = Sheet(self.frm_table_container, headers=[], data=[], theme="dark", empty_horizontal=0, empty_vertical=0, header_height=30)
             self.sheet.enable_bindings(("single_select", "row_select", "column_select", "drag_select", "row_height_resize", "column_width_resize", "arrowkeys", "right_click_popup_menu", "rc_select", "copy", "cut", "paste", "delete", "undo", "edit_cell"))
+            self.sheet.extra_bindings([
+                ("end_edit_cell", self.ao_finalizar_edicao)
+            ])
             self.sheet.set_options(table_bg=CORES_EDITOR["sheet_bg"], table_fg=CORES_EDITOR["sheet_fg"], table_grid_fg=CORES_EDITOR["sheet_grid"], header_bg=CORES_EDITOR["sheet_header_bg"], header_fg=CORES_EDITOR["sheet_header_fg"], index_bg=CORES_EDITOR["sheet_header_bg"], index_fg=CORES_EDITOR["sheet_header_fg"], frame_bg=CORES_EDITOR["sheet_header_bg"], top_left_bg=CORES_EDITOR["sheet_header_bg"], selection_bg=CORES_EDITOR["sheet_select_bg"], header_selected_bg=CORES_EDITOR["sheet_select"], index_selected_bg=CORES_EDITOR["sheet_select"], font=("Arial", 10, "normal"), header_font=("Arial", 10, "bold"), index_font=("Arial", 10, "bold"), default_column_width=60)
             self.sheet.grid(row=0, column=0, sticky="nsew")
 
