@@ -400,17 +400,18 @@ def configurar_aba_gantt_live(aba):
 
 def atualizar_grafico_comparativo():
     """
-    Redesenha apenas o gráfico de linhas, respeitando os filtros atuais
-    e a lista de instâncias ocultas (olho).
+    Redesenha o gráfico de linhas.
+    - Selecionado: Cor do Set (se houver) ou Verde. Sólido.
+    - Não Selecionado: Cor do Set (se houver) ou Branco. Transparente.
     """
     global AX_HIST_LINHA, CANVAS_HIST_LINHA, HISTORICO_DATA, INSTANCIAS_OCULTAS
-    global VAR_FILTRO_INSTANCIA, VAR_FILTRO_DECODER, VARS_FILTRO_AGENTES, CHAVE_SELECIONADA_ATUAL
+    global VAR_FILTRO_INSTANCIA, VAR_FILTRO_DECODER, VARS_FILTRO_AGENTES, CHAVE_SELECIONADA_ATUAL, SETS_CRIADOS
 
     if not AX_HIST_LINHA: return
 
     AX_HIST_LINHA.clear()
     
-    # --- REAPLICA OS FILTROS GLOBAIS PARA SABER O QUE PLOTAR ---
+    # --- REAPLICA OS FILTROS ---
     f_inst = VAR_FILTRO_INSTANCIA.get()
     f_dec = VAR_FILTRO_DECODER.get()
     agentes_requeridos = [nome for nome, var in VARS_FILTRO_AGENTES.items() if var.get()]
@@ -419,7 +420,7 @@ def atualizar_grafico_comparativo():
     ocultos_pelo_olho = 0
 
     for chave, dados in HISTORICO_DATA.items():
-        # 1. Filtros da Interface (Dropdowns)
+        # 1. Filtros Dropdown
         if f_inst != "all" and dados['meta_nome'] != f_inst: continue
         if f_dec != "all" and dados['meta_decoder'].lower() != f_dec.lower(): continue
         
@@ -431,62 +432,59 @@ def atualizar_grafico_comparativo():
             else:
                 lista_no_historico = raw_agentes
 
-            nomes_limpos = []
-            for item in lista_no_historico:
-                nome_base = item.split("[")[0].strip()
-                nomes_limpos.append(nome_base)
-
+            nomes_limpos = [item.split("[")[0].strip() for item in lista_no_historico]
             if not all(req in nomes_limpos for req in agentes_requeridos): 
                 continue
 
-        # 3. Filtro de Visibilidade (Botão Olho)
+        # 3. Filtro de Visibilidade
         if chave in INSTANCIAS_OCULTAS:
             ocultos_pelo_olho += 1
             continue
 
-        # 4. Plotagem
+        # 4. Dados
         raw_x, raw_y = dados['x'], dados['y']
         if not raw_x: continue
-        
         eixo_x, eixo_y = zip(*sorted(zip(raw_x, raw_y), key=lambda p: p[0]))
         
+        # --- DEFINIÇÃO DE COR ---
+        tem_set = "set_color" in dados and dados["set_color"]
+        
         if chave == CHAVE_SELECIONADA_ATUAL:
-            # --- MUDANÇA AQUI: Cor Dinâmica baseada no Set ---
-            cor_linha = '#00FF00' # Verde padrão (Lime)
-            
-            # Se tiver cor de set definida, usa ela
-            if "set_color" in dados and dados["set_color"]:
-                cor_linha = dados["set_color"]
-            
-            AX_HIST_LINHA.plot(eixo_x, eixo_y, color=cor_linha, linewidth=2.5, marker='o', markersize=4, label="Selected", zorder=10)
+            # SELECIONADO: Set Color ou Verde (Sólido, Marcadores)
+            cor_linha = dados["set_color"] if tem_set else '#00FF00'
+            AX_HIST_LINHA.plot(eixo_x, eixo_y, color=cor_linha, linewidth=2.5, 
+                               marker='o', markersize=4, label="Selected", zorder=10)
         else:
-            AX_HIST_LINHA.plot(eixo_x, eixo_y, color='white', alpha=0.4, linewidth=1.5)
+            # NÃO SELECIONADO: Set Color ou Branco (Transparente, Sem Marcadores)
+            cor_linha = dados["set_color"] if tem_set else 'white'
+            # Se for branco, usa alpha menor (0.4) para ficar bem fundo
+            # Se for colorido (set), usa alpha um pouco maior (0.6) para destacar a cor
+            alpha_val = 0.6 if tem_set else 0.4
+            
+            AX_HIST_LINHA.plot(eixo_x, eixo_y, color=cor_linha, alpha=alpha_val, linewidth=1.5)
         
         plotados += 1
 
-    # --- CONFIGURAÇÃO VISUAL ---
+    # --- TÍTULO ---
     titulo = f"Convergence Curves (Visible: {plotados} | Hidden: {ocultos_pelo_olho})"
     if CHAVE_SELECIONADA_ATUAL and CHAVE_SELECIONADA_ATUAL in HISTORICO_DATA:
         if CHAVE_SELECIONADA_ATUAL not in INSTANCIAS_OCULTAS:
              dados_sel = HISTORICO_DATA[CHAVE_SELECIONADA_ATUAL]
              best_val = min(dados_sel['y']) if dados_sel['y'] else "?"
              
-             # Adiciona nome do set ao título se existir
              info_set = ""
              if "set_color" in dados_sel and dados_sel["set_color"]:
-                 # Tenta pegar o nome do set globalmente, ou usa "Set" genérico
                  cor = dados_sel["set_color"]
-                 nome_set = SETS_CRIADOS.get(cor, "Set")
+                 # Garante que SETS_CRIADOS existe (segurança)
+                 nome_set = SETS_CRIADOS.get(cor, "Set") if 'SETS_CRIADOS' in globals() and SETS_CRIADOS else "Set"
                  info_set = f" | [{nome_set}]"
 
              titulo = f"Selected: {dados_sel['meta_nome']} (Best: {best_val}){info_set}"
 
     AX_HIST_LINHA.set_title(titulo, color="white", fontsize=10)
     AX_HIST_LINHA.grid(True, linestyle='--', alpha=0.3)
-
     AX_HIST_LINHA.relim()
     AX_HIST_LINHA.autoscale_view()
-
     CANVAS_HIST_LINHA.draw()
 
 def aplicar_filtros_historico(evento=None):
@@ -1533,7 +1531,6 @@ def carregar_dados_interface(dados, aba_p, aba_a): # Removido aba_io
 def configurar_aba_execucao(aba, aba_p, aba_a):
     global ESCRITOR_TERMINAL_GLOBAL, START_BUTTON_GLOBAL, PAUSE_BUTTON_GLOBAL, SAVE_BUTTON_GLOBAL, MONOTONIC_FILTER
     
-    # --- ÍCONES ---
     def carregar_icone(nome_arquivo):
         try:
             caminho = resource_path(f"assets/{nome_arquivo}")
@@ -1552,13 +1549,11 @@ def configurar_aba_execucao(aba, aba_p, aba_a):
     frm_botoes.grid(row=1, column=0, columnspan=10, pady=10, padx=20, sticky="ew")
     for i in range(4): frm_botoes.grid_columnconfigure(i, weight=1)
 
-    # --- CORES ---
     COR_NEUTRA = "#333333"
     COR_NEUTRA_HOVER = "#444444"
     COR_START = "#77198f"
     COR_STOP = "#C0392B"
 
-    # --- FUNÇÃO AUXILIAR: TRAVAR CAMPOS (COM VISUAL TRANSPARENTE) ---
     def travar_campos_estruturais(bloquear: bool):
         estado = "disabled" if bloquear else "normal"
         fg_c = "#101010" if bloquear else "#343638" 
@@ -1571,7 +1566,6 @@ def configurar_aba_execucao(aba, aba_p, aba_a):
 
         if hasattr(aba_p, 'widgets_armazenados'):
             _aplicar(aba_p.widgets_armazenados.get("execution_times"))
-            # Agora instance_path está em aba_p
             _aplicar(aba_p.widgets_armazenados.get("instance_path"))
 
     def alternar_start_stop():
@@ -1588,9 +1582,7 @@ def configurar_aba_execucao(aba, aba_p, aba_a):
             try: term.configure(state="normal"); term.delete("1.0", "end"); term.configure(state="disabled")
             except: pass
 
-            # Passamos apenas aba_p e aba_a (IO está dentro de P)
             data = coletar_dados_interface(aba_p, aba_a)
-            
             dados_io = data.get("io", {})
             salvar_cache_caminhos(dados_io.get("instance_path", ""), dados_io.get("output_path", ""), dados_io.get("gantt_path", ""))
 
@@ -1644,7 +1636,19 @@ def configurar_aba_execucao(aba, aba_p, aba_a):
     
         try:
             btn_save.configure(text="SAVING...", state="disabled"); aba.update_idletasks()
-            estado_ui = {"historico": HISTORICO_DATA, "dados_grafico_x": DADOS_X, "dados_grafico_y": DADOS_Y, "melhor": MELHOR_MAKESPAN_ATUAL, "instancia": NOME_INSTANCIA_ATUAL}
+            
+            # --- FIX: Incluímos SETS_CRIADOS no dump ---
+            global SETS_CRIADOS
+            
+            estado_ui = {
+                "historico": HISTORICO_DATA, 
+                "dados_grafico_x": DADOS_X, 
+                "dados_grafico_y": DADOS_Y, 
+                "melhor": MELHOR_MAKESPAN_ATUAL, 
+                "instancia": NOME_INSTANCIA_ATUAL,
+                "sets_criados": SETS_CRIADOS # <--- AQUI (Salva nomes e cores)
+            }
+            # -------------------------------------------
             
             estado_backend = rko_gui_start.obter_estado_checkpoint() if hasattr(rko_gui_start, 'obter_estado_checkpoint') else {}
             dados_visuais = coletar_dados_interface(aba_p, aba_a)
@@ -1685,13 +1689,19 @@ def configurar_aba_execucao(aba, aba_p, aba_a):
             if "params" in d_back: 
                 carregar_dados_interface(d_back["params"], aba_p, aba_a)
             
-            global HISTORICO_DATA, DADOS_X, DADOS_Y, MELHOR_MAKESPAN_ATUAL, NOME_INSTANCIA_ATUAL, FILA_BOTOES_PENDENTES
+            global HISTORICO_DATA, DADOS_X, DADOS_Y, MELHOR_MAKESPAN_ATUAL, NOME_INSTANCIA_ATUAL, FILA_BOTOES_PENDENTES, SETS_CRIADOS
+            
             HISTORICO_DATA = d_ui.get("historico", {})
             DADOS_X = d_ui.get("dados_grafico_x", [])
             DADOS_Y = d_ui.get("dados_grafico_y", [])
             MELHOR_MAKESPAN_ATUAL = d_ui.get("melhor", float('inf'))
             NOME_INSTANCIA_ATUAL = d_ui.get("instancia", "Resumed")
             FILA_BOTOES_PENDENTES = list(HISTORICO_DATA.keys())
+            
+            # --- FIX: Carregamos SETS_CRIADOS do arquivo ---
+            # Se não existir (dumps antigos), inicia vazio
+            SETS_CRIADOS = d_ui.get("sets_criados", {}) 
+            # -----------------------------------------------
             
             try: 
                 term.configure(state="normal"); term.delete("1.0", "end"); term.configure(state="disabled")
@@ -1709,6 +1719,9 @@ def configurar_aba_execucao(aba, aba_p, aba_a):
             btn_save.configure(state="normal", fg_color=COR_NEUTRA) 
             btn_load.configure(state="disabled")
             
+            # Atualiza a aba histórico para refletir os sets carregados
+            aplicar_filtros_historico()
+
             if hasattr(rko_gui_start, 'restaurar_e_continuar'):
                 rko_gui_start.restaurar_e_continuar(d_back, manipulador_retorno_interface, start_paused=True)
                 
