@@ -12,23 +12,26 @@ def resource_path(relative_path):
 
     return os.path.join(base_path, relative_path)
 
-def create_buttons(master, show_tab, knight_tab, sliders_tab, play_tab, chart_tab, gantt_tab, history_tab):
+# --- MUDANÇA: Adicionado analysis_tab no final ---
+def create_buttons(master, show_tab, knight_tab, sliders_tab, play_tab, chart_tab, gantt_tab, history_tab, analysis_tab):
     """
-    Cria os botoes laterais (Knight, Sliders, Play, Chart, Gantt, History).
+    Cria os botoes laterais (Knight, Sliders, Play, Chart, Gantt, History, Analysis).
     """
     # Frame lateral
-    buttons_frame = ctk.CTkFrame(master, width=40, height=350, fg_color="transparent")
+    buttons_frame = ctk.CTkFrame(master, width=40, height=400, fg_color="transparent") # Aumentei um pouco a altura para caber mais um
     buttons_frame.grid(row=2, column=0, columnspan=2, sticky="ns")
     buttons_frame.grid_propagate(False)
 
     #  CARREGANDO IMAGENS 
     knight_image = ctk.CTkImage(Image.open(resource_path("assets/knight.png")), size=(20, 20))
     sliders_image = ctk.CTkImage(Image.open(resource_path("assets/sliders.png")), size=(20, 20))
-    # scroll.png removido
     play_image = ctk.CTkImage(Image.open(resource_path("assets/play.png")), size=(20, 20))
     chart_image = ctk.CTkImage(Image.open(resource_path("assets/chart.png")), size=(20, 20))
     gantt_image = ctk.CTkImage(Image.open(resource_path("assets/gantt.png")), size=(20, 20)) 
     history_image = ctk.CTkImage(Image.open(resource_path("assets/history.png")), size=(20, 20))
+    
+    # --- NOVO ---
+    magnifier_image = ctk.CTkImage(Image.open(resource_path("assets/magnifier.png")), size=(20, 20))
 
     # BOTOES 
     
@@ -47,10 +50,8 @@ def create_buttons(master, show_tab, knight_tab, sliders_tab, play_tab, chart_ta
         command=lambda: show_tab(sliders_tab)
     )
     sliders_button.grid(row=1, column=0, pady=10, padx=5)
-
-    # Scroll (IO) -> REMOVIDO
     
-    # Play (Execucao) - Subiu para row 2
+    # Play (Execucao)
     play_button = ctk.CTkButton(
         buttons_frame, text="", image=play_image,
         width=25, height=25, fg_color="transparent", hover_color="#444444",
@@ -58,7 +59,7 @@ def create_buttons(master, show_tab, knight_tab, sliders_tab, play_tab, chart_ta
     )
     play_button.grid(row=2, column=0, pady=10, padx=5)
 
-    # Chart (Grafico de Linha) - Subiu para row 3
+    # Chart (Grafico de Linha)
     chart_button = ctk.CTkButton(
         buttons_frame, text="", image=chart_image,
         width=25, height=25, fg_color="transparent", hover_color="#444444",
@@ -66,7 +67,7 @@ def create_buttons(master, show_tab, knight_tab, sliders_tab, play_tab, chart_ta
     )
     chart_button.grid(row=3, column=0, pady=10, padx=5) 
 
-    # Gantt - Subiu para row 4
+    # Gantt
     gantt_button = ctk.CTkButton(
         buttons_frame, text="", image=gantt_image,
         width=25, height=25, fg_color="transparent", hover_color="#444444",
@@ -74,12 +75,20 @@ def create_buttons(master, show_tab, knight_tab, sliders_tab, play_tab, chart_ta
     )
     gantt_button.grid(row=4, column=0, pady=10, padx=5)
 
-    # History - Subiu para row 5
+    # History
     history_button = ctk.CTkButton(
         buttons_frame, text="", image=history_image,
         width=25, height=25, fg_color="transparent", hover_color="#444444",
         command=lambda: show_tab(history_tab) 
     )
     history_button.grid(row=5, column=0, pady=10, padx=5)
+
+    # Analysis 
+    analysis_button = ctk.CTkButton(
+        buttons_frame, text="", image=magnifier_image,
+        width=25, height=25, fg_color="transparent", hover_color="#444444",
+        command=lambda: show_tab(analysis_tab) 
+    )
+    analysis_button.grid(row=6, column=0, pady=10, padx=5)
 
     return buttons_frame

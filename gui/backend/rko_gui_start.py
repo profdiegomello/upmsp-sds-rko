@@ -338,6 +338,7 @@ def _consumir_fila_tarefas(callback_interface):
                         "gantt_data": resultado.get("gantt_data"),
                         "decoder": decoder,            
                         "agentes": lista_agentes_detalhada,
+                        "meta_setup_range": resultado.get("setup_range", "N/A")
                     })
 
                     LOG_QUEUE.put({"status": "log", "message": f"Finished: {nome} - Makespan: {resultado['makespan']}"})

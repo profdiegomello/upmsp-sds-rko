@@ -3,8 +3,10 @@ import sys
 import os
 import threading
 import re
+from queue import Empty
 from typing import Callable, Optional
 from multiprocessing import Queue, Manager
+
 
 from backend.rko_dependencies.rkolib.RKO import RKO
 from backend.rko_dependencies.problem_upmspsds import UPMSPSDSProblem
@@ -40,16 +42,28 @@ class StdoutProxy:
 
 def _queue_reader(q: Queue, callback: Optional[Callable[[dict], None]], history_list: list, start_time: float):
     local_best_makespan = float('inf')
+    
+    # LÓGICA ORIGINAL: Bloco executado quando NÃO há interface (callback is None)
     if callback is None:
         while True:
             try: 
                 msg = q.get(timeout=1.0)
                 if isinstance(msg, dict) and msg.get("status") == "DONE": break
-            except Exception: continue 
+            except Empty: 
+                continue # Timeout normal, tenta de novo
+            except Exception: 
+                break # Fila fechada/destruída, mata a thread liberando a CPU
         return
+        
+    # LÓGICA ORIGINAL: Bloco executado quando HÁ interface
     while True:
-        try: msg = q.get(timeout=0.5)
-        except Exception: continue
+        try: 
+            msg = q.get(timeout=0.5)
+        except Empty: 
+            continue # Timeout normal, tenta de novo
+        except Exception: 
+            break # Fila fechada/destruída, mata a thread liberando a CPU
+            
         try:
             if isinstance(msg, dict):
                 if msg.get("status") == "DONE": break
@@ -58,6 +72,7 @@ def _queue_reader(q: Queue, callback: Optional[Callable[[dict], None]], history_
                     if mksp < local_best_makespan:
                         local_best_makespan = mksp
                         tempo = msg.get("time_to_best")
+                        # OBS: Mudei 'start_time_global' para 'start_time' (nome do parâmetro da função)
                         if tempo is None: tempo = time.time() - start_time
                         else: tempo = float(tempo)
                         history_list.append((tempo, mksp))
@@ -65,7 +80,8 @@ def _queue_reader(q: Queue, callback: Optional[Callable[[dict], None]], history_
             else:
                 texto_msg = str(msg).rstrip()
                 if texto_msg: callback({"status": "log", "message": texto_msg})
-        except Exception: continue
+        except Exception: 
+            continue
 
 def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, callback: Optional[Callable[[dict], None]] = None, save_path: str = None, gantt_path: str = None) -> dict:
     stdout_execution_history = [] 
@@ -73,8 +89,6 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
     if callback: env.ui_callback = MainThreadCallbackWrapper(callback)
     else: env.ui_callback = None
     
-    # O env.agent_config recebe o dicionário completo (com params),
-    # assim o _injetar_parametros_gui do RKO.py vai funcionar (pois tem .items())
     env.agent_config = agents 
 
     old_stdout = sys.stdout
@@ -95,21 +109,15 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
     final_cost = float('inf'); final_schedule = {}; raw_gantt_data = None; runtime = 0; final_time_to_best = 0
 
     try:
-        # Função auxiliar para extrair qtd de workers de forma segura
         def get_w(nome_agente):
             dados = agents.get(nome_agente, {})
-            # Se for dicionário (novo padrão), pega chave 'workers'
-            if isinstance(dados, dict):
-                return int(dados.get("workers", 0))
-            # Fallback (caso raro de vir int direto)
-            if isinstance(dados, int):
-                return dados
+            if isinstance(dados, dict): return int(dados.get("workers", 0))
+            if isinstance(dados, int): return dados
             return 0
 
         solver = RKO(env, print_best=True, save_directory=None, log_queue=log_queue)
         start_time_solver = time.time()
         
-        # Log visual dos agentes ativos
         active_agents = []
         for k, v in agents.items():
             w = get_w(k)
@@ -117,7 +125,6 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
             
         str_parameters = "+".join(active_agents) if active_agents else "RKO_DEFAULT"
 
-        # CHAMADA DO SOLVER USANDO A FUNÇÃO AUXILIAR
         solver_final_cost, final_solution_keys, solver_time_to_best = solver.solve(
             time_total=time_limit, 
             runs=1,
@@ -228,6 +235,33 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
             print(f"[IO] Final Gantt saved at: {gantt_path}\n")
         except Exception as e: print(f"[ERROR] Falha Gantt: {e}\n")
     
+    # --- NOVO: Extração Segura do Range de Setups ---
+    setup_range_str = "N/A"
+    try:
+        if hasattr(env, 'dados') and "S" in env.dados:
+            s_data = env.dados["S"]
+            valores_validos = []
+
+            def extrair_setups(obj):
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        if isinstance(k, tuple) and len(k) >= 2 and k[-1] == k[-2]:
+                            continue  # Ignora setup i -> i
+                        extrair_setups(v)
+                elif isinstance(obj, (list, tuple)):
+                    for v in obj:
+                        extrair_setups(v)
+                elif isinstance(obj, (int, float)):
+                    if obj > 0:  # Assume que setup válido é > 0
+                        valores_validos.append(obj)
+
+            extrair_setups(s_data)
+            if valores_validos:
+                setup_range_str = f"({min(valores_validos)}-{max(valores_validos)})"
+    except Exception as e:
+        print(f"[WARN] Erro ao extrair setup range: {e}")
+    # ------------------------------------------------
+
     return {
         "makespan": final_cost, 
         "schedule": final_schedule, 
@@ -236,5 +270,6 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
         "instance": env.instance_name, 
         "decoder": env.decoder_name,
         "history_data": stdout_execution_history, 
-        "gantt_data": raw_gantt_data        
+        "gantt_data": raw_gantt_data,
+        "setup_range": setup_range_str # <--- CHAVE ADICIONADA AQUI
     }

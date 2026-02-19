@@ -1,5 +1,6 @@
 import customtkinter as ctk
 import tkinter as tk
+from tkinter import ttk
 from PIL import Image
 from tkinter import filedialog, messagebox
 from typing import Tuple
@@ -97,6 +98,10 @@ HISTORICO_DATA = {}
 FILA_BOTOES_PENDENTES = []
 FRAME_LISTA_HISTORICO = None
 SETS_CRIADOS = set()
+
+#  GLOBAIS PARA NAVEGAÇÃO DA ANÁLISE 
+ABA_ANALISE_GLOBAL = None
+FUNCAO_SHOW_TAB_GLOBAL = None
 
 FIG_HIST_LINHA, AX_HIST_LINHA, CANVAS_HIST_LINHA = None, None, None
 FIG_HIST_GANTT, AX_HIST_GANTT, CANVAS_HIST_GANTT = None, None, None
@@ -400,7 +405,7 @@ def configurar_aba_gantt_live(aba):
 
 def atualizar_grafico_comparativo():
     """
-    Redesenha o gráfico de linhas.
+    Redesenha o gráfico de linhas garantindo que a curva seja estritamente decrescente (Monotônica).
     - Selecionado: Cor do Set (se houver) ou Verde. Sólido.
     - Não Selecionado: Cor do Set (se houver) ou Branco. Transparente.
     """
@@ -443,8 +448,29 @@ def atualizar_grafico_comparativo():
 
         # 4. Dados
         raw_x, raw_y = dados['x'], dados['y']
-        if not raw_x: continue
-        eixo_x, eixo_y = zip(*sorted(zip(raw_x, raw_y), key=lambda p: p[0]))
+        if not raw_x or not raw_y: continue
+        
+        # Ordena por tempo (Eixo X)
+        pares_ordenados = sorted(zip(raw_x, raw_y), key=lambda p: p[0])
+        
+        # --- NOVO: Filtro Monotônico (Corrige o bug da curva subindo) ---
+        mono_x = []
+        mono_y = []
+        melhor_y_ate_agora = float('inf')
+        
+        for px, py in pares_ordenados:
+            if py < melhor_y_ate_agora:
+                melhor_y_ate_agora = py
+                mono_x.append(px)
+                mono_y.append(py)
+            elif py == melhor_y_ate_agora:
+                # Mantém platôs (linha reta no final) se o tempo for maior
+                if mono_x and px > mono_x[-1]:
+                    mono_x.append(px)
+                    mono_y.append(py)
+                    
+        eixo_x, eixo_y = mono_x, mono_y
+        # ----------------------------------------------------------------
         
         # --- DEFINIÇÃO DE COR ---
         tem_set = "set_color" in dados and dados["set_color"]
@@ -457,8 +483,6 @@ def atualizar_grafico_comparativo():
         else:
             # NÃO SELECIONADO: Set Color ou Branco (Transparente, Sem Marcadores)
             cor_linha = dados["set_color"] if tem_set else 'white'
-            # Se for branco, usa alpha menor (0.4) para ficar bem fundo
-            # Se for colorido (set), usa alpha um pouco maior (0.6) para destacar a cor
             alpha_val = 0.6 if tem_set else 0.4
             
             AX_HIST_LINHA.plot(eixo_x, eixo_y, color=cor_linha, alpha=alpha_val, linewidth=1.5)
@@ -853,6 +877,275 @@ def aplicar_filtros_historico(evento=None):
         btn_info.bind("<Leave>", on_leave)
         card_frame.bind("<Leave>", on_leave)
 
+def pedir_nome_analise():
+    """Valida se existem sets, abre o pop-up no ponteiro do mouse e pede o nome da análise."""
+    from tkinter import messagebox
+    
+    # Verifica se há pelo menos um experimento com 'set_color'
+    tem_set = any(dados.get("set_color") for dados in HISTORICO_DATA.values())
+    
+    janela_pai = ABA_ANALISE_GLOBAL.winfo_toplevel()
+    
+    if not tem_set:
+        messagebox.showwarning("No Sets Found", 
+                               "Please assign at least one set (label) to your experiments in the History tab first.", 
+                               parent=janela_pai)
+        return
+
+    # --- POP-UP CUSTOMIZADO ---
+    popup = ctk.CTkToplevel(janela_pai)
+    popup.title("Analysis Name")
+    
+    # Captura a posição exata do mouse
+    x_mouse = ABA_ANALISE_GLOBAL.winfo_pointerx()
+    y_mouse = ABA_ANALISE_GLOBAL.winfo_pointery()
+    popup.geometry(f"320x150+{x_mouse - 160}+{y_mouse - 100}")
+    popup.resizable(False, False)
+
+    # 1. PRIMEIRO EMPACOTAMOS TODOS OS WIDGETS
+    ctk.CTkLabel(popup, text="Enter a name for this Analysis Session:", font=("Roboto", 13)).pack(pady=(20, 10))
+    
+    entrada = ctk.CTkEntry(popup, width=280, border_color=CORES["primaria"])
+    entrada.pack(pady=(0, 15))
+
+    def confirmar(event=None):
+        nome = entrada.get().strip()
+        if not nome:
+            messagebox.showerror("Error", "A name must be defined to save this analysis session.", parent=popup)
+            return
+        
+        popup.destroy()
+        gerar_nova_analise(nome)
+
+    def cancelar():
+        popup.destroy()
+
+    frm_botoes = ctk.CTkFrame(popup, fg_color="transparent")
+    frm_botoes.pack(fill="x", padx=20)
+    
+    btn_cancel = ctk.CTkButton(frm_botoes, text="Cancel", width=100, fg_color="#555555", hover_color="#333333", command=cancelar)
+    btn_cancel.pack(side="left")
+    
+    btn_ok = ctk.CTkButton(frm_botoes, text="Ok", width=100, command=confirmar, fg_color=CORES["primaria"], hover_color=CORES["destaque"])
+    btn_ok.pack(side="right")
+
+    popup.bind("<Return>", confirmar)
+
+    # 2. SÓ DEPOIS DE TUDO PRONTO, APLICAMOS AS CONFIGURAÇÕES MODAIS E FOCO
+    popup.update_idletasks() # Força a interface a desenhar os botões imediatamente
+    popup.transient(janela_pai) # Mantém no topo
+    popup.grab_set() # Trava a janela de trás
+    popup.attributes("-topmost", True) # Garante que não vai sumir atrás de nada
+    
+    entrada.focus_set() # Coloca o cursor piscando
+
+def gerar_nova_analise(nome_analise):
+    """Cria uma nova aba na seção de Análise com todas as tabelas na vertical."""
+    global ABA_ANALISE_GLOBAL, FUNCAO_SHOW_TAB_GLOBAL
+    if not ABA_ANALISE_GLOBAL or not FUNCAO_SHOW_TAB_GLOBAL: return
+
+    # 1. Agrupa os experimentos por Set (cor)
+    grupos = {}
+    for chave, dados in HISTORICO_DATA.items():
+        cor = dados.get("set_color")
+        if cor:
+            if cor not in grupos:
+                nome_set = SETS_CRIADOS.get(cor, f"Set {cor}")
+                grupos[cor] = {"nome": nome_set, "exp": []}
+            grupos[cor]["exp"].append(dados)
+
+    if not grupos: return
+
+    # 2. Configura a estrutura principal da Aba Analise (se for a primeira vez)
+    if not hasattr(ABA_ANALISE_GLOBAL, 'is_setup'):
+        for widget in ABA_ANALISE_GLOBAL.winfo_children():
+            widget.destroy() # Remove placeholder principal
+
+        ctk.CTkLabel(ABA_ANALISE_GLOBAL, text="STATISTICAL ANALYSIS", font=("Roboto", 20, "bold"), text_color=CORES["destaque"]).pack(pady=(20, 5), padx=20, anchor="w")
+
+        ABA_ANALISE_GLOBAL.tab_bar_container = ctk.CTkScrollableFrame(ABA_ANALISE_GLOBAL, height=45, orientation="horizontal", fg_color="transparent", scrollbar_button_color="#2D2D35", scrollbar_button_hover_color="#555")
+        ABA_ANALISE_GLOBAL.tab_bar_container.pack(fill="x", padx=20, pady=(10, 0))
+
+        ABA_ANALISE_GLOBAL.content_area = ctk.CTkFrame(ABA_ANALISE_GLOBAL, fg_color=CORES["fundo_cartao"], corner_radius=0)
+        ABA_ANALISE_GLOBAL.content_area.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+
+        ABA_ANALISE_GLOBAL.tabs_obj = {}
+        ABA_ANALISE_GLOBAL.current_active_tab = [None]
+        ABA_ANALISE_GLOBAL.placeholder_label = None 
+        ABA_ANALISE_GLOBAL.is_setup = True
+
+    tab_bar = ABA_ANALISE_GLOBAL.tab_bar_container
+    content_area = ABA_ANALISE_GLOBAL.content_area
+    tabs_obj = ABA_ANALISE_GLOBAL.tabs_obj
+    active_tab = ABA_ANALISE_GLOBAL.current_active_tab
+
+    if getattr(ABA_ANALISE_GLOBAL, 'placeholder_label', None):
+        ABA_ANALISE_GLOBAL.placeholder_label.destroy()
+        ABA_ANALISE_GLOBAL.placeholder_label = None
+
+    base_nome = nome_analise
+    counter = 1
+    while nome_analise in tabs_obj:
+        nome_analise = f"{base_nome} ({counter})"
+        counter += 1
+
+    def selecionar_aba(nome_aba):
+        antiga = active_tab[0]
+        if antiga and antiga in tabs_obj and antiga != nome_aba:
+            tabs_obj[antiga]["btn_frame"].configure(fg_color="#2D2D35")
+            tabs_obj[antiga]["content"].pack_forget()
+
+        active_tab[0] = nome_aba
+        if nome_aba in tabs_obj:
+            tabs_obj[nome_aba]["btn_frame"].configure(fg_color=CORES["primaria"])
+            tabs_obj[nome_aba]["content"].pack(fill="both", expand=True)
+
+    def fechar_aba(nome_aba):
+        tabs_obj[nome_aba]["content"].pack_forget()
+        tabs_obj[nome_aba]["btn_frame"].pack_forget()
+        
+        tabs_obj[nome_aba]["content"].destroy()
+        tabs_obj[nome_aba]["btn_frame"].destroy()
+        del tabs_obj[nome_aba]
+
+        if active_tab[0] == nome_aba:
+            if tabs_obj:
+                primeira_disp = list(tabs_obj.keys())[0]
+                selecionar_aba(primeira_disp)
+            else:
+                active_tab[0] = None
+                lbl = ctk.CTkLabel(content_area, text="All analysis tabs closed. Return to History to create a new one.", text_color="gray")
+                lbl.pack(pady=50)
+                ABA_ANALISE_GLOBAL.placeholder_label = lbl
+
+    tab_btn = ctk.CTkFrame(tab_bar, fg_color="#2D2D35", corner_radius=6, height=35)
+    tab_btn.pack(side="left", padx=(0, 5))
+    tab_btn.pack_propagate(False)
+
+    largura_texto = len(nome_analise) * 8 + 50
+    tab_btn.configure(width=max(130, largura_texto))
+
+    lbl_tab = ctk.CTkLabel(tab_btn, text=nome_analise, font=("Roboto", 11, "bold"), text_color="white")
+    lbl_tab.pack(side="left", padx=(10, 5), pady=5)
+
+    btn_close = ctk.CTkButton(tab_btn, text="×", font=("Arial", 16, "bold"), width=20, height=20,
+                              fg_color="transparent", hover_color="#C0392B", text_color="#AAAAAA",
+                              command=lambda n=nome_analise: fechar_aba(n))
+    btn_close.pack(side="right", padx=(5, 5))
+
+    tab_btn.bind("<Button-1>", lambda e, n=nome_analise: selecionar_aba(n))
+    lbl_tab.bind("<Button-1>", lambda e, n=nome_analise: selecionar_aba(n))
+
+    def on_enter(e, f=tab_btn, n=nome_analise):
+        if active_tab[0] != n: f.configure(fg_color="#3D3D45")
+    def on_leave(e, f=tab_btn, n=nome_analise):
+        if active_tab[0] != n: f.configure(fg_color="#2D2D35")
+
+    tab_btn.bind("<Enter>", on_enter)
+    tab_btn.bind("<Leave>", on_leave)
+    lbl_tab.bind("<Enter>", on_enter)
+    lbl_tab.bind("<Leave>", on_leave)
+
+    frame_tab_content = ctk.CTkScrollableFrame(content_area, fg_color="transparent")
+
+    style = ttk.Style()
+    style.theme_use("default")
+    style.configure("Treeview", background="#1E1E21", foreground="white", fieldbackground="#1E1E21", borderwidth=0, rowheight=30, font=("Roboto", 10))
+    style.map('Treeview', background=[('selected', CORES["primaria"])])
+    style.configure("Treeview.Heading", background="#2D2D35", foreground=CORES["destaque"], font=("Roboto", 10, "bold"), borderwidth=0)
+    style.map("Treeview.Heading", background=[('active', '#3D3D45')])
+
+    colunas = ("INSTANCE", "MACHINES", "JOBS", "SETUP", "POLICY", "MAKESPAN", "RUNTIME", "TIME TO BEST", "PARAMETERS", "AGENTS CONFIGS")
+
+    # Função de contraste visual (Luminosidade)
+    def get_text_color_for_bg(hex_color):
+        try:
+            hex_color = hex_color.lstrip('#')
+            r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+            lum = 0.299 * r + 0.587 * g + 0.114 * b
+            # Se a luminosidade for alta (fundo claro), usa Preto. Senão, Branco.
+            return "#000000" if lum > 160 else "#FFFFFF"
+        except: return "#FFFFFF"
+
+    for cor_set in sorted(grupos.keys()):
+        nome_set = grupos[cor_set]["nome"]
+        lista_exp = grupos[cor_set]["exp"]
+
+        cor_texto = get_text_color_for_bg(cor_set)
+        
+        # --- FIX: width=0 FORÇA A LABEL A ABRAÇAR EXATAMENTE O TEXTO ---
+        lbl_set = ctk.CTkLabel(frame_tab_content, text=f" Group: {nome_set} ", font=("Roboto", 14, "bold"),
+                               fg_color=cor_set, text_color=cor_texto, corner_radius=6, width=0)
+        lbl_set.pack(anchor="w", pady=(20, 5), padx=10)
+
+        frame_tabela = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
+        frame_tabela.pack(fill="x", expand=False, padx=10, pady=(0, 15))
+
+        tree = ttk.Treeview(frame_tabela, columns=colunas, show="headings", height=len(lista_exp))
+        
+        scroll_x = ttk.Scrollbar(frame_tabela, orient="horizontal", command=tree.xview)
+        tree.configure(xscrollcommand=scroll_x.set)
+
+        tree.pack(side="top", fill="x", expand=True)
+        scroll_x.pack(side="bottom", fill="x")
+
+        linhas_para_inserir = []
+        max_lens = {col: len(col) for col in colunas}
+
+        for exp in lista_exp:
+            inst = exp.get("meta_nome", "-")
+            policy = exp.get("meta_decoder", "-")
+            
+            mksp = min(exp['y']) if exp.get('y') else "-"
+            
+            if exp.get('x') and exp.get('y'):
+                runtime = f"{exp['x'][-1]:.2f}s"
+                best_y = min(exp['y'])
+                idx_best = exp['y'].index(best_y)
+                time_to_best = f"{exp['x'][idx_best]:.2f}s"
+            else:
+                runtime, time_to_best = "-", "-"
+
+            gantt = exp.get("gantt")
+            machines, jobs = "-", "-"
+            if gantt:
+                if "M" in gantt: machines = str(len(gantt["M"]))
+                if "C" in gantt: 
+                    job_set = set(k[1] for k in gantt["C"].keys())
+                    jobs = str(len(job_set))
+
+            setup_rng = str(exp.get("meta_setup_range", "N/A"))
+
+            raw_ag = exp.get('meta_agentes', [])
+            if isinstance(raw_ag, str): raw_ag = [x.strip() for x in raw_ag.split("-") if x.strip()]
+            
+            param_short = ", ".join([a.split("[")[0].strip() for a in raw_ag])
+            param_long = " | ".join(raw_ag)
+
+            valores = (inst, machines, jobs, setup_rng, policy, str(mksp), runtime, time_to_best, param_short, param_long)
+            linhas_para_inserir.append(valores)
+
+            for i, col in enumerate(colunas):
+                if len(valores[i]) > max_lens[col]:
+                    max_lens[col] = len(valores[i])
+
+        larguras = [int(max_lens[col] * 8) + 30 for col in colunas]
+
+        for col, largura in zip(colunas, larguras):
+            tree.heading(col, text=col, anchor="w")
+            tree.column(col, width=largura, minwidth=largura, anchor="w", stretch=False)
+
+        for valores in linhas_para_inserir:
+            tree.insert("", "end", values=valores)
+
+    tabs_obj[nome_analise] = {
+        "btn_frame": tab_btn,
+        "content": frame_tab_content
+    }
+
+    selecionar_aba(nome_analise)
+    FUNCAO_SHOW_TAB_GLOBAL(ABA_ANALISE_GLOBAL)
+
 def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     global FRAME_LISTA_HISTORICO, FIG_HIST_LINHA, AX_HIST_LINHA, CANVAS_HIST_LINHA, FIG_HIST_GANTT, AX_HIST_GANTT, CANVAS_HIST_GANTT
     global VAR_FILTRO_INSTANCIA, VAR_FILTRO_DECODER, VARS_FILTRO_AGENTES, COMBO_INSTANCIAS, VAR_ORDENACAO_HISTORICO
@@ -928,7 +1221,8 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     # Botão azulado para destacar ação de análise
     btn_analyse = ctk.CTkButton(frm_agentes_container, text="ANALYSIS", width=65, height=50, 
                                 font=("Roboto", 10, "bold"),
-                                fg_color="#0284c7", hover_color="#0ea5e9", 
+                                fg_color="#0284c7", hover_color="#0ea5e9",
+                                command=pedir_nome_analise
                                 )
     btn_analyse.pack(side="right", padx=(5, 5), pady=2, anchor="center")
     # -----------------------------------------------------------
@@ -1156,7 +1450,8 @@ def manipulador_retorno_interface(dados):
             HISTORICO_DATA[chave_unica] = {
                 'x': eixo_x_final, 'y': eixo_y_final, 'gantt': gantt_final,
                 'meta_nome': nome_base, 'meta_decoder': decoder_usado, 
-                'meta_agentes': str_agentes, 'meta_hora': hora_termino 
+                'meta_agentes': str_agentes, 'meta_hora': hora_termino,
+                'meta_setup_range': dados.get("meta_setup_range", "N/A") 
             }
             if chave_unica not in FILA_BOTOES_PENDENTES: FILA_BOTOES_PENDENTES.append(chave_unica)
 
@@ -1813,7 +2108,22 @@ def criar_aba_base(pai):
     for i in range(10): f.grid_rowconfigure(i, weight=1, minsize=20); f.grid_columnconfigure(i, weight=1, minsize=20)
     return f
 
+def configurar_aba_analise(aba):
+    """
+    Prepara o terreno para a futura aba de Análise Estatística.
+    """
+    # Grid base
+    aba.grid_rowconfigure(0, weight=1)
+    aba.grid_columnconfigure(0, weight=1)
+    
+    # Placeholder provisório
+    lbl = ctk.CTkLabel(aba, text="STATISTICAL ANALYSIS", font=("Roboto", 24, "bold"), text_color=CORES["destaque"])
+    lbl.pack(pady=50)
+    
+    ctk.CTkLabel(aba, text="(To be developed...)", font=("Roboto", 14), text_color="gray").pack()
+
 def configurar_interface(janela):
+    global ABA_ANALISE_GLOBAL, FUNCAO_SHOW_TAB_GLOBAL # <--- ADICIONE ISTO
     
     # 1. Configuração do Grid Principal da Janela
     for i in range(10): 
@@ -1830,29 +2140,33 @@ def configurar_interface(janela):
     frame_main.grid_columnconfigure(0, weight=1)
     frame_main.grid_propagate(False)
 
-    # 3. Criação das "Abas" (AGORA SÃO 6 ABAS - Removida IO)
-    abas = [criar_aba_base(frame_main) for _ in range(6)]
-    aba_p, aba_a, aba_exe, aba_gra, aba_gan, aba_hist = abas
+    # 3. Criação das "Abas"
+    abas = [criar_aba_base(frame_main) for _ in range(7)]
+    aba_p, aba_a, aba_exe, aba_gra, aba_gan, aba_hist, aba_ana = abas
 
     # 4. Função para alternar abas
     def show(a_sel):
         for a in abas: a.grid_forget()
         a_sel.grid(row=0, column=0, sticky="nsew")
 
+    # --- SALVA REFERÊNCIAS GLOBAIS ---
+    ABA_ANALISE_GLOBAL = aba_ana
+    FUNCAO_SHOW_TAB_GLOBAL = show
+    # ---------------------------------
+
     # 5. Configuração do Conteúdo
-    configurar_aba_parametros(aba_p) # Agora inclui IO
-    # Não chamamos configurar_aba_entrada_saida
+    configurar_aba_parametros(aba_p) 
     configurar_aba_agentes(aba_a)
-    configurar_aba_execucao(aba_exe, aba_p, aba_a) # Removido aba_io
+    configurar_aba_execucao(aba_exe, aba_p, aba_a) 
     configurar_aba_grafico(aba_gra)
     configurar_aba_gantt_live(aba_gan)
     configurar_aba_historico(aba_hist, largura_total=1280, altura_total=810)
+    
+    # Agora a aba_ana é gerada dinamicamente pelo botão, então só damos um fundo a ela aqui
+    aba_ana.configure(fg_color=CORES["fundo_principal"])
 
     # 6. Criação dos Botões Laterais
-    # ATENÇÃO: Seu buttons.py precisa estar preparado para receber 6 abas (sem IO)
-    # Se ele for estático, vai dar erro. Estou passando na ordem que você usa.
-    # Se precisar de um placeholder, use um frame vazio.
-    create_buttons(janela, show, aba_p, aba_a, aba_exe, aba_gra, aba_gan, aba_hist)
+    create_buttons(janela, show, aba_p, aba_a, aba_exe, aba_gra, aba_gan, aba_hist, aba_ana)
 
     # 7. Inicia mostrando a primeira aba
     show(aba_p)
