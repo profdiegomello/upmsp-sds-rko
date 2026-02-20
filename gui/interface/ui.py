@@ -878,12 +878,10 @@ def aplicar_filtros_historico(evento=None):
         card_frame.bind("<Leave>", on_leave)
 
 def pedir_nome_analise():
-    """Valida se existem sets, abre o pop-up no ponteiro do mouse e pede o nome da análise."""
+    """Valida se existem sets, abre o pop-up no ponteiro do mouse e pede o nome/comentário da análise."""
     from tkinter import messagebox
     
-    # Verifica se há pelo menos um experimento com 'set_color'
     tem_set = any(dados.get("set_color") for dados in HISTORICO_DATA.values())
-    
     janela_pai = ABA_ANALISE_GLOBAL.winfo_toplevel()
     
     if not tem_set:
@@ -892,30 +890,38 @@ def pedir_nome_analise():
                                parent=janela_pai)
         return
 
-    # --- POP-UP CUSTOMIZADO ---
     popup = ctk.CTkToplevel(janela_pai)
-    popup.title("Analysis Name")
+    popup.title("Analysis Session")
     
-    # Captura a posição exata do mouse
+    # --- POP-UP EXPANDIDO ---
     x_mouse = ABA_ANALISE_GLOBAL.winfo_pointerx()
     y_mouse = ABA_ANALISE_GLOBAL.winfo_pointery()
-    popup.geometry(f"320x150+{x_mouse - 160}+{y_mouse - 100}")
+    # Aumentado para 380x320 para dar bastante espaço ao texto
+    popup.geometry(f"380x320+{x_mouse - 190}+{y_mouse - 160}")
     popup.resizable(False, False)
 
-    # 1. PRIMEIRO EMPACOTAMOS TODOS OS WIDGETS
-    ctk.CTkLabel(popup, text="Enter a name for this Analysis Session:", font=("Roboto", 13)).pack(pady=(20, 10))
-    
-    entrada = ctk.CTkEntry(popup, width=280, border_color=CORES["primaria"])
-    entrada.pack(pady=(0, 15))
+    # NOME DA ANÁLISE
+    ctk.CTkLabel(popup, text="Enter a name for this session:", font=("Roboto", 13)).pack(pady=(15, 2))
+    entrada_nome = ctk.CTkEntry(popup, width=340, border_color=CORES["primaria"])
+    entrada_nome.pack(pady=(0, 10))
+
+    # COMENTÁRIO (TEXTBOX PARA VÁRIAS LINHAS)
+    ctk.CTkLabel(popup, text="Comment / Hint (optional):", font=("Roboto", 13)).pack(pady=(5, 2))
+    # Usando CTkTextbox para permitir que o usuário escreva "muito"
+    entrada_comentario = ctk.CTkTextbox(popup, width=340, height=100, border_color=CORES["primaria"], border_width=2)
+    entrada_comentario.pack(pady=(0, 15))
 
     def confirmar(event=None):
-        nome = entrada.get().strip()
+        nome = entrada_nome.get().strip()
+        # No Textbox, o texto é extraído da linha 1.0 até o fim (removendo a última quebra de linha com -1c)
+        comentario = entrada_comentario.get("1.0", "end-1c").strip()
+        
         if not nome:
             messagebox.showerror("Error", "A name must be defined to save this analysis session.", parent=popup)
             return
         
         popup.destroy()
-        gerar_nova_analise(nome)
+        gerar_nova_analise(nome, comentario) 
 
     def cancelar():
         popup.destroy()
@@ -931,20 +937,25 @@ def pedir_nome_analise():
 
     popup.bind("<Return>", confirmar)
 
-    # 2. SÓ DEPOIS DE TUDO PRONTO, APLICAMOS AS CONFIGURAÇÕES MODAIS E FOCO
-    popup.update_idletasks() # Força a interface a desenhar os botões imediatamente
-    popup.transient(janela_pai) # Mantém no topo
-    popup.grab_set() # Trava a janela de trás
-    popup.attributes("-topmost", True) # Garante que não vai sumir atrás de nada
+    popup.update_idletasks()
+    popup.transient(janela_pai) 
+    popup.grab_set() 
+    popup.attributes("-topmost", True) 
     
-    entrada.focus_set() # Coloca o cursor piscando
+    entrada_nome.focus_set()
 
-def gerar_nova_analise(nome_analise):
-    """Cria uma nova aba na seção de Análise com todas as tabelas na vertical."""
+def gerar_nova_analise(nome_analise, comentario=""):
+    """Cria uma nova aba na seção de Análise com todas as tabelas na vertical e boxplots estatísticos iterativos no final."""
+    import math
+    import statistics
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+    
     global ABA_ANALISE_GLOBAL, FUNCAO_SHOW_TAB_GLOBAL
     if not ABA_ANALISE_GLOBAL or not FUNCAO_SHOW_TAB_GLOBAL: return
 
-    # 1. Agrupa os experimentos por Set (cor)
     grupos = {}
     for chave, dados in HISTORICO_DATA.items():
         cor = dados.get("set_color")
@@ -956,10 +967,9 @@ def gerar_nova_analise(nome_analise):
 
     if not grupos: return
 
-    # 2. Configura a estrutura principal da Aba Analise (se for a primeira vez)
     if not hasattr(ABA_ANALISE_GLOBAL, 'is_setup'):
         for widget in ABA_ANALISE_GLOBAL.winfo_children():
-            widget.destroy() # Remove placeholder principal
+            widget.destroy()
 
         ctk.CTkLabel(ABA_ANALISE_GLOBAL, text="STATISTICAL ANALYSIS", font=("Roboto", 20, "bold"), text_color=CORES["destaque"]).pack(pady=(20, 5), padx=20, anchor="w")
 
@@ -1036,15 +1046,100 @@ def gerar_nova_analise(nome_analise):
     tab_btn.bind("<Button-1>", lambda e, n=nome_analise: selecionar_aba(n))
     lbl_tab.bind("<Button-1>", lambda e, n=nome_analise: selecionar_aba(n))
 
-    def on_enter(e, f=tab_btn, n=nome_analise):
+    def on_enter_hover(e, f=tab_btn, n=nome_analise):
         if active_tab[0] != n: f.configure(fg_color="#3D3D45")
-    def on_leave(e, f=tab_btn, n=nome_analise):
+    def on_leave_hover(e, f=tab_btn, n=nome_analise):
         if active_tab[0] != n: f.configure(fg_color="#2D2D35")
 
-    tab_btn.bind("<Enter>", on_enter)
-    tab_btn.bind("<Leave>", on_leave)
-    lbl_tab.bind("<Enter>", on_enter)
-    lbl_tab.bind("<Leave>", on_leave)
+    tab_btn.bind("<Enter>", on_enter_hover, add="+")
+    tab_btn.bind("<Leave>", on_leave_hover, add="+")
+    lbl_tab.bind("<Enter>", on_enter_hover, add="+")
+    lbl_tab.bind("<Leave>", on_leave_hover, add="+")
+
+    def criar_tooltip(widget, texto):
+        if not texto: return
+        tooltip_window = [None]
+        timer_id = [None]
+
+        def mostrar_tooltip():
+            if tooltip_window[0] is not None: return
+            x = widget.winfo_rootx() + 20
+            y = widget.winfo_rooty() + widget.winfo_height() + 5
+            tw = tk.Toplevel(widget)
+            tw.wm_overrideredirect(True)
+            tw.wm_geometry(f"+{x}+{y}")
+            
+            lbl = tk.Label(tw, text=texto, background="#1E1E21", foreground="#DDDDDD",
+                           relief="solid", borderwidth=1, highlightbackground="#444", 
+                           font=("Roboto", 10), padx=10, pady=8,
+                           wraplength=350, justify="left")
+            lbl.pack()
+            tw.attributes("-topmost", True)
+            tooltip_window[0] = tw
+
+        def on_enter(event):
+            if timer_id[0]: widget.after_cancel(timer_id[0])
+            timer_id[0] = widget.after(500, mostrar_tooltip)
+
+        def on_leave(event):
+            if timer_id[0]: 
+                widget.after_cancel(timer_id[0])
+                timer_id[0] = None
+            if tooltip_window[0]:
+                tooltip_window[0].destroy()
+                tooltip_window[0] = None
+
+        widget.bind("<Enter>", on_enter, add="+")
+        widget.bind("<Leave>", on_leave, add="+")
+
+    criar_tooltip(tab_btn, comentario)
+    criar_tooltip(lbl_tab, comentario)
+
+    def criar_tooltip_treeview(tree, dict_notas):
+        if not dict_notas: return
+        
+        tooltip_window = [None]
+        current_item = [None]
+        timer_id = [None]
+
+        def esconder_tooltip(event=None):
+            if tooltip_window[0]:
+                tooltip_window[0].destroy()
+                tooltip_window[0] = None
+            if timer_id[0]:
+                tree.after_cancel(timer_id[0])
+                timer_id[0] = None
+            current_item[0] = None
+
+        def mostrar_tooltip(item, x, y):
+            esconder_tooltip() 
+            texto = dict_notas.get(item)
+            if not texto: return
+            
+            tw = tk.Toplevel(tree)
+            tw.wm_overrideredirect(True)
+            tw.wm_geometry(f"+{x+15}+{y+15}")
+            
+            lbl = tk.Label(tw, text=f"Notes:\n{texto}", background="#1E1E21", foreground="#DDDDDD",
+                           relief="solid", borderwidth=1, highlightbackground="#444", 
+                           font=("Roboto", 10), padx=10, pady=8,
+                           wraplength=350, justify="left")
+            lbl.pack()
+            tw.attributes("-topmost", True)
+            tooltip_window[0] = tw
+
+        def on_motion(event):
+            item = tree.identify_row(event.y)
+            if item != current_item[0]:
+                esconder_tooltip()
+                current_item[0] = item
+                if item and item in dict_notas:
+                    timer_id[0] = tree.after(500, lambda it=item, rx=event.x_root, ry=event.y_root: mostrar_tooltip(it, rx, ry))
+
+        tree.bind("<Motion>", on_motion)
+        tree.bind("<Leave>", esconder_tooltip)
+        tree.bind("<ButtonPress>", esconder_tooltip) 
+        tree.bind("<MouseWheel>", esconder_tooltip)  
 
     frame_tab_content = ctk.CTkScrollableFrame(content_area, fg_color="transparent")
 
@@ -1057,40 +1152,89 @@ def gerar_nova_analise(nome_analise):
 
     colunas = ("INSTANCE", "MACHINES", "JOBS", "SETUP", "POLICY", "MAKESPAN", "RUNTIME", "TIME TO BEST", "PARAMETERS", "AGENTS CONFIGS")
 
-    # Função de contraste visual (Luminosidade)
     def get_text_color_for_bg(hex_color):
         try:
             hex_color = hex_color.lstrip('#')
             r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
             lum = 0.299 * r + 0.587 * g + 0.114 * b
-            # Se a luminosidade for alta (fundo claro), usa Preto. Senão, Branco.
             return "#000000" if lum > 160 else "#FFFFFF"
         except: return "#FFFFFF"
 
+    def calcular_estatisticas_coluna(valores_str):
+        limpos = []
+        for v in valores_str:
+            if v in ("-", "N/A", "") or v is None: continue
+            v_limpo = str(v).replace("s", "").strip()
+            try: limpos.append(float(v_limpo))
+            except: pass
+
+        if not limpos:
+            return {k: "-" for k in ["Min", "Mean", "Median", "P95", "Max", "Stdev", "Variance", "Count", "CV (%)"]}
+
+        n = len(limpos)
+        limpos.sort()
+        mn = min(limpos)
+        mx = max(limpos)
+        mean = sum(limpos) / n
+        median = statistics.median(limpos)
+
+        k = (n - 1) * 0.95
+        f = math.floor(k)
+        c = math.ceil(k)
+        if f == c: p95 = limpos[int(k)]
+        else: p95 = limpos[f] * (c - k) + limpos[c] * (k - f)
+
+        if n >= 2:
+            stdev = statistics.stdev(limpos)
+            var = statistics.variance(limpos)
+            cv = (stdev / mean * 100) if mean != 0 else 0
+        else:
+            stdev = 0.0
+            var = 0.0
+            cv = 0.0
+
+        return {
+            "Min": f"{mn:.2f}",
+            "Mean": f"{mean:.2f}",
+            "Median": f"{median:.2f}",
+            "P95": f"{p95:.2f}",
+            "Max": f"{mx:.2f}",
+            "Stdev": f"{stdev:.2f}",
+            "Variance": f"{var:.2f}",
+            "Count": str(n),
+            "CV (%)": f"{cv:.2f}%" if n >= 2 else "-"
+        }
+
+    # ================== 1. GERAÇÃO DAS TABELAS ==================
     for cor_set in sorted(grupos.keys()):
         nome_set = grupos[cor_set]["nome"]
         lista_exp = grupos[cor_set]["exp"]
 
+        def get_best_makespan(exp):
+            return min(exp['y']) if exp.get('y') else float('inf')
+            
+        lista_exp.sort(key=get_best_makespan)
+
         cor_texto = get_text_color_for_bg(cor_set)
         
-        # --- FIX: width=0 FORÇA A LABEL A ABRAÇAR EXATAMENTE O TEXTO ---
         lbl_set = ctk.CTkLabel(frame_tab_content, text=f" Group: {nome_set} ", font=("Roboto", 14, "bold"),
-                               fg_color=cor_set, text_color=cor_texto, corner_radius=6, width=0)
+                               fg_color=cor_set, text_color=cor_texto, corner_radius=0, width=0)
         lbl_set.pack(anchor="w", pady=(20, 5), padx=10)
 
         frame_tabela = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
         frame_tabela.pack(fill="x", expand=False, padx=10, pady=(0, 15))
 
-        tree = ttk.Treeview(frame_tabela, columns=colunas, show="headings", height=len(lista_exp))
-        
+        tree = ttk.Treeview(frame_tabela, columns=colunas, show="headings")
+        tree.tag_configure("separator", background=cor_set)
+
         scroll_x = ttk.Scrollbar(frame_tabela, orient="horizontal", command=tree.xview)
         tree.configure(xscrollcommand=scroll_x.set)
 
         tree.pack(side="top", fill="x", expand=True)
         scroll_x.pack(side="bottom", fill="x")
 
+        mapeamento_notas = {}
         linhas_para_inserir = []
-        max_lens = {col: len(col) for col in colunas}
 
         for exp in lista_exp:
             inst = exp.get("meta_nome", "-")
@@ -1122,21 +1266,158 @@ def gerar_nova_analise(nome_analise):
             param_short = ", ".join([a.split("[")[0].strip() for a in raw_ag])
             param_long = " | ".join(raw_ag)
 
-            valores = (inst, machines, jobs, setup_rng, policy, str(mksp), runtime, time_to_best, param_short, param_long)
-            linhas_para_inserir.append(valores)
+            nota_texto = ""
+            for chave_possivel in ["user_notes", "notes", "note", "nota", "notas", "Notes", "anotacao"]:
+                if chave_possivel in exp and exp[chave_possivel]:
+                    nota_texto = str(exp[chave_possivel]).strip()
+                    break
 
+            valores = (inst, machines, jobs, setup_rng, policy, str(mksp), runtime, time_to_best, param_short, param_long)
+            linhas_para_inserir.append({"valores": valores, "nota": nota_texto, "tag": "normal"})
+
+        col_mac = [p["valores"][1] for p in linhas_para_inserir]
+        col_job = [p["valores"][2] for p in linhas_para_inserir]
+        col_mksp = [p["valores"][5] for p in linhas_para_inserir]
+        col_rt = [p["valores"][6] for p in linhas_para_inserir]
+        col_ttb = [p["valores"][7] for p in linhas_para_inserir]
+
+        stats_mac = calcular_estatisticas_coluna(col_mac)
+        stats_job = calcular_estatisticas_coluna(col_job)
+        stats_mksp = calcular_estatisticas_coluna(col_mksp)
+        stats_rt = calcular_estatisticas_coluna(col_rt)
+        stats_ttb = calcular_estatisticas_coluna(col_ttb)
+
+        linha_separadora = tuple("" for _ in colunas)
+        linhas_para_inserir.append({"valores": linha_separadora, "nota": "", "tag": "separator"})
+
+        ordem_metricas = ["Min", "Mean", "Median", "P95", "Max", "Stdev", "Variance", "Count", "CV (%)"]
+        for m in ordem_metricas:
+            valores_estatisticas = (m, stats_mac[m], stats_job[m], "-", "-", stats_mksp[m], stats_rt[m], stats_ttb[m], "-", "-")
+            linhas_para_inserir.append({"valores": valores_estatisticas, "nota": "", "tag": "normal"})
+
+        max_lens = {col: len(col) for col in colunas}
+        for pacote in linhas_para_inserir:
             for i, col in enumerate(colunas):
-                if len(valores[i]) > max_lens[col]:
-                    max_lens[col] = len(valores[i])
+                if len(str(pacote["valores"][i])) > max_lens[col]:
+                    max_lens[col] = len(str(pacote["valores"][i]))
 
         larguras = [int(max_lens[col] * 8) + 30 for col in colunas]
+        tree.configure(height=len(linhas_para_inserir))
 
         for col, largura in zip(colunas, larguras):
             tree.heading(col, text=col, anchor="w")
             tree.column(col, width=largura, minwidth=largura, anchor="w", stretch=False)
 
-        for valores in linhas_para_inserir:
-            tree.insert("", "end", values=valores)
+        for pacote in linhas_para_inserir:
+            tags_da_linha = (pacote.get("tag", "normal"),)
+            item_id = tree.insert("", "end", values=pacote["valores"], tags=tags_da_linha)
+            if pacote["nota"]:
+                mapeamento_notas[item_id] = pacote["nota"]
+
+        if mapeamento_notas:
+            criar_tooltip_treeview(tree, mapeamento_notas)
+
+    # ================== 2. EXTRAÇÃO E GERAÇÃO DOS BOXPLOTS ==================
+    lbl_plots = ctk.CTkLabel(frame_tab_content, text=" STATISTICAL DISTRIBUTIONS ", font=("Roboto", 16, "bold"), text_color=CORES["destaque"])
+    lbl_plots.pack(anchor="w", pady=(30, 5), padx=10)
+
+    plot_labels = []
+    plot_colors = []
+    data_makespan = []
+    data_runtime = []
+    data_ttb = []
+
+    for cor_set in sorted(grupos.keys()):
+        nome_set = grupos[cor_set]["nome"]
+        lista_exp = grupos[cor_set]["exp"]
+        
+        plot_labels.append(nome_set)
+        plot_colors.append(cor_set)
+        
+        mksp_g, rt_g, ttb_g = [], [], []
+        for exp in lista_exp:
+            if exp.get('y'):
+                mksp_g.append(min(exp['y']))
+            if exp.get('x') and exp.get('y'):
+                rt_g.append(exp['x'][-1])
+                idx_best = exp['y'].index(min(exp['y']))
+                ttb_g.append(exp['x'][idx_best])
+                
+        data_makespan.append(mksp_g)
+        data_runtime.append(rt_g)
+        data_ttb.append(ttb_g)
+
+    def criar_boxplot(data, title, xlabel):
+        plt.rcParams['font.family'] = 'sans-serif'
+        plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'Calibri', 'DejaVu Sans']
+
+        valid_data, valid_colors, valid_labels = [], [], []
+        for d, c, l in zip(data, plot_colors, plot_labels):
+            if d: 
+                valid_data.append(d)
+                valid_colors.append(c)
+                valid_labels.append(l) 
+        
+        if not valid_data: return
+        
+        altura_dinamica = max(5.0, len(valid_data) * 1.5)
+        
+        # Aumentamos a largura para 12.0 para espalhar bem o gráfico
+        fig = Figure(figsize=(12.0, altura_dinamica), facecolor="#1E1E21")
+        ax = fig.add_subplot(111)
+        ax.set_facecolor("#1E1E21")
+        
+        bplot = ax.boxplot(valid_data, vert=False, patch_artist=True, labels=["" for _ in valid_data],
+                           boxprops=dict(color="#DDDDDD", linewidth=1.5),
+                           capprops=dict(color="#DDDDDD", linewidth=1.5),
+                           whiskerprops=dict(color="#DDDDDD", linewidth=1.5),
+                           flierprops=dict(markerfacecolor="#FFFFFF", markeredgecolor="#FFFFFF", marker='o', markersize=5),
+                           medianprops=dict(color="#FFFFFF", linewidth=2.0))
+                           
+        for patch, color in zip(bplot['boxes'], valid_colors):
+            patch.set_facecolor(color)
+            
+        ax.set_title(title, color="#FFFFFF", fontsize=12, pad=10, fontweight="bold")
+        ax.set_xlabel(xlabel, color="#DDDDDD", fontsize=10)
+        ax.tick_params(colors="#DDDDDD", labelsize=10)
+        
+        ax.grid(axis='x', color='#333333', linestyle='--', linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True) 
+        ax.tick_params(axis='y', which='both', length=0)
+        
+        for spine in ax.spines.values():
+            spine.set_color("#444444")
+            spine.set_linewidth(1.0)
+            
+        # --- FIX: LEGENDA NO TOPO DIREITO POR DENTRO DO GRÁFICO ---
+        legend_patches = [mpatches.Patch(color=c, label=l) for c, l in zip(valid_colors, valid_labels)]
+        
+        ax.legend(handles=legend_patches, loc='upper right', frameon=False, labelcolor="#DDDDDD", fontsize=10)
+        
+        # Dá uma folga extra de 15% na direita do eixo X para que os 
+        # outliers/bigodes nunca encostem ou fiquem por baixo dos textos da legenda.
+        x_min, x_max = ax.get_xlim()
+        ax.set_xlim(x_min, x_max + (x_max - x_min) * 0.15)
+            
+        # O tight_layout volta ao padrão normal, fazendo o gráfico ocupar o espaço todo!
+        fig.tight_layout()
+        
+        container_frame = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
+        container_frame.pack(fill="x", pady=(10, 25), padx=10)
+        
+        canvas = FigureCanvasTkAgg(fig, master=container_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="x", expand=True)
+        
+        # --- USANDO A SUA CLASSE GLOBAL ---
+        # Instanciamos a sua CustomToolbar em vez da padrão do Matplotlib
+        toolbar = CustomToolbar(canvas, container_frame)
+        toolbar.update()
+        toolbar.pack(side="bottom", fill="x")
+
+    criar_boxplot(data_makespan, "Makespan Variance", "Makespan Value")
+    criar_boxplot(data_runtime, "Total Runtime Distribution", "Seconds (s)")
+    criar_boxplot(data_ttb, "Time to Best Distribution", "Seconds (s)")
 
     tabs_obj[nome_analise] = {
         "btn_frame": tab_btn,
