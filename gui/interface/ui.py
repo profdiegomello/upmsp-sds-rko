@@ -953,11 +953,15 @@ def gerar_nova_analise(nome_analise, comentario=""):
     import matplotlib.pyplot as plt
     import matplotlib.patches as mpatches
     
-    global ABA_ANALISE_GLOBAL, FUNCAO_SHOW_TAB_GLOBAL
+    global ABA_ANALISE_GLOBAL, FUNCAO_SHOW_TAB_GLOBAL, INSTANCIAS_OCULTAS
     if not ABA_ANALISE_GLOBAL or not FUNCAO_SHOW_TAB_GLOBAL: return
 
     grupos = {}
     for chave, dados in HISTORICO_DATA.items():
+
+        # Se o experimento estiver marcado como oculto no histórico, pula ele!
+        if chave in INSTANCIAS_OCULTAS:
+            continue
         cor = dados.get("set_color")
         if cor:
             if cor not in grupos:
@@ -1409,8 +1413,6 @@ def gerar_nova_analise(nome_analise, comentario=""):
         canvas.draw()
         canvas.get_tk_widget().pack(fill="x", expand=True)
         
-        # --- USANDO A SUA CLASSE GLOBAL ---
-        # Instanciamos a sua CustomToolbar em vez da padrão do Matplotlib
         toolbar = CustomToolbar(canvas, container_frame)
         toolbar.update()
         toolbar.pack(side="bottom", fill="x")
