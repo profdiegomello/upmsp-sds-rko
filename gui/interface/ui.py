@@ -945,11 +945,12 @@ def pedir_nome_analise():
     entrada_nome.focus_set()
 
 def gerar_nova_analise(nome_analise, comentario=""):
-    """Cria uma nova aba na seção de Análise com todas as tabelas na vertical e boxplots estatísticos iterativos no final."""
+    """Cria uma aba na Análise com gráfico de convergência, tabelas, boxplots, IC 95% e Histograma com bordas."""
     import math
     import statistics
+    import numpy as np
     from matplotlib.figure import Figure
-    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
     import matplotlib.pyplot as plt
     import matplotlib.patches as mpatches
     
@@ -958,10 +959,9 @@ def gerar_nova_analise(nome_analise, comentario=""):
 
     grupos = {}
     for chave, dados in HISTORICO_DATA.items():
-
-        # Se o experimento estiver marcado como oculto no histórico, pula ele!
         if chave in INSTANCIAS_OCULTAS:
             continue
+
         cor = dados.get("set_color")
         if cor:
             if cor not in grupos:
@@ -1101,7 +1101,6 @@ def gerar_nova_analise(nome_analise, comentario=""):
 
     def criar_tooltip_treeview(tree, dict_notas):
         if not dict_notas: return
-        
         tooltip_window = [None]
         current_item = [None]
         timer_id = [None]
@@ -1146,6 +1145,58 @@ def gerar_nova_analise(nome_analise, comentario=""):
         tree.bind("<MouseWheel>", esconder_tooltip)  
 
     frame_tab_content = ctk.CTkScrollableFrame(content_area, fg_color="transparent")
+
+
+    # ================== 0. GRÁFICO DE CONVERGÊNCIA (TOPO) ==================
+    lbl_conv = ctk.CTkLabel(frame_tab_content, text=" CONVERGENCE EVOLUTION ", font=("Roboto", 16, "bold"), text_color=CORES["destaque"])
+    lbl_conv.pack(anchor="w", pady=(20, 5), padx=10)
+
+    fig_conv = Figure(figsize=(10.0, 4.5), facecolor="#1E1E21")
+    ax_conv = fig_conv.add_subplot(111)
+    ax_conv.set_facecolor("#1E1E21")
+
+    legend_patches_conv = []
+    
+    for cor_set in sorted(grupos.keys()):
+        nome_set = grupos[cor_set]["nome"]
+        lista_exp = grupos[cor_set]["exp"]
+        
+        legend_patches_conv.append(mpatches.Patch(color=cor_set, label=nome_set))
+        
+        for exp in lista_exp:
+            x_vals = exp.get('x', [])
+            y_vals = exp.get('y', [])
+            if x_vals and y_vals:
+                ax_conv.plot(x_vals, y_vals, color=cor_set, alpha=0.8, linewidth=1.5)
+
+    ax_conv.set_title("Makespan Convergence Over Time", color="#FFFFFF", fontsize=12, pad=30, fontweight="bold")
+    ax_conv.set_xlabel("Time (s)", color="#DDDDDD", fontsize=10)
+    ax_conv.set_ylabel("Makespan", color="#DDDDDD", fontsize=10)
+    ax_conv.tick_params(colors="#DDDDDD", labelsize=10)
+    
+    ax_conv.grid(color='#333333', linestyle='--', linewidth=0.5, alpha=0.7)
+    for spine in ax_conv.spines.values():
+        spine.set_color("#444444")
+        spine.set_linewidth(1.0)
+        
+    # --- LEGENDA HORIZONTAL NO TOPO ---
+    n_cols = len(legend_patches_conv) if legend_patches_conv else 1
+    ax_conv.legend(handles=legend_patches_conv, loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=n_cols, frameon=False, labelcolor="#DDDDDD", fontsize=10)
+    
+    fig_conv.tight_layout()
+
+    container_conv = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
+    container_conv.pack(fill="x", pady=(5, 30), padx=10)
+
+    canvas_conv = FigureCanvasTkAgg(fig_conv, master=container_conv)
+    canvas_conv.draw()
+    canvas_conv.get_tk_widget().pack(fill="x", expand=True)
+
+    toolbar_conv = CustomToolbar(canvas_conv, container_conv)
+    toolbar_conv.update()
+    toolbar_conv.pack(side="bottom", fill="x")
+    # =======================================================================
+
 
     style = ttk.Style()
     style.theme_use("default")
@@ -1321,7 +1372,7 @@ def gerar_nova_analise(nome_analise, comentario=""):
         if mapeamento_notas:
             criar_tooltip_treeview(tree, mapeamento_notas)
 
-    # ================== 2. EXTRAÇÃO E GERAÇÃO DOS BOXPLOTS ==================
+    # ================== 2. EXTRAÇÃO DE DADOS PARA GRÁFICOS ESTATÍSTICOS ==================
     lbl_plots = ctk.CTkLabel(frame_tab_content, text=" STATISTICAL DISTRIBUTIONS ", font=("Roboto", 16, "bold"), text_color=CORES["destaque"])
     lbl_plots.pack(anchor="w", pady=(30, 5), padx=10)
 
@@ -1351,6 +1402,7 @@ def gerar_nova_analise(nome_analise, comentario=""):
         data_runtime.append(rt_g)
         data_ttb.append(ttb_g)
 
+    # ================== 3. FUNÇÃO DE PLOTAGEM DOS BOXPLOTS ==================
     def criar_boxplot(data, title, xlabel):
         plt.rcParams['font.family'] = 'sans-serif'
         plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'Calibri', 'DejaVu Sans']
@@ -1366,7 +1418,6 @@ def gerar_nova_analise(nome_analise, comentario=""):
         
         altura_dinamica = max(5.0, len(valid_data) * 1.5)
         
-        # Aumentamos a largura para 12.0 para espalhar bem o gráfico
         fig = Figure(figsize=(12.0, altura_dinamica), facecolor="#1E1E21")
         ax = fig.add_subplot(111)
         ax.set_facecolor("#1E1E21")
@@ -1381,7 +1432,8 @@ def gerar_nova_analise(nome_analise, comentario=""):
         for patch, color in zip(bplot['boxes'], valid_colors):
             patch.set_facecolor(color)
             
-        ax.set_title(title, color="#FFFFFF", fontsize=12, pad=10, fontweight="bold")
+        # Pad aumentado para a legenda caber de forma limpa abaixo do título
+        ax.set_title(title, color="#FFFFFF", fontsize=12, pad=30, fontweight="bold")
         ax.set_xlabel(xlabel, color="#DDDDDD", fontsize=10)
         ax.tick_params(colors="#DDDDDD", labelsize=10)
         
@@ -1393,17 +1445,11 @@ def gerar_nova_analise(nome_analise, comentario=""):
             spine.set_color("#444444")
             spine.set_linewidth(1.0)
             
-        # --- FIX: LEGENDA NO TOPO DIREITO POR DENTRO DO GRÁFICO ---
+        # --- LEGENDA HORIZONTAL NO TOPO ---
         legend_patches = [mpatches.Patch(color=c, label=l) for c, l in zip(valid_colors, valid_labels)]
-        
-        ax.legend(handles=legend_patches, loc='upper right', frameon=False, labelcolor="#DDDDDD", fontsize=10)
-        
-        # Dá uma folga extra de 15% na direita do eixo X para que os 
-        # outliers/bigodes nunca encostem ou fiquem por baixo dos textos da legenda.
-        x_min, x_max = ax.get_xlim()
-        ax.set_xlim(x_min, x_max + (x_max - x_min) * 0.15)
+        n_cols = len(legend_patches) if legend_patches else 1
+        ax.legend(handles=legend_patches, loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=n_cols, frameon=False, labelcolor="#DDDDDD", fontsize=10)
             
-        # O tight_layout volta ao padrão normal, fazendo o gráfico ocupar o espaço todo!
         fig.tight_layout()
         
         container_frame = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
@@ -1417,9 +1463,147 @@ def gerar_nova_analise(nome_analise, comentario=""):
         toolbar.update()
         toolbar.pack(side="bottom", fill="x")
 
+    # Renderiza os Boxplots
     criar_boxplot(data_makespan, "Makespan Variance", "Makespan Value")
     criar_boxplot(data_runtime, "Total Runtime Distribution", "Seconds (s)")
     criar_boxplot(data_ttb, "Time to Best Distribution", "Seconds (s)")
+
+
+    # ================== 4. GRÁFICOS DE INTERVALO DE CONFIANÇA 95% (BOOTSTRAP) ==================
+    lbl_ic_plots = ctk.CTkLabel(frame_tab_content, text=" 95% CONFIDENCE INTERVALS (BOOTSTRAP) ", font=("Roboto", 16, "bold"), text_color=CORES["destaque"])
+    lbl_ic_plots.pack(anchor="w", pady=(30, 5), padx=10)
+
+    def criar_ic_plot(data, title, xlabel):
+        plt.rcParams['font.family'] = 'sans-serif'
+        plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'Calibri', 'DejaVu Sans']
+
+        valid_data, valid_colors, valid_labels = [], [], []
+        for d, c, l in zip(data, plot_colors, plot_labels):
+            if d: 
+                valid_data.append(d)
+                valid_colors.append(c)
+                valid_labels.append(l) 
+        
+        if not valid_data: return
+
+        def calcular_bootstrap_ic(arr, n_resamples=10000):
+            if len(arr) < 2:
+                m = arr[0] if len(arr) == 1 else 0
+                return m, m, m
+            arr_np = np.array(arr)
+            amostras = np.random.choice(arr_np, size=(n_resamples, len(arr_np)), replace=True)
+            medias_amostrais = np.mean(amostras, axis=1)
+            return np.mean(arr_np), np.percentile(medias_amostrais, 2.5), np.percentile(medias_amostrais, 97.5)
+
+        means, erro_inferior, erro_superior = [], [], []
+        for d in valid_data:
+            media, inf, sup = calcular_bootstrap_ic(d)
+            means.append(media)
+            erro_inferior.append(media - inf)
+            erro_superior.append(sup - media)
+
+        altura_dinamica = max(4.0, len(valid_data) * 1.0)
+        
+        fig = Figure(figsize=(12.0, altura_dinamica), facecolor="#1E1E21")
+        ax = fig.add_subplot(111)
+        ax.set_facecolor("#1E1E21")
+
+        y_positions = np.arange(len(valid_data))
+
+        for i in range(len(valid_data)):
+            ax.errorbar(means[i], y_positions[i], xerr=[[erro_inferior[i]], [erro_superior[i]]],
+                        fmt='o', color=valid_colors[i], ecolor=valid_colors[i], 
+                        elinewidth=3, capsize=6, capthick=2, markersize=8)
+
+        ax.set_yticks(y_positions)
+        ax.set_yticklabels(["" for _ in valid_data])
+
+        ax.set_title(title, color="#FFFFFF", fontsize=12, pad=30, fontweight="bold")
+        ax.set_xlabel(xlabel, color="#DDDDDD", fontsize=10)
+        ax.tick_params(colors="#DDDDDD", labelsize=10)
+        
+        ax.grid(axis='x', color='#333333', linestyle='--', linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True) 
+        ax.tick_params(axis='y', which='both', length=0)
+        
+        for spine in ax.spines.values():
+            spine.set_color("#444444")
+            spine.set_linewidth(1.0)
+
+        # --- LEGENDA HORIZONTAL NO TOPO ---
+        legend_patches = [mpatches.Patch(color=c, label=l) for c, l in zip(valid_colors, valid_labels)]
+        n_cols = len(legend_patches) if legend_patches else 1
+        ax.legend(handles=legend_patches, loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=n_cols, frameon=False, labelcolor="#DDDDDD", fontsize=10)
+
+        fig.tight_layout()
+
+        container_frame = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
+        container_frame.pack(fill="x", pady=(10, 25), padx=10)
+        
+        canvas = FigureCanvasTkAgg(fig, master=container_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="x", expand=True)
+        
+        toolbar = CustomToolbar(canvas, container_frame)
+        toolbar.update()
+        toolbar.pack(side="bottom", fill="x")
+
+    criar_ic_plot(data_makespan, "Makespan 95% CI (Bootstrap Method)", "Mean Makespan")
+    criar_ic_plot(data_ttb, "Time to Best 95% CI (Bootstrap Method)", "Mean Seconds (s)")
+
+
+    # ================== 5. DUAL HISTOGRAM (MAKESPAN VS TIME TO BEST) ==================
+    lbl_hist = ctk.CTkLabel(frame_tab_content, text=" OVERALL FREQUENCY (MAKESPAN VS TIME TO BEST) ", font=("Roboto", 16, "bold"), text_color=CORES["destaque"])
+    lbl_hist.pack(anchor="w", pady=(30, 5), padx=10)
+
+    # Agrupa todos os dados de Makespan e TTB (ignorando os sets) para comparar as duas estatísticas macro
+    all_makespans = []
+    all_ttb = []
+    for d in data_makespan: all_makespans.extend(d)
+    for d in data_ttb: all_ttb.extend(d)
+
+    fig_hist = Figure(figsize=(12.0, 5.0), facecolor="#1E1E21")
+    ax_hist = fig_hist.add_subplot(111)
+    ax_hist.set_facecolor("#1E1E21")
+
+    # Cores fixas bem contrastantes para o histograma: Azul para Makespan, Vermelho/Laranja para TTB
+    cor_makespan = "#3498DB" 
+    cor_ttb = "#E74C3C"      
+
+    # Desenha os Histogramas com Alpha 0.6 e bordas claras para definição
+    if all_makespans:
+        ax_hist.hist(all_makespans, bins=20, alpha=0.6, color=cor_makespan, edgecolor="#DDDDDD", linewidth=1.0, label="Makespan Value")
+    if all_ttb:
+        ax_hist.hist(all_ttb, bins=20, alpha=0.6, color=cor_ttb, edgecolor="#DDDDDD", linewidth=1.0, label="Time to Best (s)")
+
+    ax_hist.set_title("Value Distribution (Makespan vs Time to Best)", color="#FFFFFF", fontsize=12, pad=30, fontweight="bold")
+    ax_hist.set_xlabel("Value / Seconds", color="#DDDDDD", fontsize=10)
+    ax_hist.set_ylabel("Frequency", color="#DDDDDD", fontsize=10)
+    ax_hist.tick_params(colors="#DDDDDD", labelsize=10)
+
+    ax_hist.grid(axis='y', color='#333333', linestyle='--', linewidth=0.5, alpha=0.7)
+    ax_hist.set_axisbelow(True)
+
+    for spine in ax_hist.spines.values():
+        spine.set_color("#444444")
+        spine.set_linewidth(1.0)
+
+    # --- LEGENDA HORIZONTAL NO TOPO ---
+    ax_hist.legend(loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=2, frameon=False, labelcolor="#DDDDDD", fontsize=10)
+
+    fig_hist.tight_layout()
+
+    container_hist = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
+    container_hist.pack(fill="x", pady=(10, 30), padx=10)
+
+    canvas_hist = FigureCanvasTkAgg(fig_hist, master=container_hist)
+    canvas_hist.draw()
+    canvas_hist.get_tk_widget().pack(fill="x", expand=True)
+
+    toolbar_hist = CustomToolbar(canvas_hist, container_hist)
+    toolbar_hist.update()
+    toolbar_hist.pack(side="bottom", fill="x")
+    # ==================================================================================
 
     tabs_obj[nome_analise] = {
         "btn_frame": tab_btn,
