@@ -624,6 +624,9 @@ def aplicar_filtros_historico(evento=None):
         top.geometry("450x400") 
         top.resizable(False, False)
         
+        global SETS_DESCRICOES
+        if 'SETS_DESCRICOES' not in globals(): SETS_DESCRICOES = {}
+        
         if widget_origem:
             try: top.geometry(f"+{widget_origem.winfo_rootx() - 380}+{widget_origem.winfo_rooty()}")
             except: pass
@@ -671,6 +674,7 @@ def aplicar_filtros_historico(evento=None):
                 if not resp: return
 
             if cor_alvo in SETS_CRIADOS: del SETS_CRIADOS[cor_alvo]
+            if cor_alvo in SETS_DESCRICOES: del SETS_DESCRICOES[cor_alvo]
             for data in HISTORICO_DATA.values():
                 if data.get("set_color") == cor_alvo: del data["set_color"]
             
@@ -679,6 +683,54 @@ def aplicar_filtros_historico(evento=None):
 
         def atualizar_nome_set(cor_alvo, novo_nome):
             SETS_CRIADOS[cor_alvo] = novo_nome
+
+        # --- FIX: POP-UP AUMENTADO PARA TEXTBOX DE 250 CARACTERES ---
+        def abrir_editor_descricao(cor_alvo, btn_ref):
+            top_desc = ctk.CTkToplevel(top)
+            top_desc.title("Set Description")
+            # Pop-up maior para caber as 3-4 linhas de texto
+            top_desc.geometry("350x250")
+            top_desc.resizable(False, False)
+            top_desc.transient(top)
+            top_desc.attributes("-topmost", True)
+            
+            try:
+                # Ajusta a posição para não sair da tela com o tamanho maior
+                top_desc.geometry(f"+{btn_ref.winfo_rootx() - 150}+{btn_ref.winfo_rooty() - 100}")
+            except: pass
+            
+            top_desc.focus_force()
+            
+            ctk.CTkLabel(top_desc, text="Description (Max 250 chars):", font=("Roboto", 11, "bold")).pack(pady=(10,5))
+            
+            # Textbox permite visão multilinhas
+            txt_desc = ctk.CTkTextbox(top_desc, width=310, height=100, border_width=1, fg_color="#2b2b2b")
+            txt_desc.pack(pady=0)
+            txt_desc.insert("0.0", SETS_DESCRICOES.get(cor_alvo, ""))
+            
+            lbl_contador = ctk.CTkLabel(top_desc, text="", font=("Roboto", 10), text_color="gray")
+            lbl_contador.pack(pady=(2, 5))
+            
+            def atualizar_contador(*args):
+                val = txt_desc.get("0.0", "end-1c")
+                tamanho = len(val)
+                if tamanho > 250:
+                    txt_desc.delete("0.0", "end")
+                    txt_desc.insert("0.0", val[:250])
+                    tamanho = 250
+                lbl_contador.configure(text=f"{tamanho}/250")
+                
+            txt_desc.bind("<KeyRelease>", atualizar_contador)
+            atualizar_contador() # Inicializa o contador com o texto existente
+            
+            def salvar_desc():
+                val = txt_desc.get("0.0", "end-1c").strip()
+                if val: SETS_DESCRICOES[cor_alvo] = val
+                else: SETS_DESCRICOES.pop(cor_alvo, None)
+                top_desc.destroy()
+                
+            ctk.CTkButton(top_desc, text="Save", height=28, command=salvar_desc, fg_color=CORES["primaria"]).pack(pady=(5, 10))
+        # -------------------------------------------------------------
 
         def renderizar_lista_sets():
             for w in scroll.winfo_children(): w.destroy()
@@ -715,9 +767,13 @@ def aplicar_filtros_historico(evento=None):
                                         fg_color="transparent", hover_color="#8B0000",
                                         command=lambda c=cor: deletar_set_globalmente(c))
                 btn_del.pack(side="right")
+                
+                btn_desc = ctk.CTkButton(row_frame, text="", image=ICONES_UI["write"], width=25, height=25,
+                                        fg_color="transparent", hover_color="#555555",
+                                        command=lambda c=cor, b=btn_del: abrir_editor_descricao(c, b))
+                btn_desc.pack(side="right", padx=(0, 2))
 
         renderizar_lista_sets()
-
     # -------------------------------------------------------
 
     estado_hover_global = [] 
@@ -1272,10 +1328,27 @@ def gerar_nova_analise(nome_analise, comentario=""):
 
         cor_texto = get_text_color_for_bg(cor_set)
         
-        lbl_set = ctk.CTkLabel(frame_tab_content, text=f" Group: {nome_set} ", font=("Roboto", 14, "bold"),
-                               fg_color=cor_set, text_color=cor_texto, corner_radius=0, width=0)
-        lbl_set.pack(anchor="w", pady=(20, 5), padx=10)
+        # --- FIX: CABEÇALHO DO GRUPO ALINHADO HORIZONTALMENTE ---
+        header_frame = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
+        header_frame.pack(fill="x", anchor="w", pady=(20, 5), padx=10)
 
+        # 1. Cria a label original do nome do Grupo
+        lbl_set = ctk.CTkLabel(header_frame, text=f" Group: {nome_set} ", font=("Roboto", 14, "bold"),
+                               fg_color=cor_set, text_color=cor_texto, corner_radius=0)
+        lbl_set.pack(side="left")
+
+        # 2. Puxa a descrição da memória global
+        global SETS_DESCRICOES
+        if 'SETS_DESCRICOES' not in globals(): SETS_DESCRICOES = {}
+        desc = SETS_DESCRICOES.get(cor_set, "").strip()
+        
+        # 3. Se houver descrição, cria a label dela à direita, com a mesma cor
+        if desc:
+            lbl_desc = ctk.CTkLabel(header_frame, text=f" {desc} ", font=("Roboto", 12, "italic"),
+                                    fg_color=cor_set, text_color=cor_texto, corner_radius=0)
+            lbl_desc.pack(side="left", padx=(10, 0))
+
+        #=========
         frame_tabela = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
         frame_tabela.pack(fill="x", expand=False, padx=10, pady=(0, 15))
 
