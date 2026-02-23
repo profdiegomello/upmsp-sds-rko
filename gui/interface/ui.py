@@ -114,6 +114,10 @@ CHAVE_SELECIONADA_ATUAL = None
 LISTA_REF_WORKERS = []
 TEMPO_FINAL_CACHE = 0.0
 
+# --- VARIÁVEL GLOBAL DO AUTO-DUMP ---
+AUTO_DUMP_ATIVO = False
+VAR_PERIODIC_DUMP = None
+
 COMBO_INSTANCIAS = None
 VAR_ORDENACAO_HISTORICO = None
 
@@ -331,6 +335,51 @@ class ConfirmDeleteDialog(ctk.CTkToplevel):
             
         self.on_confirm()
         self.destroy()
+
+def fazer_dump_automatico():
+    """Salva um clone do experimento e retorna a string de sucesso para o terminal."""
+    import os
+    import pickle
+    from datetime import datetime
+    
+    global HISTORICO_DATA, AUTO_DUMP_ATIVO, DADOS_X, DADOS_Y, MELHOR_MAKESPAN_ATUAL, NOME_INSTANCIA_ATUAL
+    global SETS_CRIADOS, SETS_DESCRICOES
+    
+    if not AUTO_DUMP_ATIVO: return None
+    if not HISTORICO_DATA: return None
+        
+    pasta_dumps = os.path.join("backend", "dumps")
+    os.makedirs(pasta_dumps, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%y-%m-%d-%H-%M-%S")
+    nome_arquivo = f"dump-{timestamp}.pkl"
+    caminho = os.path.join(pasta_dumps, nome_arquivo)
+    
+    estado_ui = {
+        "historico": HISTORICO_DATA, 
+        "dados_grafico_x": list(DADOS_X) if 'DADOS_X' in globals() else [], 
+        "dados_grafico_y": list(DADOS_Y) if 'DADOS_Y' in globals() else [], 
+        "melhor": MELHOR_MAKESPAN_ATUAL if 'MELHOR_MAKESPAN_ATUAL' in globals() else float('inf'), 
+        "instancia": NOME_INSTANCIA_ATUAL if 'NOME_INSTANCIA_ATUAL' in globals() else "AutoDump",
+        "sets_criados": SETS_CRIADOS if 'SETS_CRIADOS' in globals() else {},
+        "sets_descricoes": SETS_DESCRICOES if 'SETS_DESCRICOES' in globals() else {}
+    }
+    
+    estado_backend = {}
+    if 'rko_gui_start' in globals() and hasattr(globals()['rko_gui_start'], 'obter_estado_checkpoint'):
+        estado_backend = globals()['rko_gui_start'].obter_estado_checkpoint()
+    
+    dump_completo = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
+        "ui": estado_ui, 
+        "backend": estado_backend
+    }
+    
+    with open(caminho, 'wb') as f:
+        pickle.dump(dump_completo, f)
+        
+    # Retorna o texto para ser impresso em sincronia perfeita
+    return f">>> [Auto-Save] Progress saved: {nome_arquivo}\n\n"
 
 def carregar_cache_caminhos():
     if os.path.exists(CAMINHO_CACHE_IO):
@@ -1873,6 +1922,9 @@ def manipulador_retorno_interface(dados):
 
     if ESCRITOR_TERMINAL_GLOBAL is None: return
 
+    if START_BUTTON_GLOBAL and not START_BUTTON_GLOBAL.winfo_exists():
+        return
+
     tipo_status = dados.get("status")
     texto_log = dados.get("message", "")
     nome_pacote = dados.get("instancia") 
@@ -1896,8 +1948,11 @@ def manipulador_retorno_interface(dados):
         if CANVAS_GLOBAL:
             LINHA_GLOBAL.set_data([], [])
             AX_GLOBAL.set_title(f"{NOME_INSTANCIA_ATUAL}...", fontsize=10, color="white")
-            AX_GLOBAL.set_xlim(auto=True); AX_GLOBAL.set_ylim(auto=True); AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view(); CANVAS_GLOBAL.draw()
-        if AX_GANTT: AX_GANTT.clear(); CANVAS_GANTT.draw()
+            AX_GLOBAL.set_xlim(auto=True); AX_GLOBAL.set_ylim(auto=True); AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view(); 
+            CANVAS_GLOBAL.draw_idle() # <--- AQUI (Tire o .draw())
+        if AX_GANTT: 
+            AX_GANTT.clear()
+            CANVAS_GANTT.draw_idle()
 
     elif tipo_status == "update":
         makespan = dados.get("makespan"); gantt_data = dados.get("gantt_data")
@@ -1915,7 +1970,7 @@ def manipulador_retorno_interface(dados):
                     if CANVAS_GLOBAL: 
                         LINHA_GLOBAL.set_data(DADOS_X, DADOS_Y)
                         AX_GLOBAL.set_title(f"Instance: {NOME_INSTANCIA_ATUAL}  |  Best: {MELHOR_MAKESPAN_ATUAL}  |  Elapsed Time: {time_to_best:.2f}s", fontsize=10, color="#00FF00", fontweight="bold")
-                        AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view(); CANVAS_GLOBAL.draw()
+                        AX_GLOBAL.relim(); AX_GLOBAL.autoscale_view(); CANVAS_GLOBAL.draw_idle()
                 if gantt_data and CANVAS_GANTT: CANVAS_GANTT.get_tk_widget().after(0, lambda: atualizar_desenho_gantt(gantt_data, nome_pacote, time_to_best))
     
     elif tipo_status == "final_plateau":
@@ -1946,7 +2001,6 @@ def manipulador_retorno_interface(dados):
         if nome_base == NOME_INSTANCIA_ATUAL:
             
             # 1. CAPTURA O TEMPO "REAL" DA ÚLTIMA MELHORIA (Antes de criar o platô)
-            # Se a lista tiver dados, o último ponto atual é o momento que achou o best.
             tempo_to_best = DADOS_X[-1] if DADOS_X else 0.0
 
             # 2. LÓGICA DO PLATÔ (Adiciona a linha reta até o fim do tempo limite)
@@ -1965,7 +2019,8 @@ def manipulador_retorno_interface(dados):
                         min_y, max_y = min(DADOS_Y), max(DADOS_Y)
                         margem = (max_y - min_y) * 0.1 if max_y != min_y else 1
                         AX_GLOBAL.set_ylim(bottom=max(0, min_y - margem), top=max_y + margem)
-                     CANVAS_GLOBAL.draw()
+                     # --- CORRIGIDO: draw_idle() no platô ---
+                     CANVAS_GLOBAL.draw_idle() 
             
             # 3. PREPARA DADOS FINAIS (Com o platô incluído para o histórico visual)
             eixo_x_final = list(DADOS_X) if DADOS_X else []
@@ -1973,12 +2028,13 @@ def manipulador_retorno_interface(dados):
             
             # 4. ATUALIZA O TÍTULO (Usando o tempo_to_best capturado no passo 1)
             if CANVAS_GLOBAL:
-                # Usei "Time to Best" que é o termo padrão para "instante do último makespan achado"
                 titulo_final = f"Instance: {nome_base}  |  Best: {makespan_final}  |  Time to Best: {tempo_to_best:.2f}s"
                 AX_GLOBAL.set_title(titulo_final, fontsize=10, color="#00FF00", fontweight="bold")
-                CANVAS_GLOBAL.draw()
+                CANVAS_GLOBAL.draw_idle()
 
-        # --- SALVA NO HISTÓRICO ---
+        # =====================================================================
+        # --- 1º PASSO: SALVA NO HISTÓRICO (MEMÓRIA) ---
+        # =====================================================================
         decoder_usado = dados.get("decoder", "Dec")
         agentes_usados = dados.get("agentes", ["Agentes"]) 
         str_agentes = "-".join(agentes_usados) if isinstance(agentes_usados, list) else str(agentes_usados)
@@ -2018,25 +2074,38 @@ def manipulador_retorno_interface(dados):
 
     elif tipo_status == "log": 
         ESCRITOR_TERMINAL_GLOBAL.write(f"{texto_log}\n")
+        
+        # Ouve ativamente a linha de finalização para engatilhar o Dump no momento exato
+        if "==================================================" in texto_log:
+            try:
+                # Dispara síncrono. O backend fica bloqueado esperando salvar.
+                msg_sucesso = fazer_dump_automatico()
+                if msg_sucesso:
+                    ESCRITOR_TERMINAL_GLOBAL.write(msg_sucesso)
+            except Exception as e:
+                ESCRITOR_TERMINAL_GLOBAL.write(f">>> [Auto-Save Error] {e}\n\n")
 
 def configurar_aba_parametros(aba):
+    global VAR_PERIODIC_DUMP
+    import customtkinter as ctk
+    
+    # SEMPRE RECRIAR A VARIÁVEL PARA NÃO DAR CONFLITO DE JANELA MORTA 
+    VAR_PERIODIC_DUMP = ctk.BooleanVar(value=False)
+
     aba.widgets_armazenados = {} 
     
-    # Configurações de grade da aba para controle fino
-    aba.grid_columnconfigure(0, minsize=20) # Margem esquerda
-    aba.grid_columnconfigure(1, weight=0)   # Coluna Decoder
-    aba.grid_columnconfigure(2, weight=0)   # Coluna Time
-    aba.grid_columnconfigure(3, weight=0)   # Coluna Exec
-    aba.grid_columnconfigure(4, weight=1)   # Espaço vazio direita
+    aba.grid_columnconfigure(0, minsize=20)
+    aba.grid_columnconfigure(1, weight=0)
+    aba.grid_columnconfigure(2, weight=0)
+    aba.grid_columnconfigure(3, weight=0)
+    aba.grid_columnconfigure(4, weight=0)   # --- NOVA COLUNA DUMP ---
+    aba.grid_columnconfigure(5, weight=1)
 
-    # --- BLOCO 1: HYPER-PARAMETERS ---
     rotulo_titulo = ctk.CTkLabel(aba, text="HYPER-PARAMETERS", text_color=CORES["destaque"], font=FONTES["titulo"])
-    rotulo_titulo.grid(row=0, column=1, sticky="w", columnspan=3, pady=(15, 15), padx=0)
+    rotulo_titulo.grid(row=0, column=1, sticky="w", columnspan=4, pady=(15, 15), padx=0)
     
-    # DECODER (Alinhamento corrigido)
     rotulo_decoder = ctk.CTkLabel(aba, text="SELECT DECODER", font=FONTES["subtitulo"], text_color=CORES["texto"])
     rotulo_decoder.grid(row=1, column=1, sticky="w", padx=0, pady=(0, 2))
-    
     combo_decoder = ctk.CTkComboBox(
         aba, values=["CHEAPEST", "M3LAW", "ECT", "INCREMENTAL", "KSTS"], 
         border_color=CORES["primaria"], border_width=2, corner_radius=0, width=180,
@@ -2045,70 +2114,69 @@ def configurar_aba_parametros(aba):
     combo_decoder.grid(row=2, column=1, sticky="w", padx=0, pady=(0, 5))
     aba.widgets_armazenados["decoder"] = combo_decoder 
     
-    # TIME LIMIT
     rotulo_tempo = ctk.CTkLabel(aba, text="TIME LIMIT (S)", font=FONTES["subtitulo"], text_color=CORES["texto"])
     rotulo_tempo.grid(row=1, column=2, sticky="w", padx=30, pady=(0, 2)) 
-    
     entrada_tempo = ctk.CTkEntry(aba, width=100, corner_radius=0, border_color=CORES["primaria"], border_width=2)
     entrada_tempo.insert(0,"60")
     entrada_tempo.grid(row=2, column=2, sticky="w", padx=30, pady=(0, 5))
     aba.widgets_armazenados["time_limit"] = entrada_tempo 
 
-    # EXECUTION TIMES
     rotulo_execucoes = ctk.CTkLabel(aba, text="EXECUTION TIMES", font=FONTES["subtitulo"], text_color=CORES["texto"])
     rotulo_execucoes.grid(row=1, column=3, sticky="w", padx=30, pady=(0, 2))
-    
     entrada_execucoes = ctk.CTkEntry(aba, width=100, corner_radius=0, border_color=CORES["primaria"], border_width=2)
     entrada_execucoes.insert(0, "1")
     entrada_execucoes.grid(row=2, column=3, sticky="w", padx=30, pady=(0, 5))
     aba.widgets_armazenados["execution_times"] = entrada_execucoes
 
-    # --- SEPARADOR ---
+    rotulo_dump = ctk.CTkLabel(aba, text="PERIODIC DUMP", font=FONTES["subtitulo"], text_color=CORES["texto"])
+    rotulo_dump.grid(row=1, column=4, sticky="w", padx=30, pady=(0, 2))
+    
+    def atualizar_estado_dump():
+        global AUTO_DUMP_ATIVO
+        if VAR_PERIODIC_DUMP is not None:
+            AUTO_DUMP_ATIVO = bool(VAR_PERIODIC_DUMP.get())
+
+    chk_dump = ctk.CTkCheckBox(
+        aba, 
+        text="Auto-save", 
+        font=("Roboto", 12),
+        variable=VAR_PERIODIC_DUMP,
+        fg_color=CORES["primaria"],
+        hover_color="#555555",
+        command=atualizar_estado_dump # Atualiza ao clicar
+    )
+    chk_dump.grid(row=2, column=4, sticky="w", padx=30, pady=(0, 5))
+    aba.widgets_armazenados["periodic_dump"] = VAR_PERIODIC_DUMP
+    
+    atualizar_estado_dump()
+
     frm_sep = ctk.CTkFrame(aba, height=2, fg_color=CORES["borda"])
     frm_sep.grid(row=3, column=0, columnspan=10, sticky="ew", pady=30, padx=20)
 
-    # --- BLOCO 2: IO CONFIGURATION ---
     cache = carregar_cache_caminhos()
-    
     def sel_dir(w):
         p = filedialog.askdirectory(parent=aba)
         if p: 
             w.delete(0, "end")
             w.insert(0, p)
             
-    # Título IO alinhado com o de cima
-    ctk.CTkLabel(aba, text="IO CONFIGURATION", text_color=CORES["destaque"], font=FONTES["titulo"]).grid(row=4, column=1, columnspan=3, sticky="w", pady=(0, 20), padx=0)
-    
+    ctk.CTkLabel(aba, text="IO CONFIGURATION", text_color=CORES["destaque"], font=FONTES["titulo"]).grid(row=4, column=1, columnspan=4, sticky="w", pady=(0, 20), padx=0)
     try: img = ctk.CTkImage(Image.open(resource_path("assets/dots.png")), size=(16, 16))
     except: img = None 
         
-    lista_campos = [
-        ("output_path", "Output Path"), 
-        ("instance_path", "Instance Folder Path"), 
-        ("gantt_path", "Gantt Chart Path")
-    ]
-
+    lista_campos = [("output_path", "Output Path"), ("instance_path", "Instance Folder Path"), ("gantt_path", "Gantt Chart Path")]
     frame_io = ctk.CTkFrame(aba, fg_color="transparent")
-    # Ocupa as colunas 1, 2 e 3 (mesma largura dos inputs de cima)
-    frame_io.grid(row=5, column=1, columnspan=4, sticky="w")
-    
-    # Define largura fixa para a coluna de Labels (0) para que as Entrys (1) comecem juntas
+    frame_io.grid(row=5, column=1, columnspan=5, sticky="w")
     frame_io.grid_columnconfigure(0, minsize=200) 
     frame_io.grid_columnconfigure(1, weight=1)    
 
     for i, (k, txt) in enumerate(lista_campos):
-        # Label (Coluna 0, Esquerda)
         ctk.CTkLabel(frame_io, text=txt, font=FONTES["subtitulo"]).grid(row=i, column=0, sticky="w", pady=8, padx=(0, 10))
-        
-        # Entry (Coluna 1, Esquerda)
         ent = ctk.CTkEntry(frame_io, border_color=CORES["primaria"], border_width=2, width=450)
         ent.grid(row=i, column=1, sticky="w", pady=8)
-        
         valor_cache = cache.get(k, "")
         if valor_cache: ent.insert(0, valor_cache)
         aba.widgets_armazenados[k] = ent 
-        
-        # Botão (Coluna 2)
         ctk.CTkButton(frame_io, text="" if img else "...", width=30, image=img, 
                       fg_color="transparent", hover_color=CORES["destaque"], 
                       command=lambda e=ent: sel_dir(e)).grid(row=i, column=2, sticky="w", padx=5, pady=8)
@@ -2466,30 +2534,34 @@ def configurar_aba_execucao(aba, aba_p, aba_a):
             messagebox.showwarning("Warning", "You must PAUSE the experiment before saving while it's running.\n(Or wait for it to finish)", parent=janela_pai)
             return
     
-        caminho = filedialog.asksaveasfilename(parent=janela_pai, defaultextension=".rko", filetypes=[("RKO Exp", "*.rko")])
+        # --- FIX: SUPORTE PARA O NOVO .pkl E O ANTIGO .rko ---
+        caminho = filedialog.asksaveasfilename(
+            parent=janela_pai, 
+            defaultextension=".pkl", 
+            filetypes=[("RKO Data", "*.pkl"), ("Legacy RKO Exp", "*.rko"), ("All Files", "*.*")]
+        )
+        # -----------------------------------------------------
         if not caminho: return
     
         try:
             btn_save.configure(text="SAVING...", state="disabled"); aba.update_idletasks()
             
-            # --- FIX: Incluímos SETS_CRIADOS no dump ---
-            global SETS_CRIADOS
-            
+            global SETS_CRIADOS, SETS_DESCRICOES
             estado_ui = {
                 "historico": HISTORICO_DATA, 
                 "dados_grafico_x": DADOS_X, 
                 "dados_grafico_y": DADOS_Y, 
                 "melhor": MELHOR_MAKESPAN_ATUAL, 
                 "instancia": NOME_INSTANCIA_ATUAL,
-                "sets_criados": SETS_CRIADOS # <--- AQUI (Salva nomes e cores)
+                "sets_criados": SETS_CRIADOS if 'SETS_CRIADOS' in globals() else {},
+                "sets_descricoes": SETS_DESCRICOES if 'SETS_DESCRICOES' in globals() else {}
             }
-            # -------------------------------------------
             
             estado_backend = rko_gui_start.obter_estado_checkpoint() if hasattr(rko_gui_start, 'obter_estado_checkpoint') else {}
             dados_visuais = coletar_dados_interface(aba_p, aba_a)
             estado_backend["params"] = dados_visuais 
     
-            dump = {"timestamp": datetime.now().strftime("%Y-%m-%d"), "ui": estado_ui, "backend": estado_backend}
+            dump = {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "ui": estado_ui, "backend": estado_backend}
             with open(caminho, "wb") as f: pickle.dump(dump, f)
             
             ESCRITOR_TERMINAL_GLOBAL.write(f"\n>>> SAVED: {os.path.basename(caminho)}\n")
@@ -2502,7 +2574,13 @@ def configurar_aba_execucao(aba, aba_p, aba_a):
     
     def acao_carregar_experimento():
         if controles["running"]: return
-        caminho = filedialog.askopenfilename(parent=aba, filetypes=[("RKO Exp", "*.rko")])
+        
+        # --- FIX: CARREGA TANTO OS NOVOS .pkl QUANTO OS ANTIGOS .rko ---
+        caminho = filedialog.askopenfilename(
+            parent=aba, 
+            filetypes=[("All RKO Files", "*.pkl *.rko"), ("RKO Data", "*.pkl"), ("Legacy RKO Exp", "*.rko"), ("All Files", "*.*")]
+        )
+        # ---------------------------------------------------------------
         if not caminho: return
         
         try:
@@ -2524,7 +2602,8 @@ def configurar_aba_execucao(aba, aba_p, aba_a):
             if "params" in d_back: 
                 carregar_dados_interface(d_back["params"], aba_p, aba_a)
             
-            global HISTORICO_DATA, DADOS_X, DADOS_Y, MELHOR_MAKESPAN_ATUAL, NOME_INSTANCIA_ATUAL, FILA_BOTOES_PENDENTES, SETS_CRIADOS
+            global HISTORICO_DATA, DADOS_X, DADOS_Y, MELHOR_MAKESPAN_ATUAL, NOME_INSTANCIA_ATUAL, FILA_BOTOES_PENDENTES
+            global SETS_CRIADOS, SETS_DESCRICOES
             
             HISTORICO_DATA = d_ui.get("historico", {})
             DADOS_X = d_ui.get("dados_grafico_x", [])
@@ -2533,10 +2612,8 @@ def configurar_aba_execucao(aba, aba_p, aba_a):
             NOME_INSTANCIA_ATUAL = d_ui.get("instancia", "Resumed")
             FILA_BOTOES_PENDENTES = list(HISTORICO_DATA.keys())
             
-            # --- FIX: Carregamos SETS_CRIADOS do arquivo ---
-            # Se não existir (dumps antigos), inicia vazio
             SETS_CRIADOS = d_ui.get("sets_criados", {}) 
-            # -----------------------------------------------
+            SETS_DESCRICOES = d_ui.get("sets_descricoes", {})
             
             try: 
                 term.configure(state="normal"); term.delete("1.0", "end"); term.configure(state="disabled")
@@ -2554,7 +2631,6 @@ def configurar_aba_execucao(aba, aba_p, aba_a):
             btn_save.configure(state="normal", fg_color=COR_NEUTRA) 
             btn_load.configure(state="disabled")
             
-            # Atualiza a aba histórico para refletir os sets carregados
             aplicar_filtros_historico()
 
             if hasattr(rko_gui_start, 'restaurar_e_continuar'):
@@ -2595,6 +2671,14 @@ def configurar_aba_execucao(aba, aba_p, aba_a):
     PAUSE_BUTTON_GLOBAL = btn_pause; PAUSE_BUTTON_GLOBAL.icons = aba.icons
     SAVE_BUTTON_GLOBAL = btn_save
     sys.stdout = ESCRITOR_TERMINAL_GLOBAL
+
+    # RESTAURAR O PRINT ORIGINAL SE A JANELA FECHAR 
+    def ao_destruir_terminal(event):
+        import sys
+        if sys.stdout == ESCRITOR_TERMINAL_GLOBAL:
+            sys.stdout = sys.__stdout__  # Devolve o print pro terminal do SO
+            
+    term.bind("<Destroy>", ao_destruir_terminal)
 
 def coletar_dados_interface(aba_p, aba_a): # Removido aba_io
     data = {}
