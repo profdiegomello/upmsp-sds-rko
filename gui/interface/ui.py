@@ -1272,7 +1272,7 @@ def gerar_nova_analise(nome_analise, comentario=""):
             x_vals = exp.get('x', [])
             y_vals = exp.get('y', [])
             if x_vals and y_vals:
-                ax_conv.plot(x_vals, y_vals, color=cor_set, alpha=0.8, linewidth=1.5)
+                ax_conv.plot(x_vals, y_vals, color=cor_set, alpha=0.4, linewidth=1.5)
 
     ax_conv.set_title("Makespan Convergence Over Time", color="#FFFFFF", fontsize=12, pad=30, fontweight="bold")
     ax_conv.set_xlabel("Time (s)", color="#DDDDDD", fontsize=10)
@@ -1674,58 +1674,116 @@ def gerar_nova_analise(nome_analise, comentario=""):
     criar_ic_plot(data_ttb, "Time to Best 95% CI (Bootstrap Method)", "Mean Seconds (s)")
 
 
-    # ================== 5. DUAL HISTOGRAM (MAKESPAN VS TIME TO BEST) ==================
-    lbl_hist = ctk.CTkLabel(frame_tab_content, text=" OVERALL FREQUENCY (MAKESPAN VS TIME TO BEST) ", font=("Roboto", 16, "bold"), text_color=CORES["destaque"])
+    # ================== 5. FREQUENCY HISTOGRAMS (BY SET) ==================
+    lbl_hist = ctk.CTkLabel(frame_tab_content, text=" FREQUENCY HISTOGRAMS", font=("Roboto", 16, "bold"), text_color=CORES["destaque"])
     lbl_hist.pack(anchor="w", pady=(30, 5), padx=10)
 
-    # Agrupa todos os dados de Makespan e TTB (ignorando os sets) para comparar as duas estatísticas macro
-    all_makespans = []
-    all_ttb = []
-    for d in data_makespan: all_makespans.extend(d)
-    for d in data_ttb: all_ttb.extend(d)
-
-    fig_hist = Figure(figsize=(12.0, 5.0), facecolor="#1E1E21")
-    ax_hist = fig_hist.add_subplot(111)
-    ax_hist.set_facecolor("#1E1E21")
-
-    # Cores fixas bem contrastantes para o histograma: Azul para Makespan, Vermelho/Laranja para TTB
-    cor_makespan = "#3498DB" 
-    cor_ttb = "#E74C3C"      
-
-    # Desenha os Histogramas com Alpha 0.6 e bordas claras para definição
-    if all_makespans:
-        ax_hist.hist(all_makespans, bins=20, alpha=0.6, color=cor_makespan, edgecolor="#DDDDDD", linewidth=1.0, label="Makespan Value")
-    if all_ttb:
-        ax_hist.hist(all_ttb, bins=20, alpha=0.6, color=cor_ttb, edgecolor="#DDDDDD", linewidth=1.0, label="Time to Best (s)")
-
-    ax_hist.set_title("Value Distribution (Makespan vs Time to Best)", color="#FFFFFF", fontsize=12, pad=30, fontweight="bold")
-    ax_hist.set_xlabel("Value / Seconds", color="#DDDDDD", fontsize=10)
-    ax_hist.set_ylabel("Frequency", color="#DDDDDD", fontsize=10)
-    ax_hist.tick_params(colors="#DDDDDD", labelsize=10)
-
-    ax_hist.grid(axis='y', color='#333333', linestyle='--', linewidth=0.5, alpha=0.7)
-    ax_hist.set_axisbelow(True)
-
-    for spine in ax_hist.spines.values():
-        spine.set_color("#444444")
-        spine.set_linewidth(1.0)
-
-    # --- LEGENDA HORIZONTAL NO TOPO ---
-    ax_hist.legend(loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=2, frameon=False, labelcolor="#DDDDDD", fontsize=10)
-
-    fig_hist.tight_layout()
+    # --- FIX 3: Combobox para regras de distribuição (Sturges, Rice, Scott, FD) ---
+    frame_combo_hist = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
+    frame_combo_hist.pack(fill="x", padx=10, pady=(0, 10))
+    
+    ctk.CTkLabel(frame_combo_hist, text="Binning Rule:", text_color="white", font=("Roboto", 12)).pack(side="left", padx=(0, 10))
+    
+    combo_bins = ctk.CTkComboBox(
+        frame_combo_hist, 
+        values=["Sturges' Rule", "Rice's Rule", "Scott's Rule", "Freedman-Diaconis"],
+        state="readonly", width=180,
+        fg_color="#2D2D35", border_color="#444444", text_color="white"
+    )
+    combo_bins.set("Sturges' Rule")
+    combo_bins.pack(side="left")
 
     container_hist = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
-    container_hist.pack(fill="x", pady=(10, 30), padx=10)
-
+    container_hist.pack(fill="x", pady=(5, 30), padx=10)
+    
+    # --- FIX 2: Figura mais alta para empilhar os gráficos verticalmente ---
+    fig_hist = Figure(figsize=(10.0, 9.0), facecolor="#1E1E21")
     canvas_hist = FigureCanvasTkAgg(fig_hist, master=container_hist)
-    canvas_hist.draw()
+
+    # Mapeamento do texto da UI para os algoritmos nativos do Numpy
+    mapa_regras = {
+        "Sturges' Rule": "sturges",
+        "Rice's Rule": "rice",
+        "Scott's Rule": "scott",
+        "Freedman-Diaconis": "fd"
+    }
+
+    # Função que desenha (e redesenha) o gráfico baseada na regra
+    def atualizar_histogramas(escolha_ui):
+        regra_np = mapa_regras.get(escolha_ui, "sturges")
+        
+        fig_hist.clf() # Limpa a figura
+        fig_hist.patch.set_facecolor('#1E1E21')
+        
+        # Subplots Verticais: 2 Linhas, 1 Coluna
+        ax_m = fig_hist.add_subplot(211)
+        ax_t = fig_hist.add_subplot(212)
+        
+        ax_m.set_facecolor("#1E1E21")
+        ax_t.set_facecolor("#1E1E21")
+
+        tem_dados = False
+
+        for i in range(len(plot_labels)):
+            cor = plot_colors[i]
+            label = plot_labels[i]
+            m_data = data_makespan[i]
+            t_data = data_ttb[i]
+            
+            # Matplotlib aceita a string da regra direto no parâmetro "bins".
+            # (Adicionamos um set() para não dar erro se todos os dados forem idênticos)
+            if m_data:
+                tem_dados = True
+                regra_m = regra_np if len(set(m_data)) > 1 else 1
+                ax_m.hist(m_data, bins=regra_m, alpha=0.6, color=cor, edgecolor="#DDDDDD", linewidth=1.0, label=label)
+            
+            if t_data:
+                regra_t = regra_np if len(set(t_data)) > 1 else 1
+                ax_t.hist(t_data, bins=regra_t, alpha=0.6, color=cor, edgecolor="#DDDDDD", linewidth=1.0, label=label)
+
+        # Estilização Makespan (Cima)
+        ax_m.set_title("Makespan Frequency", color="#FFFFFF", fontsize=12, pad=40, fontweight="bold")
+        ax_m.set_xlabel("Makespan Value", color="#DDDDDD", fontsize=10)
+        ax_m.set_ylabel("Frequency", color="#DDDDDD", fontsize=10)
+        ax_m.tick_params(colors="#DDDDDD", labelsize=10)
+        ax_m.grid(axis='y', color='#333333', linestyle='--', linewidth=0.5, alpha=0.7)
+        ax_m.set_axisbelow(True)
+        for spine in ax_m.spines.values():
+            spine.set_color("#444444"); spine.set_linewidth(1.0)
+
+        # Estilização Time to Best (Baixo)
+        ax_t.set_title("Time to Best Frequency", color="#FFFFFF", fontsize=12, pad=40, fontweight="bold")
+        ax_t.set_xlabel("Seconds (s)", color="#DDDDDD", fontsize=10)
+        ax_t.set_ylabel("Frequency", color="#DDDDDD", fontsize=10)
+        ax_t.tick_params(colors="#DDDDDD", labelsize=10)
+        ax_t.grid(axis='y', color='#333333', linestyle='--', linewidth=0.5, alpha=0.7)
+        ax_t.set_axisbelow(True)
+        for spine in ax_t.spines.values():
+            spine.set_color("#444444"); spine.set_linewidth(1.0)
+
+        # Legendas
+        if tem_dados:
+            legend_patches = [mpatches.Patch(color=c, label=l) for c, l in zip(plot_colors, plot_labels)]
+            n_cols = len(legend_patches) if legend_patches else 1
+            ax_m.legend(handles=legend_patches, loc='lower center', bbox_to_anchor=(0.5, 1.05), ncol=n_cols, frameon=False, labelcolor="#DDDDDD", fontsize=10)
+            ax_t.legend(handles=legend_patches, loc='lower center', bbox_to_anchor=(0.5, 1.05), ncol=n_cols, frameon=False, labelcolor="#DDDDDD", fontsize=10)
+        else:
+            ax_m.text(0.5, 0.5, "NO DATA", color="white", ha="center", va="center", transform=ax_m.transAxes)
+            ax_t.text(0.5, 0.5, "NO DATA", color="white", ha="center", va="center", transform=ax_t.transAxes)
+
+        # Espaçamento generoso entre o gráfico de cima e o de baixo
+        fig_hist.tight_layout(pad=3.0)
+        canvas_hist.draw_idle()
+
+    # Acopla a função ao botão e desenha o estado inicial
+    combo_bins.configure(command=atualizar_histogramas)
+    atualizar_histogramas("Sturges' Rule")
+
     canvas_hist.get_tk_widget().pack(fill="x", expand=True)
 
     toolbar_hist = CustomToolbar(canvas_hist, container_hist)
     toolbar_hist.update()
     toolbar_hist.pack(side="bottom", fill="x")
-    # ==================================================================================
 
     tabs_obj[nome_analise] = {
         "btn_frame": tab_btn,
