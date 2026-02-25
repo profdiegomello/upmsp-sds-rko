@@ -114,9 +114,10 @@ CHAVE_SELECIONADA_ATUAL = None
 LISTA_REF_WORKERS = []
 TEMPO_FINAL_CACHE = 0.0
 
-# --- VARIÁVEL GLOBAL DO AUTO-DUMP ---
+# --- VARIÁVEL GLOBAL DO AUTO-SAVE ---
 AUTO_DUMP_ATIVO = False
 VAR_PERIODIC_DUMP = None
+VAR_DUMP_PREFIX = None
 
 COMBO_INSTANCIAS = None
 VAR_ORDENACAO_HISTORICO = None
@@ -340,19 +341,33 @@ def fazer_dump_automatico():
     """Salva um clone do experimento e retorna a string de sucesso para o terminal."""
     import os
     import pickle
+    import re
     from datetime import datetime
     
     global HISTORICO_DATA, AUTO_DUMP_ATIVO, DADOS_X, DADOS_Y, MELHOR_MAKESPAN_ATUAL, NOME_INSTANCIA_ATUAL
-    global SETS_CRIADOS, SETS_DESCRICOES
+    global SETS_CRIADOS, SETS_DESCRICOES, VAR_DUMP_PREFIX
     
     if not AUTO_DUMP_ATIVO: return None
     if not HISTORICO_DATA: return None
         
+    prefixo_str = ""
+    try:
+        if VAR_DUMP_PREFIX:
+            texto_sujo = VAR_DUMP_PREFIX.get().strip()
+            # Remove qualquer caractere que quebre o nome do arquivo no Windows/Linux
+            texto_limpo = re.sub(r'[\\/*?:"<>|]', "", texto_sujo)
+            if texto_limpo:
+                prefixo_str = f"{texto_limpo}-"
+    except Exception:
+        pass
+    # -------------------------------------------------------
+
     pasta_dumps = os.path.join("backend", "dumps")
     os.makedirs(pasta_dumps, exist_ok=True)
     
     timestamp = datetime.now().strftime("%y-%m-%d-%H-%M-%S")
-    nome_arquivo = f"dump-{timestamp}.pkl"
+    # Aplica o prefixo dinamicamente (se estiver vazio, fica o padrão normal)
+    nome_arquivo = f"{prefixo_str}dump-{timestamp}.pkl"
     caminho = os.path.join(pasta_dumps, nome_arquivo)
     
     estado_ui = {
@@ -871,15 +886,12 @@ def aplicar_filtros_historico(evento=None):
         if isinstance(raw_agentes, list): lista_full = raw_agentes
         else: lista_full = [x for x in str(raw_agentes).split("-") if x]
         
-        # Gera lista curta para o Card (Ex: BRKGA, PSO)
         lista_curta = [i.split("[")[0].strip() for i in lista_full]
         
-        # Gera lista detalhada para o Tooltip (Modo Limpo: "BRKGA [4]")
         detalhes = []
         for item in lista_full:
             if "[" in item:
                 n, p = item.split("[", 1)
-                # Remove "Workers: " para ficar só o número, se for o caso
                 clean_p = p.rstrip(']').replace("Workers: ", "")
                 detalhes.append(f"• {n.strip()} [{clean_p}]")
             else: 
@@ -890,15 +902,33 @@ def aplicar_filtros_historico(evento=None):
         
         tem_nota = "📝 Has Notes" if dados.get("user_notes") else ""
         
-        # Monta texto final do Tooltip
         tooltip_txt = f"Instance: {dados['meta_nome']}\nDecoder: {dados['meta_decoder']}\n{tem_nota}\n\nConfig:\n" + "\n".join(detalhes)
         
         melhor = min(dados['y']) if dados['y'] else "?"
-        hora = dados.get('meta_hora', '').split(" ")[1]
+        
+        # A data completa já vem no formato DD/MM/YY HH:MM:SS direto do salvamento
+        data_hora_completa = dados.get('meta_hora', '')
+        if " " in data_hora_completa:
+            data_str, hora_str = data_hora_completa.split(" ")
+        else:
+            data_str, hora_str = "??/??/??", data_hora_completa
+
+        # O Time limit é o último ponto do eixo X desenhado pelo backend!
+        time_limit = f"{dados['x'][-1]:.0f}s" if dados.get('x') else "?s"
+        
+        # O texto do card agora usa 4 linhas, melhorando a escaneabilidade visual
+        texto_card = (
+            f"{dados['meta_nome']}\n"
+            f"{data_str} {hora_str} | Limit: {time_limit}\n"
+            f"Best: {melhor}\n"
+            f"[{str_ag}]"
+        )
+        # =========================================================================
         
         btn_info = ctk.CTkButton(
-            card_frame, text=f"{dados['meta_nome']}\n{hora} | Best: {melhor}\n[{str_ag}]", font=("Roboto", 11),
-            fg_color="transparent", text_color=cor_txt_normal, hover_color=cor_bg_normal, anchor="w", height=50,
+            card_frame, text=texto_card, font=("Roboto", 11),
+            fg_color="transparent", text_color=cor_txt_normal, hover_color=cor_bg_normal, anchor="w", 
+            height=70, # Aumentado de 50 para 70 para comportar as 4 linhas com respiro
             command=lambda k=chave: carregar_instancia_historico(k)
         )
         btn_info.grid(row=0, column=0, sticky="nsew", padx=5)
@@ -1320,10 +1350,12 @@ def gerar_nova_analise(nome_analise, comentario=""):
             return "#000000" if lum > 160 else "#FFFFFF"
         except: return "#FFFFFF"
 
+    # Declaração da função correta aqui
     def calcular_estatisticas_coluna(valores_str):
         limpos = []
         for v in valores_str:
             if v in ("-", "N/A", "") or v is None: continue
+            # Deixando apenas a remoção do "s" (segundos)
             v_limpo = str(v).replace("s", "").strip()
             try: limpos.append(float(v_limpo))
             except: pass
@@ -1364,6 +1396,55 @@ def gerar_nova_analise(nome_analise, comentario=""):
             "Count": str(n),
             "CV (%)": f"{cv:.2f}%" if n >= 2 else "-"
         }
+
+    def ordenar_coluna_treeview(tv, col, reverse):
+        """Ordena a coluna clicada, mantendo o rodapé de estatísticas preso no final."""
+        l_items = tv.get_children("")
+        
+        dados_reais = []
+        rodape_estatisticas = []
+        
+        for item in l_items:
+            valores = tv.item(item, "values")
+            tags = tv.item(item, "tags")
+            
+            # 1. Isola as linhas de estatísticas e o separador
+            if "separator" in tags or (valores and valores[0] in ["Min", "Mean", "Median", "P95", "Max", "Stdev", "Variance", "Count", "CV (%)"]):
+                rodape_estatisticas.append(item)
+            else:
+                # 2. Pega o valor da célula e limpa
+                val_bruto = tv.set(item, col)
+                val_limpo = val_bruto.replace("s", "").strip()
+                
+                # Trata campos vazios para não quebrar a ordenação
+                if val_limpo in ("", "-", "N/A"):
+                    val_sort = float('inf') 
+                else:
+                    try:
+                        # Tenta converter para número (Makespan, Time)
+                        val_sort = float(val_limpo)
+                    except ValueError:
+                        # Se falhar, é texto (Instance, Policy)
+                        val_sort = val_limpo.lower()
+                    
+                dados_reais.append((val_sort, item))
+
+        # 3. Ordena os dados (com fallback de segurança caso misture texto com número)
+        try:
+            dados_reais.sort(key=lambda x: x[0], reverse=reverse)
+        except TypeError:
+            dados_reais.sort(key=lambda x: str(x[0]), reverse=reverse)
+
+        # 4. Reorganiza as linhas de dados no topo
+        for index, (_, item) in enumerate(dados_reais):
+            tv.move(item, '', index)
+
+        # 5. Devolve o rodapé de estatísticas intacto para o final
+        for item in rodape_estatisticas:
+            tv.move(item, '', 'end')
+
+        # 6. Atualiza o cabeçalho para inverter a ordem no próximo clique
+        tv.heading(col, command=lambda _col=col: ordenar_coluna_treeview(tv, _col, not reverse))
 
     # ================== 1. GERAÇÃO DAS TABELAS ==================
     for cor_set in sorted(grupos.keys()):
@@ -1413,6 +1494,7 @@ def gerar_nova_analise(nome_analise, comentario=""):
         mapeamento_notas = {}
         linhas_para_inserir = []
 
+
         for exp in lista_exp:
             inst = exp.get("meta_nome", "-")
             policy = exp.get("meta_decoder", "-")
@@ -1423,9 +1505,10 @@ def gerar_nova_analise(nome_analise, comentario=""):
                 runtime = f"{exp['x'][-1]:.2f}s"
                 best_y = min(exp['y'])
                 idx_best = exp['y'].index(best_y)
-                time_to_best = f"{exp['x'][idx_best]:.2f}s"
+                val_ttb = exp['x'][idx_best]
+                time_to_best = f"{val_ttb:.2f}s"
             else:
-                runtime, time_to_best = "-", "-"
+                runtime, time_to_best, val_ttb = "-", "-", None
 
             gantt = exp.get("gantt")
             machines, jobs = "-", "-"
@@ -1449,6 +1532,7 @@ def gerar_nova_analise(nome_analise, comentario=""):
                     nota_texto = str(exp[chave_possivel]).strip()
                     break
 
+            # Substitui as variáveis mksp e time_to_best pelas versões com as bolinhas
             valores = (inst, machines, jobs, setup_rng, policy, str(mksp), runtime, time_to_best, param_short, param_long)
             linhas_para_inserir.append({"valores": valores, "nota": nota_texto, "tag": "normal"})
 
@@ -1482,7 +1566,7 @@ def gerar_nova_analise(nome_analise, comentario=""):
         tree.configure(height=len(linhas_para_inserir))
 
         for col, largura in zip(colunas, larguras):
-            tree.heading(col, text=col, anchor="w")
+            tree.heading(col, text=col, anchor="w", command=lambda c=col, t=tree: ordenar_coluna_treeview(t, c, False))
             tree.column(col, width=largura, minwidth=largura, anchor="w", stretch=False)
 
         for pacote in linhas_para_inserir:
@@ -1690,7 +1774,7 @@ def gerar_nova_analise(nome_analise, comentario=""):
         state="readonly", width=180,
         fg_color="#2D2D35", border_color="#444444", text_color="white"
     )
-    combo_bins.set("Sturges' Rule")
+    combo_bins.set("Freedman-Diaconis")
     combo_bins.pack(side="left")
 
     container_hist = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
@@ -1777,7 +1861,7 @@ def gerar_nova_analise(nome_analise, comentario=""):
 
     # Acopla a função ao botão e desenha o estado inicial
     combo_bins.configure(command=atualizar_histogramas)
-    atualizar_histogramas("Sturges' Rule")
+    atualizar_histogramas("Freedman-Diaconis")
 
     canvas_hist.get_tk_widget().pack(fill="x", expand=True)
 
@@ -2186,8 +2270,13 @@ def configurar_aba_parametros(aba):
     entrada_execucoes.grid(row=2, column=3, sticky="w", padx=30, pady=(0, 5))
     aba.widgets_armazenados["execution_times"] = entrada_execucoes
 
-    rotulo_dump = ctk.CTkLabel(aba, text="PERIODIC DUMP", font=FONTES["subtitulo"], text_color=CORES["texto"])
+    # =========================================================================
+    # --- PERIODIC DUMP COM PREFIXO CUSTOMIZADO ---
+    rotulo_dump = ctk.CTkLabel(aba, text="AUTO-SAVE", font=FONTES["subtitulo"], text_color=CORES["texto"])
     rotulo_dump.grid(row=1, column=4, sticky="w", padx=30, pady=(0, 2))
+    
+    frame_dump_opts = ctk.CTkFrame(aba, fg_color="transparent")
+    frame_dump_opts.grid(row=2, column=4, sticky="w", padx=30, pady=(0, 5))
     
     def atualizar_estado_dump():
         global AUTO_DUMP_ATIVO
@@ -2195,18 +2284,59 @@ def configurar_aba_parametros(aba):
             AUTO_DUMP_ATIVO = bool(VAR_PERIODIC_DUMP.get())
 
     chk_dump = ctk.CTkCheckBox(
-        aba, 
-        text="Auto-save", 
+        frame_dump_opts, 
+        text=" ", 
         font=("Roboto", 12),
         variable=VAR_PERIODIC_DUMP,
         fg_color=CORES["primaria"],
         hover_color="#555555",
-        command=atualizar_estado_dump # Atualiza ao clicar
+        command=atualizar_estado_dump
     )
-    chk_dump.grid(row=2, column=4, sticky="w", padx=30, pady=(0, 5))
+    chk_dump.pack(side="left")
+
+    # Garante a criação da variável global para o backend ler depois
+    global VAR_DUMP_PREFIX
+    if 'VAR_DUMP_PREFIX' not in globals() or VAR_DUMP_PREFIX is None:
+        VAR_DUMP_PREFIX = ctk.StringVar()
+
+    # 1. CRIAMOS A ENTRY SEM TEXTVARIABLE PARA O PLACEHOLDER FUNCIONAR
+    entry_prefix = ctk.CTkEntry(
+        frame_dump_opts,
+        width=180,
+        placeholder_text="Prefix (max 30 chars)",
+        placeholder_text_color="#D1CECE",
+        font=("Roboto", 12),
+        fg_color="#2b2b2b",
+        border_width=1,
+        border_color=CORES["primaria"],
+        corner_radius=0
+    )
+    entry_prefix.pack(side="left", padx=(15, 0))
+
+    # 2. FUNÇÃO QUE LIMITA OS CARACTERES E ATUALIZA A VARIÁVEL SILENCIOSAMENTE
+    def ao_digitar_prefixo(event):
+        texto = entry_prefix.get()
+        if len(texto) > 30:
+            # Corta o excesso diretamente no widget
+            entry_prefix.delete(30, "end") 
+            texto = texto[:30]
+            
+        # Alimenta a variável global para que o backend continue conseguindo ler
+        VAR_DUMP_PREFIX.set(texto)
+
+    # Liga a função à digitação do teclado, resolvendo todos os problemas de foco
+    entry_prefix.bind("<KeyRelease>", ao_digitar_prefixo)
+
+    # Preenchimento de segurança: Se já houver algo salvo na variável global, injeta na entry
+    valor_salvo = VAR_DUMP_PREFIX.get()
+    if valor_salvo:
+        entry_prefix.insert(0, valor_salvo)
+
     aba.widgets_armazenados["periodic_dump"] = VAR_PERIODIC_DUMP
+    aba.widgets_armazenados["dump_prefix"] = entry_prefix 
     
     atualizar_estado_dump()
+    # =========================================================================
 
     frm_sep = ctk.CTkFrame(aba, height=2, fg_color=CORES["borda"])
     frm_sep.grid(row=3, column=0, columnspan=10, sticky="ew", pady=30, padx=20)
