@@ -302,6 +302,8 @@ class InstanceCreator(ctk.CTkToplevel):
             self.mostrar_general()
             self.btn_rand_sel.configure(state="disabled")
             self.btn_rand_tab.configure(state="disabled")
+            # --- NOVO: Se voltar pro General, desabilita para não confundir
+            self.btn_rand_all_setups.configure(state="disabled")
         else:
             if not self.dados["created"]:
                 self.tree.selection_set(self.node_general)
@@ -310,6 +312,16 @@ class InstanceCreator(ctk.CTkToplevel):
             
             self.btn_rand_sel.configure(state="normal")
             self.btn_rand_tab.configure(state="normal")
+            
+            # ==========================================================
+            # --- LÓGICA DE ESTADO DO BOTÃO 'RANDOMIZE ALL SETUPS' ---
+            if tipo == "proc":
+                # Se estiver na aba Processing, DESABILITA
+                self.btn_rand_all_setups.configure(state="disabled")
+            else:
+                # Se estiver em qualquer aba de Setup, HABILITA
+                self.btn_rand_all_setups.configure(state="normal")
+            # ==========================================================
             
             self.mostrar_sheet()
             if tipo == "proc":

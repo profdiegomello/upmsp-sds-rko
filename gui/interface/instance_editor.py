@@ -289,33 +289,35 @@ class InstanceEditor(ctk.CTkToplevel):
         btn_save = ctk.CTkButton(frm_btns, text="SAVE", fg_color=CORES_EDITOR["btn_primary"], hover_color=CORES_EDITOR["btn_hover"], width=80, height=35, font=("Roboto", 12, "bold"), command=self.acao_save_instance)
         btn_save.pack(side="left", padx=(0, 20))
 
-        # --- HEATMAP CONTROLS ---
-        
+        # --- Container do Heatmap (Para ocultar fácil) ---
+        self.frm_heatmap = ctk.CTkFrame(frm_btns, fg_color="transparent")
+        self.frm_heatmap.pack(side="left")
+
         # 1. Checkbox
         self.var_heatmap = ctk.BooleanVar(value=False)
         self.chk_heatmap = ctk.CTkCheckBox(
-            frm_btns, 
+            self.frm_heatmap, 
             text="Heatmap", 
             variable=self.var_heatmap,
             command=self.aplicar_heatmap_visual,
             font=("Roboto", 12, "bold"),
             text_color="white",
-            fg_color="#E74C3C", # Será atualizado dinamicamente
+            fg_color="#E74C3C", 
             hover_color="#C0392B"
         )
         self.chk_heatmap.pack(side="left", padx=(0, 10))
 
-        # 2. Cor Padrão Inicial (Vermelho Crítico)
+        # 2. Cor Padrão Inicial
         self.cor_heatmap_atual = "#E74C3C" 
 
-        # 3. Botão "Color Picker" (Quadrado colorido)
+        # 3. Botão "Color Picker" 
         self.btn_cor_picker = ctk.CTkButton(
-            frm_btns,
-            text="", # Sem texto, só cor
+            self.frm_heatmap,
+            text="", 
             width=30,
             height=30,
-            fg_color=self.cor_heatmap_atual, # Mostra a cor atual
-            hover_color=self.cor_heatmap_atual, # (Opcional: escurecer um pouco)
+            fg_color=self.cor_heatmap_atual, 
+            hover_color=self.cor_heatmap_atual, 
             command=self.escolher_cor_heatmap,
             corner_radius=4,
             border_width=1,
@@ -754,6 +756,20 @@ class InstanceEditor(ctk.CTkToplevel):
         else:
             lista_entidades.append(("Current", self._get_dados_raw(tipo_dado, maquina_foco), False))
 
+        # ================================================================
+        # --- PRÉ-CÁLCULO DAS MÉDIAS (Ignora 'GLOBAL' para destacar as Máquinas) ---
+        cache_stats = []
+        medias_maquinas = []
+        for nome_ent, dados_raw, _ in lista_entidades:
+            st = self._calcular_stats(dados_raw)
+            cache_stats.append(st)
+            if st is not None and nome_ent not in ("GLOBAL", "Current"):
+                medias_maquinas.append(st['mean'])
+
+        min_mean = min(medias_maquinas) if medias_maquinas else None
+        max_mean = max(medias_maquinas) if len(medias_maquinas) > 1 else None
+        # ================================================================
+
         if layout == "Horizontal":
             headers = ["Scope"] + [item[0] for item in self.STATS_CONFIG]
             for i, h in enumerate(headers):
@@ -762,9 +778,9 @@ class InstanceEditor(ctk.CTkToplevel):
                 lbl.grid(row=0, column=i, sticky="ew", padx=1, pady=1, ipady=3)
                 grid.grid_columnconfigure(i, weight=1)
 
-            for r_idx, (nome_entidade, dados_raw, destaque) in enumerate(lista_entidades):
+            for r_idx, (nome_entidade, _, destaque) in enumerate(lista_entidades):
                 row = r_idx + 1
-                stats = self._calcular_stats(dados_raw)
+                stats = cache_stats[r_idx]
                 
                 bg_row = "#1F1F1F" if destaque else ("#2b2b2b" if row % 2 == 0 else "transparent")
                 fg_row = cor_titulo if destaque else ("silver" if row % 2 == 0 else "gray70")
@@ -778,11 +794,16 @@ class InstanceEditor(ctk.CTkToplevel):
                         if key == 'cv': val_txt += "%"
                         
                         cor_cell = fg_row
-                        if key == 'cv':
-                            if val_raw > 15: cor_cell = "#E74C3C"
-                            elif val_raw < 5: cor_cell = "#2ECC71"
+                        font_w = "normal"
                         
-                        ctk.CTkLabel(grid, text=val_txt, font=("Roboto", 11), text_color=cor_cell, fg_color=bg_row).grid(row=row, column=c_idx+1, sticky="ew", padx=1, pady=1)
+                        # --- PINTAR MELHOR E PIOR MEAN ---
+                        if key == 'mean' and nome_entidade not in ("GLOBAL", "Current") and min_mean != max_mean:
+                            if val_raw == min_mean:
+                                cor_cell = "#2ECC71"; font_w = "bold" # Verde
+                            elif val_raw == max_mean:
+                                cor_cell = "#E74C3C"; font_w = "bold" # Vermelho
+                        
+                        ctk.CTkLabel(grid, text=val_txt, font=("Roboto", 11, font_w), text_color=cor_cell, fg_color=bg_row).grid(row=row, column=c_idx+1, sticky="ew", padx=1, pady=1)
                 else:
                     for c_idx in range(len(self.STATS_CONFIG)):
                         ctk.CTkLabel(grid, text="-", text_color="gray", fg_color=bg_row).grid(row=row, column=c_idx+1, sticky="ew", padx=1, pady=1)
@@ -795,10 +816,6 @@ class InstanceEditor(ctk.CTkToplevel):
                 ctk.CTkLabel(grid, text=nome_ent, font=("Roboto", 11, "bold"), text_color="white", fg_color="#333333").grid(row=0, column=i+1, sticky="ew", padx=1, pady=1, ipady=3)
                 grid.grid_columnconfigure(i+1, weight=1)
 
-            cache_stats = []
-            for _, dados_raw, _ in lista_entidades:
-                cache_stats.append(self._calcular_stats(dados_raw))
-
             for r_idx, (label_stat, key, fmt) in enumerate(self.STATS_CONFIG):
                 row = r_idx + 1
                 bg_row = "#2b2b2b" if row % 2 == 0 else "transparent"
@@ -807,19 +824,23 @@ class InstanceEditor(ctk.CTkToplevel):
                 
                 for c_idx, stats in enumerate(cache_stats):
                     val_txt = "-"
-                    cor_cell = "gray"
+                    cor_cell = "silver" # CV não recebe mais cor dinâmica, usa o cinza prateado padrão
+                    font_w = "normal"
+                    nome_entidade = lista_entidades[c_idx][0]
                     
                     if stats:
                         val_raw = stats[key]
                         val_txt = f"{val_raw:{fmt}}" if fmt else str(val_raw)
                         if key == 'cv': val_txt += "%"
                         
-                        cor_cell = "silver"
-                        if key == 'cv':
-                            if val_raw > 15: cor_cell = "#E74C3C"
-                            elif val_raw < 5: cor_cell = "#2ECC71"
+                        # --- PINTAR MELHOR E PIOR MEAN ---
+                        if key == 'mean' and nome_entidade not in ("GLOBAL", "Current") and min_mean != max_mean:
+                            if val_raw == min_mean:
+                                cor_cell = "#2ECC71"; font_w = "bold" # Verde
+                            elif val_raw == max_mean:
+                                cor_cell = "#E74C3C"; font_w = "bold" # Vermelho
                             
-                    ctk.CTkLabel(grid, text=val_txt, font=("Roboto", 11), text_color=cor_cell, fg_color=bg_row).grid(row=row, column=c_idx+1, sticky="ew", padx=1, pady=1)
+                    ctk.CTkLabel(grid, text=val_txt, font=("Roboto", 11, font_w), text_color=cor_cell, fg_color=bg_row).grid(row=row, column=c_idx+1, sticky="ew", padx=1, pady=1)
 
     def ao_selecionar_sidebar(self, event):
         sel = self.tree_side.selection()
@@ -829,7 +850,22 @@ class InstanceEditor(ctk.CTkToplevel):
         item = self.tree_side.item(sel[0])
         tipo = item['values'][0]; tag = item['values'][1]  
 
-        if not self.dados_instancia["loaded"]: return
+        if not self.dados_instancia["loaded"]:
+            messagebox.showwarning(
+                "No Instance Loaded", 
+                "Please load an instance first to view this module.", 
+                parent=self
+            )
+            # Tira o "foco" visual da aba clicada para não confundir o usuário
+            self.tree_side.selection_remove(sel[0]) 
+            return
+
+        # --- LÓGICA DE VISIBILIDADE DO HEATMAP ---
+        if tipo.startswith("stats"):
+            self.frm_heatmap.pack_forget() # Esconde
+        else:
+            self.frm_heatmap.pack(side="left") # Mostra
+        # -----------------------------------------
 
         if tipo == "stats" or tipo == "stats_mach":
             self.frm_table_container.grid_forget()
@@ -920,9 +956,21 @@ class InstanceEditor(ctk.CTkToplevel):
     def acao_save_instance(self):
         if not self.dados_instancia["loaded"]: return
         self.salvar_alteracoes_da_view_atual()
-        nome_sugerido = f"MODIFIED_{self.dados_instancia.get('nome', 'instance.txt')}"
+        
+        # ==========================================================
+        # --- NOVO: LÓGICA DO SUFIXO _MODIFIED ---
+        nome_original = self.dados_instancia.get('nome', 'instance.txt')
+        
+        # Separa o nome da extensão (Ex: 'I_100' e '.txt')
+        base, ext = os.path.splitext(nome_original)
+        
+        # Junta tudo no novo formato
+        nome_sugerido = f"{base}_MODIFIED{ext}"
+        # ==========================================================
+        
         caminho = filedialog.asksaveasfilename(parent=self, initialfile=nome_sugerido, defaultextension=".txt", filetypes=[("Text Files", "*.txt")])
         if not caminho: return
+        
         try:
             N = self.dados_instancia["N"]; M = self.dados_instancia["M"]
             p_matrix = self.dados_instancia["processing"]; s_dict = self.dados_instancia["setup"]

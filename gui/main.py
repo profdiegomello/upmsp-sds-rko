@@ -154,6 +154,7 @@ class Launcher(ctk.CTk):
         )
         
         if resposta: # Se o usuário clicou em Sim
+            self.quit()
             self.destroy()
             sys.exit(0)
 
