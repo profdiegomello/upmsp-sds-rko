@@ -10,3 +10,6 @@ pipreqs
 tinycss2
 tomli
 tksheet
+pandas  
+tabulate
+fpdf2

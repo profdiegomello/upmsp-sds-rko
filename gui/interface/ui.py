@@ -1280,9 +1280,407 @@ def gerar_nova_analise(nome_analise, comentario=""):
         tree.bind("<MouseWheel>", esconder_tooltip)  
 
     frame_tab_content = ctk.CTkScrollableFrame(content_area, fg_color="transparent")
+    
+    # Lista global interna para armazenar TODAS as figuras geradas
+    figuras_para_exportar = []
+    lista_canvases = []
+    colunas = ("INSTANCE", "MACHINES", "JOBS", "SETUP", "POLICY", "MAKESPAN", "RUNTIME", "TIME TO BEST", "PARAMETERS", "AGENTS CONFIGS")
 
+    # ================== BOTÃO DE EXPORTAÇÃO COMPLETA ==================
+    def acao_exportar_tudo():
+        import tkinter as tk
+        from tkinter import filedialog, messagebox
+        import os
+        import io
+        import base64
+        import tempfile
+        from datetime import datetime 
 
-    # ================== 0. GRÁFICO DE CONVERGÊNCIA (TOPO) ==================
+        try:
+            import pandas as pd
+            from fpdf import FPDF
+        except ImportError:
+            tk.messagebox.showerror(
+                "Dependências Ausentes",
+                "Para gerar os relatórios, instale as dependências:\npip install pandas tabulate fpdf2",
+                parent=ABA_ANALISE_GLOBAL
+            )
+            return
+
+        caminho_base = filedialog.asksaveasfilename(
+            parent=ABA_ANALISE_GLOBAL,
+            title="Choose Base Name for Reports",
+            initialfile=f"Report_{nome_analise.replace(' ', '_')}",
+            filetypes=[("All Files", "*.*")]
+        )
+
+        if not caminho_base: return
+        caminho_base, _ = os.path.splitext(caminho_base)
+
+        try:
+            agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            titulo_principal = f"Statistical Report: {nome_analise} - {agora}"
+            titulo_tex_str = f"Statistical Report: {nome_analise.replace('_', r'\_')} - {agora}"
+
+            dict_descricoes = globals().get('SETS_DESCRICOES', {})
+
+            # 1. Separar DataFrames por Grupo e resgatar as Descrições
+            dfs_por_grupo = {}
+            for cor_set in sorted(grupos.keys()):
+                nome_set = grupos[cor_set]["nome"]
+                desc_set = dict_descricoes.get(cor_set, "").strip()
+                linhas_do_grupo = []
+                
+                for exp in grupos[cor_set]["exp"]:
+                    inst = exp.get("meta_nome", "-")
+                    policy = exp.get("meta_decoder", "-")
+                    mksp = min(exp['y']) if exp.get('y') else "-"
+                    
+                    if exp.get('x') and exp.get('y'):
+                        runtime = f"{exp['x'][-1]:.2f}"
+                        idx_best = exp['y'].index(min(exp['y']))
+                        time_to_best = f"{exp['x'][idx_best]:.2f}"
+                    else:
+                        runtime, time_to_best = "-", "-"
+
+                    gantt = exp.get("gantt")
+                    machines, jobs = "-", "-"
+                    if gantt:
+                        if "M" in gantt: machines = str(len(gantt["M"]))
+                        if "C" in gantt: jobs = str(len(set(k[1] for k in gantt["C"].keys())))
+
+                    setup_rng = str(exp.get("meta_setup_range", "N/A"))
+                    raw_ag = exp.get('meta_agentes', [])
+                    if isinstance(raw_ag, str): raw_ag = [x.strip() for x in raw_ag.split("-") if x.strip()]
+                    param_short = ", ".join([a.split("[")[0].strip() for a in raw_ag]).replace('%', '')
+                    param_long = " | ".join(raw_ag).replace('%', '')
+
+                    linhas_do_grupo.append([inst, machines, jobs, setup_rng, policy, str(mksp), runtime, time_to_best, param_short, param_long])
+                
+                dfs_por_grupo[nome_set] = {"cor": cor_set, "desc": desc_set, "df": pd.DataFrame(linhas_do_grupo, columns=colunas)}
+
+            # 2. Gerar Markdown (Usa a variável titulo_principal)
+            with open(caminho_base + ".md", "w", encoding="utf-8") as f:
+                f.write(f"# {titulo_principal}\n\n")
+                for nome_set, data in dfs_por_grupo.items():
+                    titulo_md = f"Group: {nome_set}" + (f" - *{data['desc']}*" if data['desc'] else "")
+                    f.write(f"### {titulo_md}\n")
+                    f.write(data["df"].to_markdown(index=False) + "\n\n")
+
+            # 3. Gerar LaTeX COMPLETO (Landscape + Wrap de Coluna "Overleaf-Safe")
+            latex_str = "\\documentclass[10pt,a4paper]{article}\n"
+            latex_str += "\\usepackage[utf8]{inputenc}\n"
+            latex_str += "\\usepackage{geometry}\n"
+            # Margens um pouco maiores (1.5cm) para garantir que a tabela não bate na borda do PDF
+            latex_str += "\\geometry{margin=1.5cm, landscape}\n" 
+            latex_str += "\\usepackage{booktabs}\n"
+            latex_str += "\\usepackage{longtable}\n"
+            latex_str += "\\usepackage{array}\n"
+            latex_str += "\\begin{document}\n\n"
+            latex_str += f"\\section*{{{titulo_tex_str}}}\n\n"
+            
+            # Fonte pequena e margem de célula reduzida
+            latex_str += "\\scriptsize\n"
+            latex_str += "\\setlength{\\tabcolsep}{3pt}\n" 
+            
+            # --- FIX: Larguras super conservadoras. A soma total agora é ~22 cm.
+            # Como a folha A4 tem ~26.7 cm de área útil (com margens de 1.5cm), 
+            # é FISICAMENTE IMPOSSÍVEL a tabela vazar para fora da página no Overleaf agora!
+            col_fmt = ("|>{\\centering\\arraybackslash}p{2.5cm}"   # INSTANCE
+                       "|>{\\centering\\arraybackslash}p{1.2cm}"   # MACHINES
+                       "|>{\\centering\\arraybackslash}p{0.8cm}"   # JOBS
+                       "|>{\\centering\\arraybackslash}p{1.2cm}"   # SETUP
+                       "|>{\\centering\\arraybackslash}p{1.0cm}"   # POLICY
+                       "|>{\\centering\\arraybackslash}p{1.5cm}"   # MAKESPAN
+                       "|>{\\centering\\arraybackslash}p{1.5cm}"   # RUNTIME
+                       "|>{\\centering\\arraybackslash}p{1.5cm}"   # TIME TO BEST
+                       "|>{\\centering\\arraybackslash}p{1.8cm}"   # PARAMETERS
+                       "|>{\\raggedright\\arraybackslash}p{9.0cm}|") # AGENTS CONFIGS
+            
+            for nome_set, data in dfs_por_grupo.items():
+                desc_tex = data['desc'].replace('%', r'\%').replace('_', r'\_').replace('&', r'\&').replace('#', r'\#')
+                titulo_tex = f"Grupo: {nome_set}" + (f" -- \\textit{{{desc_tex}}}" if desc_tex else "")
+                
+                latex_str += f"\\subsection*{{{titulo_tex}}}\n"
+                
+                tex_raw = data["df"].to_latex(index=False, escape=True, longtable=True, column_format=col_fmt)
+                tex_raw = tex_raw.replace("\\toprule", "\\hline").replace("\\midrule", "\\hline").replace("\\bottomrule", "\\hline")
+                linhas_tex = tex_raw.split("\\\\\n")
+                tex_com_bordas = "\\\\\n\\hline\n".join(linhas_tex)
+                
+                latex_str += tex_com_bordas
+                latex_str += "\n\\vspace{1cm}\n"
+            
+            latex_str += "\\normalsize\n"
+            latex_str += "\\end{document}"
+            with open(caminho_base + ".tex", "w", encoding="utf-8") as f:
+                f.write(latex_str)
+            # 4. Processar Imagens
+            imagens_html = ""
+            imagens_temporarias_pdf = []
+            
+            for fig in figuras_para_exportar:
+                if fig:
+                    buf = io.BytesIO()
+                    fig.savefig(buf, format='png', bbox_inches='tight', dpi=150, facecolor=fig.get_facecolor())
+                    buf.seek(0)
+                    img_b64 = base64.b64encode(buf.read()).decode('utf-8')
+                    imagens_html += f'<div style="text-align: center; margin-top: 40px;"><img src="data:image/png;base64,{img_b64}" style="max-width: 100%; border-radius: 8px;"/></div>'
+                    
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+                    fig.savefig(tmp.name, format="png", bbox_inches="tight", dpi=200, facecolor=fig.get_facecolor())
+                    imagens_temporarias_pdf.append(tmp.name)
+
+            # 5. Gerar HTML Espaçado e Colorido (Usa a variável titulo_principal)
+            estilo = "<style> body { font-family: Helvetica, sans-serif; margin: 30px; background-color: #f4f4f9;} table { border-collapse: collapse; width: 100%; font-size: 12px; background-color: white; margin-bottom: 40px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);} th, td { border: 1px solid #ddd; padding: 10px; text-align: center; } th { background-color: #2D2D35; color: white; } </style>"
+            
+            html_tables_content = ""
+            for nome_set, data in dfs_por_grupo.items():
+                cor = data["cor"]
+                df = data["df"]
+                
+                titulo_html = f"Group: {nome_set}" + (f" <span style='font-size: 0.85em; font-weight: normal; font-style: italic;'>- {data['desc']}</span>" if data['desc'] else "")
+                html_tables_content += f'<h3 style="color: {cor}; border-bottom: 2px solid {cor}; padding-bottom: 5px; margin-top: 30px;">{titulo_html}</h3>\n'
+                
+                r, g, b = int(cor[1:3], 16), int(cor[3:5], 16), int(cor[5:7], 16)
+                bg_color = f"rgba({r},{g},{b},0.1)"
+                
+                html_tb = f"<table><thead><tr>" + "".join([f"<th>{c}</th>" for c in colunas]) + "</tr></thead><tbody>"
+                for _, row in df.iterrows():
+                    html_tb += f"<tr style='background-color: {bg_color};'>" + "".join([f"<td>{v}</td>" for v in row]) + "</tr>"
+                html_tb += "</tbody></table>\n"
+                html_tables_content += html_tb
+
+            html_content = f"<!DOCTYPE html><html><head><meta charset='utf-8'>{estilo}</head><body><h2>{titulo_principal}</h2>{html_tables_content}{imagens_html}</body></html>"
+            with open(caminho_base + ".html", "w", encoding="utf-8") as f: 
+                f.write(html_content)
+
+            # 6. Gerar PDF Acadêmico (Usa a variável titulo_principal)
+            pdf = FPDF(orientation="L", format="A4")
+            pdf.set_auto_page_break(auto=True, margin=15)
+            pdf.add_page()
+            
+            pdf.set_font("helvetica", "B", 16)
+            # Imprime o título com a data/hora logo no topo do PDF
+            pdf.cell(0, 10, titulo_principal, new_x="LMARGIN", new_y="NEXT", align="C")
+            pdf.ln(5)
+
+            pesos_colunas = (10, 6, 6, 6, 8, 8, 8, 10, 12, 30)
+
+            for nome_set, data in dfs_por_grupo.items():
+                df = data["df"]
+                cor_hex = data["cor"]
+                
+                r, g, b = int(cor_hex[1:3], 16), int(cor_hex[3:5], 16), int(cor_hex[5:7], 16)
+                r_fill = int((r * 0.15) + (255 * 0.85))
+                g_fill = int((g * 0.15) + (255 * 0.85))
+                b_fill = int((b * 0.15) + (255 * 0.85))
+
+                titulo_pdf = f"Group: {nome_set}" + (f" - {data['desc']}" if data['desc'] else "")
+
+                pdf.set_font("helvetica", "B", 12)
+                pdf.set_text_color(r, g, b)
+                pdf.cell(0, 10, titulo_pdf, new_x="LMARGIN", new_y="NEXT", align="L")
+                
+                pdf.set_text_color(0, 0, 0)
+                pdf.set_font("helvetica", size=7) 
+                pdf.set_draw_color(150, 150, 150)
+                
+                with pdf.table(text_align="CENTER", borders_layout="ALL", col_widths=pesos_colunas, cell_fill_color=(r_fill, g_fill, b_fill), cell_fill_mode="ALL") as table:
+                    header_row = table.row()
+                    for col in colunas:
+                        header_row.cell(col)
+                    
+                    for _, pd_row in df.iterrows():
+                        data_row = table.row()
+                        for val in pd_row:
+                            data_row.cell(str(val))
+                pdf.ln(10)
+
+            for img_path in imagens_temporarias_pdf:
+                pdf.add_page()
+                pdf.image(img_path, x="C", y=10, w=285, h=190, keep_aspect_ratio=True)
+                os.remove(img_path) 
+
+            pdf.output(caminho_base + ".pdf")
+            tk.messagebox.showinfo("Export Successful", f"All formats were successfully created at:\n\n{caminho_base}", parent=ABA_ANALISE_GLOBAL)
+
+        except Exception as e:
+            tk.messagebox.showerror("Export Error", f"An error occurred during export:\n{str(e)}", parent=ABA_ANALISE_GLOBAL)
+    
+    # AÇÕES DO TOPO: CHECKBOX DE TEMA E BOTÃO DE EXPORTAÇÃO
+    frame_actions = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
+    frame_actions.pack(fill="x", pady=(10, 0), padx=10)
+
+    # --- LÓGICA DO TEMA ACADÊMICO (BRANCO) ---
+    var_light_theme = ctk.BooleanVar(value=False)
+    
+    def toggle_theme():
+        from matplotlib.colors import to_rgba
+        is_light = var_light_theme.get()
+        
+        # Paleta de Cores Dinâmica
+        bg_c = "#FFFFFF" if is_light else "#1E1E21"
+        title_c = "#111111" if is_light else "#FFFFFF"
+        text_c = "#333333" if is_light else "#DDDDDD"
+        spine_c = "#CCCCCC" if is_light else "#444444"
+        grid_c = "#EAEAEA" if is_light else "#333333"
+
+        # Mapas de substituição
+        map_title = {to_rgba("#FFFFFF"): title_c, to_rgba("#111111"): title_c}
+        map_text = {to_rgba("#DDDDDD"): text_c, to_rgba("#333333"): text_c}
+        
+        for fig in figuras_para_exportar:
+            if not fig: continue
+            fig.set_facecolor(bg_c)
+            for ax in fig.axes:
+                ax.set_facecolor(bg_c)
+                
+                ax.title.set_color(title_c)
+                ax.xaxis.label.set_color(text_c)
+                ax.yaxis.label.set_color(text_c)
+                ax.tick_params(colors=text_c)
+                
+                for spine in ax.spines.values(): spine.set_color(spine_c)
+                for gl in ax.get_xgridlines() + ax.get_ygridlines(): gl.set_color(grid_c)
+                    
+                leg = ax.get_legend()
+                if leg:
+                    for text in leg.get_texts(): text.set_color(text_c)
+                        
+                # Atualiza linhas (medianas, bigodes e outliers)
+                for line in ax.lines:
+                    c = line.get_color()
+                    try:
+                        if to_rgba(c) in map_title: line.set_color(map_title[to_rgba(c)])
+                        elif to_rgba(c) in map_text: line.set_color(map_text[to_rgba(c)])
+                    except: pass
+                    
+                    mfc = line.get_markerfacecolor()
+                    try:
+                        if to_rgba(mfc) in map_title: line.set_markerfacecolor(map_title[to_rgba(mfc)])
+                    except: pass
+                        
+                    mec = line.get_markeredgecolor()
+                    try:
+                        if to_rgba(mec) in map_title: line.set_markeredgecolor(map_title[to_rgba(mec)])
+                    except: pass
+
+                # Atualiza caixas do boxplot e bordas do histograma
+                for patch in ax.patches:
+                    ec = patch.get_edgecolor()
+                    try:
+                        if to_rgba(ec) in map_title: patch.set_edgecolor(map_title[to_rgba(ec)])
+                        elif to_rgba(ec) in map_text: patch.set_edgecolor(map_text[to_rgba(ec)])
+                    except: pass
+                    
+                # Atualiza bordas do Stripplot
+                for collection in ax.collections:
+                    ecs = collection.get_edgecolors()
+                    if len(ecs) > 0:
+                        ec = ecs[0]
+                        try:
+                            if to_rgba(ec) in map_title: collection.set_edgecolor(map_title[to_rgba(ec)])
+                            elif to_rgba(ec) in map_text: collection.set_edgecolor(map_text[to_rgba(ec)])
+                        except: pass
+
+        # Manda as telas piscarem e atualizarem na hora!
+        for canvas in lista_canvases:
+            canvas.draw_idle()
+
+    # --- RENDERIZAÇÃO DA CHECKBOX ---
+    chk_theme = ctk.CTkCheckBox(
+        frame_actions, 
+        text="Light Paper Theme", 
+        font=("Roboto", 12, "bold"), 
+        variable=var_light_theme, 
+        command=toggle_theme,
+        fg_color="#0284c7", hover_color="#0ea5e9"
+    )
+    chk_theme.pack(side="left", padx=(10, 0))
+    
+    try: adicionar_tooltip(chk_theme, "Enable this to switch the graphs to a white background, making them suitable for academic papers.")
+    except: pass
+
+    # --- LÓGICA DE CARREGAMENTO DA IMAGEM ---
+    import os
+    from PIL import Image
+    
+    icon_export = None
+    try:
+        caminho_script = os.path.dirname(os.path.abspath(__file__))
+        caminho_assets = os.path.join(os.path.dirname(caminho_script), "assets", "export.png")
+        pil_img = Image.open(caminho_assets)
+        icon_export = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(24, 24))
+    except Exception as e:
+        print(f"Aviso: Não foi possível carregar a imagem. Erro: {e}")
+
+    # --- RENDERIZAÇÃO DO BOTÃO EXPORT ---
+    btn_export = ctk.CTkButton(
+        frame_actions, text="", image=icon_export, compound="left", font=("Roboto", 12, "bold"), 
+        fg_color="#0284c7", hover_color="#0ea5e9", width=40, command=acao_exportar_tudo
+    )
+    btn_export.pack(side="right")
+    
+    def adicionar_tooltip(widget, texto):
+        tooltip_window = [None]
+        timer_id = [None]
+
+        def mostrar_tooltip():
+            if tooltip_window[0] is not None: return
+            
+            # Recua 200 pixeis para a esquerda, garantindo que cabe no monitor
+            x = widget.winfo_rootx() - 200 
+            y = widget.winfo_rooty() + widget.winfo_height() + 5
+            
+            tw = tk.Toplevel(widget)
+            tw.wm_overrideredirect(True)
+            tw.wm_geometry(f"+{x}+{y}")
+            
+            # --- FIX: wraplength=200 força o texto a quebrar de linha! ---
+            lbl = tk.Label(tw, text=texto, background="#1E1E21", foreground="#DDDDDD",
+                           relief="solid", borderwidth=1, highlightbackground="#444", 
+                           font=("Roboto", 10), padx=10, pady=8,
+                           wraplength=200, justify="left")
+            lbl.pack()
+            tw.attributes("-topmost", True)
+            tooltip_window[0] = tw
+
+        def on_enter(event):
+            if timer_id[0]: widget.after_cancel(timer_id[0])
+            timer_id[0] = widget.after(500, mostrar_tooltip)
+
+        def on_leave(event):
+            if timer_id[0]: 
+                widget.after_cancel(timer_id[0])
+                timer_id[0] = None
+            if tooltip_window[0]:
+                tooltip_window[0].destroy()
+                tooltip_window[0] = None
+
+        widget.bind("<Enter>", on_enter, add="+")
+        widget.bind("<Leave>", on_leave, add="+")
+    
+
+    try: adicionar_tooltip(btn_export, "Export the current session to PDF, HTML, TEX, and MD formats.")
+    except: pass
+    # --- LÓGICA DE CARREGAMENTO DA IMAGEM ---
+    import os
+    from PIL import Image
+    
+    icon_export = None
+    try:
+        # Pega o diretório atual (interface/) e sobe um nível para acessar assets/
+        caminho_script = os.path.dirname(os.path.abspath(__file__))
+        caminho_assets = os.path.join(os.path.dirname(caminho_script), "assets", "export.png")
+        
+        pil_img = Image.open(caminho_assets)
+        icon_export = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(24, 24))
+    except Exception as e:
+        print(f"Aviso: Não foi possível carregar a imagem export.png. Erro: {e}")
+
+    
+    # ================== 0. GRÁFICO DE CONVERGÊNCIA ==================
     lbl_conv = ctk.CTkLabel(frame_tab_content, text=" CONVERGENCE EVOLUTION ", font=("Roboto", 16, "bold"), text_color=CORES["destaque"])
     lbl_conv.pack(anchor="w", pady=(20, 5), padx=10)
 
@@ -1291,13 +1689,10 @@ def gerar_nova_analise(nome_analise, comentario=""):
     ax_conv.set_facecolor("#1E1E21")
 
     legend_patches_conv = []
-    
     for cor_set in sorted(grupos.keys()):
         nome_set = grupos[cor_set]["nome"]
         lista_exp = grupos[cor_set]["exp"]
-        
         legend_patches_conv.append(mpatches.Patch(color=cor_set, label=nome_set))
-        
         for exp in lista_exp:
             x_vals = exp.get('x', [])
             y_vals = exp.get('y', [])
@@ -1308,39 +1703,32 @@ def gerar_nova_analise(nome_analise, comentario=""):
     ax_conv.set_xlabel("Time (s)", color="#DDDDDD", fontsize=10)
     ax_conv.set_ylabel("Makespan", color="#DDDDDD", fontsize=10)
     ax_conv.tick_params(colors="#DDDDDD", labelsize=10)
-    
     ax_conv.grid(color='#333333', linestyle='--', linewidth=0.5, alpha=0.7)
     for spine in ax_conv.spines.values():
-        spine.set_color("#444444")
-        spine.set_linewidth(1.0)
+        spine.set_color("#444444"); spine.set_linewidth(1.0)
         
-    # --- LEGENDA HORIZONTAL NO TOPO ---
     n_cols = len(legend_patches_conv) if legend_patches_conv else 1
     ax_conv.legend(handles=legend_patches_conv, loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=n_cols, frameon=False, labelcolor="#DDDDDD", fontsize=10)
-    
     fig_conv.tight_layout()
+    
+    figuras_para_exportar.append(fig_conv) # GUARDA PARA EXPORTAÇÃO
 
     container_conv = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
     container_conv.pack(fill="x", pady=(5, 30), padx=10)
-
     canvas_conv = FigureCanvasTkAgg(fig_conv, master=container_conv)
+    lista_canvases.append(canvas_conv)
     canvas_conv.draw()
     canvas_conv.get_tk_widget().pack(fill="x", expand=True)
-
     toolbar_conv = CustomToolbar(canvas_conv, container_conv)
-    toolbar_conv.update()
-    toolbar_conv.pack(side="bottom", fill="x")
-    # =======================================================================
+    toolbar_conv.update(); toolbar_conv.pack(side="bottom", fill="x")
 
-
+    # ================== 1. GERAÇÃO DAS TABELAS INTERFACE ==================
     style = ttk.Style()
     style.theme_use("default")
     style.configure("Treeview", background="#1E1E21", foreground="white", fieldbackground="#1E1E21", borderwidth=0, rowheight=30, font=("Roboto", 10))
     style.map('Treeview', background=[('selected', CORES["primaria"])])
     style.configure("Treeview.Heading", background="#2D2D35", foreground=CORES["destaque"], font=("Roboto", 10, "bold"), borderwidth=0)
     style.map("Treeview.Heading", background=[('active', '#3D3D45')])
-
-    colunas = ("INSTANCE", "MACHINES", "JOBS", "SETUP", "POLICY", "MAKESPAN", "RUNTIME", "TIME TO BEST", "PARAMETERS", "AGENTS CONFIGS")
 
     def get_text_color_for_bg(hex_color):
         try:
@@ -1350,12 +1738,10 @@ def gerar_nova_analise(nome_analise, comentario=""):
             return "#000000" if lum > 160 else "#FFFFFF"
         except: return "#FFFFFF"
 
-    # Declaração da função correta aqui
     def calcular_estatisticas_coluna(valores_str):
         limpos = []
         for v in valores_str:
             if v in ("-", "N/A", "") or v is None: continue
-            # Deixando apenas a remoção do "s" (segundos)
             v_limpo = str(v).replace("s", "").strip()
             try: limpos.append(float(v_limpo))
             except: pass
@@ -1365,120 +1751,60 @@ def gerar_nova_analise(nome_analise, comentario=""):
 
         n = len(limpos)
         limpos.sort()
-        mn = min(limpos)
-        mx = max(limpos)
-        mean = sum(limpos) / n
-        median = statistics.median(limpos)
+        mn, mx, mean, median = min(limpos), max(limpos), sum(limpos) / n, statistics.median(limpos)
 
         k = (n - 1) * 0.95
-        f = math.floor(k)
-        c = math.ceil(k)
-        if f == c: p95 = limpos[int(k)]
-        else: p95 = limpos[f] * (c - k) + limpos[c] * (k - f)
+        f, c = math.floor(k), math.ceil(k)
+        p95 = limpos[int(k)] if f == c else limpos[f] * (c - k) + limpos[c] * (k - f)
 
-        if n >= 2:
-            stdev = statistics.stdev(limpos)
-            var = statistics.variance(limpos)
-            cv = (stdev / mean * 100) if mean != 0 else 0
-        else:
-            stdev = 0.0
-            var = 0.0
-            cv = 0.0
+        stdev = statistics.stdev(limpos) if n >= 2 else 0.0
+        var = statistics.variance(limpos) if n >= 2 else 0.0
+        cv = (stdev / mean * 100) if n >= 2 and mean != 0 else 0.0
 
-        return {
-            "Min": f"{mn:.2f}",
-            "Mean": f"{mean:.2f}",
-            "Median": f"{median:.2f}",
-            "P95": f"{p95:.2f}",
-            "Max": f"{mx:.2f}",
-            "Stdev": f"{stdev:.2f}",
-            "Variance": f"{var:.2f}",
-            "Count": str(n),
-            "CV (%)": f"{cv:.2f}%" if n >= 2 else "-"
-        }
+        return {"Min": f"{mn:.2f}", "Mean": f"{mean:.2f}", "Median": f"{median:.2f}", "P95": f"{p95:.2f}", "Max": f"{mx:.2f}", "Stdev": f"{stdev:.2f}", "Variance": f"{var:.2f}", "Count": str(n), "CV (%)": f"{cv:.2f}%" if n >= 2 else "-"}
 
     def ordenar_coluna_treeview(tv, col, reverse):
-        """Ordena a coluna clicada, mantendo o rodapé de estatísticas preso no final."""
         l_items = tv.get_children("")
-        
-        dados_reais = []
-        rodape_estatisticas = []
+        dados_reais, rodape_estatisticas = [], []
         
         for item in l_items:
             valores = tv.item(item, "values")
             tags = tv.item(item, "tags")
-            
-            # 1. Isola as linhas de estatísticas e o separador
             if "separator" in tags or (valores and valores[0] in ["Min", "Mean", "Median", "P95", "Max", "Stdev", "Variance", "Count", "CV (%)"]):
                 rodape_estatisticas.append(item)
             else:
-                # 2. Pega o valor da célula e limpa
-                val_bruto = tv.set(item, col)
-                val_limpo = val_bruto.replace("s", "").strip()
-                
-                # Trata campos vazios para não quebrar a ordenação
-                if val_limpo in ("", "-", "N/A"):
-                    val_sort = float('inf') 
+                val_limpo = tv.set(item, col).replace("s", "").strip()
+                if val_limpo in ("", "-", "N/A"): val_sort = float('inf') 
                 else:
-                    try:
-                        # Tenta converter para número (Makespan, Time)
-                        val_sort = float(val_limpo)
-                    except ValueError:
-                        # Se falhar, é texto (Instance, Policy)
-                        val_sort = val_limpo.lower()
-                    
+                    try: val_sort = float(val_limpo)
+                    except ValueError: val_sort = val_limpo.lower()
                 dados_reais.append((val_sort, item))
 
-        # 3. Ordena os dados (com fallback de segurança caso misture texto com número)
-        try:
-            dados_reais.sort(key=lambda x: x[0], reverse=reverse)
-        except TypeError:
-            dados_reais.sort(key=lambda x: str(x[0]), reverse=reverse)
+        try: dados_reais.sort(key=lambda x: x[0], reverse=reverse)
+        except TypeError: dados_reais.sort(key=lambda x: str(x[0]), reverse=reverse)
 
-        # 4. Reorganiza as linhas de dados no topo
-        for index, (_, item) in enumerate(dados_reais):
-            tv.move(item, '', index)
-
-        # 5. Devolve o rodapé de estatísticas intacto para o final
-        for item in rodape_estatisticas:
-            tv.move(item, '', 'end')
-
-        # 6. Atualiza o cabeçalho para inverter a ordem no próximo clique
+        for index, (_, item) in enumerate(dados_reais): tv.move(item, '', index)
+        for item in rodape_estatisticas: tv.move(item, '', 'end')
         tv.heading(col, command=lambda _col=col: ordenar_coluna_treeview(tv, _col, not reverse))
 
-    # ================== 1. GERAÇÃO DAS TABELAS ==================
     for cor_set in sorted(grupos.keys()):
         nome_set = grupos[cor_set]["nome"]
         lista_exp = grupos[cor_set]["exp"]
 
-        def get_best_makespan(exp):
-            return min(exp['y']) if exp.get('y') else float('inf')
-            
+        def get_best_makespan(exp): return min(exp['y']) if exp.get('y') else float('inf')
         lista_exp.sort(key=get_best_makespan)
 
         cor_texto = get_text_color_for_bg(cor_set)
-        
-        # --- FIX: CABEÇALHO DO GRUPO ALINHADO HORIZONTALMENTE ---
         header_frame = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
         header_frame.pack(fill="x", anchor="w", pady=(20, 5), padx=10)
 
-        # 1. Cria a label original do nome do Grupo
-        lbl_set = ctk.CTkLabel(header_frame, text=f" Group: {nome_set} ", font=("Roboto", 14, "bold"),
-                               fg_color=cor_set, text_color=cor_texto, corner_radius=0)
-        lbl_set.pack(side="left")
+        ctk.CTkLabel(header_frame, text=f" Group: {nome_set} ", font=("Roboto", 14, "bold"), fg_color=cor_set, text_color=cor_texto, corner_radius=0).pack(side="left")
 
-        # 2. Puxa a descrição da memória global
         global SETS_DESCRICOES
         if 'SETS_DESCRICOES' not in globals(): SETS_DESCRICOES = {}
         desc = SETS_DESCRICOES.get(cor_set, "").strip()
-        
-        # 3. Se houver descrição, cria a label dela à direita, com a mesma cor
-        if desc:
-            lbl_desc = ctk.CTkLabel(header_frame, text=f" {desc} ", font=("Roboto", 12, "italic"),
-                                    fg_color=cor_set, text_color=cor_texto, corner_radius=0)
-            lbl_desc.pack(side="left", padx=(10, 0))
+        if desc: ctk.CTkLabel(header_frame, text=f" {desc} ", font=("Roboto", 12, "italic"), fg_color=cor_set, text_color=cor_texto, corner_radius=0).pack(side="left", padx=(10, 0))
 
-        #=========
         frame_tabela = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
         frame_tabela.pack(fill="x", expand=False, padx=10, pady=(0, 15))
 
@@ -1487,42 +1813,32 @@ def gerar_nova_analise(nome_analise, comentario=""):
 
         scroll_x = ttk.Scrollbar(frame_tabela, orient="horizontal", command=tree.xview)
         tree.configure(xscrollcommand=scroll_x.set)
-
         tree.pack(side="top", fill="x", expand=True)
         scroll_x.pack(side="bottom", fill="x")
 
         mapeamento_notas = {}
         linhas_para_inserir = []
 
-
         for exp in lista_exp:
             inst = exp.get("meta_nome", "-")
             policy = exp.get("meta_decoder", "-")
-            
             mksp = min(exp['y']) if exp.get('y') else "-"
             
             if exp.get('x') and exp.get('y'):
                 runtime = f"{exp['x'][-1]:.2f}s"
-                best_y = min(exp['y'])
-                idx_best = exp['y'].index(best_y)
-                val_ttb = exp['x'][idx_best]
+                val_ttb = exp['x'][exp['y'].index(min(exp['y']))]
                 time_to_best = f"{val_ttb:.2f}s"
-            else:
-                runtime, time_to_best, val_ttb = "-", "-", None
+            else: runtime, time_to_best = "-", "-"
 
             gantt = exp.get("gantt")
             machines, jobs = "-", "-"
             if gantt:
                 if "M" in gantt: machines = str(len(gantt["M"]))
-                if "C" in gantt: 
-                    job_set = set(k[1] for k in gantt["C"].keys())
-                    jobs = str(len(job_set))
+                if "C" in gantt: jobs = str(len(set(k[1] for k in gantt["C"].keys())))
 
             setup_rng = str(exp.get("meta_setup_range", "N/A"))
-
             raw_ag = exp.get('meta_agentes', [])
             if isinstance(raw_ag, str): raw_ag = [x.strip() for x in raw_ag.split("-") if x.strip()]
-            
             param_short = ", ".join([a.split("[")[0].strip() for a in raw_ag])
             param_long = " | ".join(raw_ag)
 
@@ -1532,348 +1848,301 @@ def gerar_nova_analise(nome_analise, comentario=""):
                     nota_texto = str(exp[chave_possivel]).strip()
                     break
 
-            # Substitui as variáveis mksp e time_to_best pelas versões com as bolinhas
             valores = (inst, machines, jobs, setup_rng, policy, str(mksp), runtime, time_to_best, param_short, param_long)
             linhas_para_inserir.append({"valores": valores, "nota": nota_texto, "tag": "normal"})
 
-        col_mac = [p["valores"][1] for p in linhas_para_inserir]
-        col_job = [p["valores"][2] for p in linhas_para_inserir]
-        col_mksp = [p["valores"][5] for p in linhas_para_inserir]
-        col_rt = [p["valores"][6] for p in linhas_para_inserir]
-        col_ttb = [p["valores"][7] for p in linhas_para_inserir]
+        stats_mac = calcular_estatisticas_coluna([p["valores"][1] for p in linhas_para_inserir])
+        stats_job = calcular_estatisticas_coluna([p["valores"][2] for p in linhas_para_inserir])
+        stats_mksp = calcular_estatisticas_coluna([p["valores"][5] for p in linhas_para_inserir])
+        stats_rt = calcular_estatisticas_coluna([p["valores"][6] for p in linhas_para_inserir])
+        stats_ttb = calcular_estatisticas_coluna([p["valores"][7] for p in linhas_para_inserir])
 
-        stats_mac = calcular_estatisticas_coluna(col_mac)
-        stats_job = calcular_estatisticas_coluna(col_job)
-        stats_mksp = calcular_estatisticas_coluna(col_mksp)
-        stats_rt = calcular_estatisticas_coluna(col_rt)
-        stats_ttb = calcular_estatisticas_coluna(col_ttb)
+        linhas_para_inserir.append({"valores": tuple("" for _ in colunas), "nota": "", "tag": "separator"})
 
-        linha_separadora = tuple("" for _ in colunas)
-        linhas_para_inserir.append({"valores": linha_separadora, "nota": "", "tag": "separator"})
-
-        ordem_metricas = ["Min", "Mean", "Median", "P95", "Max", "Stdev", "Variance", "Count", "CV (%)"]
-        for m in ordem_metricas:
-            valores_estatisticas = (m, stats_mac[m], stats_job[m], "-", "-", stats_mksp[m], stats_rt[m], stats_ttb[m], "-", "-")
-            linhas_para_inserir.append({"valores": valores_estatisticas, "nota": "", "tag": "normal"})
+        for m in ["Min", "Mean", "Median", "P95", "Max", "Stdev", "Variance", "Count", "CV (%)"]:
+            linhas_para_inserir.append({"valores": (m, stats_mac[m], stats_job[m], "-", "-", stats_mksp[m], stats_rt[m], stats_ttb[m], "-", "-"), "nota": "", "tag": "normal"})
 
         max_lens = {col: len(col) for col in colunas}
         for pacote in linhas_para_inserir:
             for i, col in enumerate(colunas):
-                if len(str(pacote["valores"][i])) > max_lens[col]:
-                    max_lens[col] = len(str(pacote["valores"][i]))
+                if len(str(pacote["valores"][i])) > max_lens[col]: max_lens[col] = len(str(pacote["valores"][i]))
 
-        larguras = [int(max_lens[col] * 8) + 30 for col in colunas]
-        tree.configure(height=len(linhas_para_inserir))
-
-        for col, largura in zip(colunas, larguras):
+        for col, largura in zip(colunas, [int(max_lens[col] * 8) + 30 for col in colunas]):
             tree.heading(col, text=col, anchor="w", command=lambda c=col, t=tree: ordenar_coluna_treeview(t, c, False))
             tree.column(col, width=largura, minwidth=largura, anchor="w", stretch=False)
 
         for pacote in linhas_para_inserir:
-            tags_da_linha = (pacote.get("tag", "normal"),)
-            item_id = tree.insert("", "end", values=pacote["valores"], tags=tags_da_linha)
-            if pacote["nota"]:
-                mapeamento_notas[item_id] = pacote["nota"]
+            item_id = tree.insert("", "end", values=pacote["valores"], tags=(pacote.get("tag", "normal"),))
+            if pacote["nota"]: mapeamento_notas[item_id] = pacote["nota"]
 
-        if mapeamento_notas:
-            criar_tooltip_treeview(tree, mapeamento_notas)
+        if mapeamento_notas: criar_tooltip_treeview(tree, mapeamento_notas)
 
     # ================== 2. EXTRAÇÃO DE DADOS PARA GRÁFICOS ESTATÍSTICOS ==================
     lbl_plots = ctk.CTkLabel(frame_tab_content, text=" STATISTICAL DISTRIBUTIONS ", font=("Roboto", 16, "bold"), text_color=CORES["destaque"])
     lbl_plots.pack(anchor="w", pady=(30, 5), padx=10)
 
-    plot_labels = []
-    plot_colors = []
-    data_makespan = []
-    data_runtime = []
-    data_ttb = []
+    plot_labels, plot_colors, data_makespan, data_runtime, data_ttb = [], [], [], [], []
 
     for cor_set in sorted(grupos.keys()):
-        nome_set = grupos[cor_set]["nome"]
-        lista_exp = grupos[cor_set]["exp"]
-        
-        plot_labels.append(nome_set)
+        plot_labels.append(grupos[cor_set]["nome"])
         plot_colors.append(cor_set)
-        
         mksp_g, rt_g, ttb_g = [], [], []
-        for exp in lista_exp:
-            if exp.get('y'):
-                mksp_g.append(min(exp['y']))
+        for exp in grupos[cor_set]["exp"]:
+            if exp.get('y'): mksp_g.append(min(exp['y']))
             if exp.get('x') and exp.get('y'):
                 rt_g.append(exp['x'][-1])
-                idx_best = exp['y'].index(min(exp['y']))
-                ttb_g.append(exp['x'][idx_best])
-                
-        data_makespan.append(mksp_g)
-        data_runtime.append(rt_g)
-        data_ttb.append(ttb_g)
+                ttb_g.append(exp['x'][exp['y'].index(min(exp['y']))])
+        data_makespan.append(mksp_g); data_runtime.append(rt_g); data_ttb.append(ttb_g)
 
-    # ================== 3. FUNÇÃO DE PLOTAGEM DOS BOXPLOTS ==================
-    def criar_boxplot(data, title, xlabel):
+    # ================== 3. FUNÇÃO DE PLOTAGEM DOS BOXPLOTS E STRIPPLOTS ==================
+    def criar_boxplot(data, title, xlabel, with_strip=False):
         plt.rcParams['font.family'] = 'sans-serif'
-        plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'Calibri', 'DejaVu Sans']
-
         valid_data, valid_colors, valid_labels = [], [], []
         for d, c, l in zip(data, plot_colors, plot_labels):
-            if d: 
-                valid_data.append(d)
-                valid_colors.append(c)
-                valid_labels.append(l) 
-        
+            if d: valid_data.append(d); valid_colors.append(c); valid_labels.append(l) 
         if not valid_data: return
         
-        altura_dinamica = max(5.0, len(valid_data) * 1.5)
+        fig = Figure(figsize=(12.0, max(5.0, len(valid_data) * 1.5)), facecolor="#1E1E21")
+        ax = fig.add_subplot(111); ax.set_facecolor("#1E1E21")
         
-        fig = Figure(figsize=(12.0, altura_dinamica), facecolor="#1E1E21")
-        ax = fig.add_subplot(111)
-        ax.set_facecolor("#1E1E21")
-        
+        # 1. Desenha o Boxplot base
         bplot = ax.boxplot(valid_data, vert=False, patch_artist=True, labels=["" for _ in valid_data],
-                           boxprops=dict(color="#DDDDDD", linewidth=1.5),
-                           capprops=dict(color="#DDDDDD", linewidth=1.5),
-                           whiskerprops=dict(color="#DDDDDD", linewidth=1.5),
-                           flierprops=dict(markerfacecolor="#FFFFFF", markeredgecolor="#FFFFFF", marker='o', markersize=5),
+                           boxprops=dict(color="#DDDDDD", linewidth=1.5), capprops=dict(color="#DDDDDD", linewidth=1.5),
+                           whiskerprops=dict(color="#DDDDDD", linewidth=1.5), flierprops=dict(markerfacecolor="#FFFFFF", markeredgecolor="#FFFFFF", marker='o', markersize=5),
                            medianprops=dict(color="#FFFFFF", linewidth=2.0))
                            
-        for patch, color in zip(bplot['boxes'], valid_colors):
+        for patch, color in zip(bplot['boxes'], valid_colors): 
             patch.set_facecolor(color)
+            if with_strip:
+                # Se for ter stripplot, o boxplot fica translúcido para os pontos ganharem destaque
+                patch.set_alpha(0.25) 
             
-        # Pad aumentado para a legenda caber de forma limpa abaixo do título
+        # 2. Desenha o Stripplot por cima
+        if with_strip:
+            for i, (d, color) in enumerate(zip(valid_data, valid_colors)):
+                # O np.random.uniform cria um 'jitter' (espalhamento) de -0.15 a 0.15 no eixo Y
+                # para que os pontos não fiquem todos colados na mesma linha reta.
+                y_jitter = (i + 1) + np.random.uniform(-0.15, 0.15, size=len(d))
+                ax.scatter(d, y_jitter, alpha=0.9, color=color, edgecolors='#FFFFFF', linewidth=0.6, s=35, zorder=3)
+
+        # 3. Estilização Geral
         ax.set_title(title, color="#FFFFFF", fontsize=12, pad=30, fontweight="bold")
         ax.set_xlabel(xlabel, color="#DDDDDD", fontsize=10)
         ax.tick_params(colors="#DDDDDD", labelsize=10)
-        
         ax.grid(axis='x', color='#333333', linestyle='--', linewidth=0.5, alpha=0.7)
-        ax.set_axisbelow(True) 
-        ax.tick_params(axis='y', which='both', length=0)
-        
-        for spine in ax.spines.values():
-            spine.set_color("#444444")
-            spine.set_linewidth(1.0)
+        ax.set_axisbelow(True); ax.tick_params(axis='y', which='both', length=0)
+        for spine in ax.spines.values(): spine.set_color("#444444"); spine.set_linewidth(1.0)
             
-        # --- LEGENDA HORIZONTAL NO TOPO ---
         legend_patches = [mpatches.Patch(color=c, label=l) for c, l in zip(valid_colors, valid_labels)]
-        n_cols = len(legend_patches) if legend_patches else 1
-        ax.legend(handles=legend_patches, loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=n_cols, frameon=False, labelcolor="#DDDDDD", fontsize=10)
-            
+        ax.legend(handles=legend_patches, loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=max(1, len(legend_patches)), frameon=False, labelcolor="#DDDDDD", fontsize=10)
         fig.tight_layout()
+        
+        # A MÁGICA: O exportador de PDF/HTML puxa as imagens daqui! 
+        figuras_para_exportar.append(fig)
         
         container_frame = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
         container_frame.pack(fill="x", pady=(10, 25), padx=10)
-        
         canvas = FigureCanvasTkAgg(fig, master=container_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill="x", expand=True)
-        
-        toolbar = CustomToolbar(canvas, container_frame)
-        toolbar.update()
-        toolbar.pack(side="bottom", fill="x")
+        lista_canvases.append(canvas)
+        canvas.draw(); canvas.get_tk_widget().pack(fill="x", expand=True)
+        CustomToolbar(canvas, container_frame).update()
 
-    # Renderiza os Boxplots
-    criar_boxplot(data_makespan, "Makespan Variance", "Makespan Value")
-    criar_boxplot(data_runtime, "Total Runtime Distribution", "Seconds (s)")
-    criar_boxplot(data_ttb, "Time to Best Distribution", "Seconds (s)")
+    # --- Sequência solicitada pelo usuário (Boxplot Normal seguido de Boxplot + Stripplot) ---
+    
+    # MAKESPAN
+    criar_boxplot(data_makespan, "Makespan", "Makespan Value", with_strip=False)
+    criar_boxplot(data_makespan, "Makespan (Boxplot + Stripplot)", "Makespan Value", with_strip=True)
 
+    # RUNTIME
+    criar_boxplot(data_runtime, "Total Runtime ", "Seconds (s)", with_strip=False)
+    criar_boxplot(data_runtime, "Total Runtime (Boxplot + Stripplot)", "Seconds (s)", with_strip=True)
 
-    # ================== 4. GRÁFICOS DE INTERVALO DE CONFIANÇA 95% (BOOTSTRAP) ==================
+    # TIME TO BEST
+    criar_boxplot(data_ttb, "Time to Best", "Seconds (s)", with_strip=False)
+    criar_boxplot(data_ttb, "Time to Best (Boxplot + Stripplot)", "Seconds (s)", with_strip=True)
+
+   # ================== 4. GRÁFICOS DE INTERVALO DE CONFIANÇA 95% (EMPILHADOS E COMPACTOS) ==================
     lbl_ic_plots = ctk.CTkLabel(frame_tab_content, text=" 95% CONFIDENCE INTERVALS (BOOTSTRAP) ", font=("Roboto", 16, "bold"), text_color=CORES["destaque"])
     lbl_ic_plots.pack(anchor="w", pady=(30, 5), padx=10)
 
-    def criar_ic_plot(data, title, xlabel):
-        plt.rcParams['font.family'] = 'sans-serif'
-        plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'Calibri', 'DejaVu Sans']
+    # Filtra os dados válidos primeiro
+    valid_data_m, valid_data_t, valid_colors, valid_labels = [], [], [], []
+    for dm, dt, c, l in zip(data_makespan, data_ttb, plot_colors, plot_labels):
+        if dm or dt: 
+            valid_data_m.append(dm)
+            valid_data_t.append(dt)
+            valid_colors.append(c)
+            valid_labels.append(l)
 
-        valid_data, valid_colors, valid_labels = [], [], []
-        for d, c, l in zip(data, plot_colors, plot_labels):
-            if d: 
-                valid_data.append(d)
-                valid_colors.append(c)
-                valid_labels.append(l) 
-        
-        if not valid_data: return
-
+    if valid_data_m or valid_data_t:
         def calcular_bootstrap_ic(arr, n_resamples=10000):
-            if len(arr) < 2:
-                m = arr[0] if len(arr) == 1 else 0
-                return m, m, m
+            if not arr: return 0, 0, 0
+            if len(arr) < 2: return (arr[0] if len(arr) == 1 else 0), (arr[0] if len(arr) == 1 else 0), (arr[0] if len(arr) == 1 else 0)
             arr_np = np.array(arr)
-            amostras = np.random.choice(arr_np, size=(n_resamples, len(arr_np)), replace=True)
-            medias_amostrais = np.mean(amostras, axis=1)
+            medias_amostrais = np.mean(np.random.choice(arr_np, size=(n_resamples, len(arr_np)), replace=True), axis=1)
             return np.mean(arr_np), np.percentile(medias_amostrais, 2.5), np.percentile(medias_amostrais, 97.5)
 
-        means, erro_inferior, erro_superior = [], [], []
-        for d in valid_data:
-            media, inf, sup = calcular_bootstrap_ic(d)
-            means.append(media)
-            erro_inferior.append(media - inf)
-            erro_superior.append(sup - media)
-
-        altura_dinamica = max(4.0, len(valid_data) * 1.0)
+        # --- FIX: Aumentamos ligeiramente a proporção da altura para compensar o novo espaçamento ---
+        altura_dinamica = max(3.0, len(valid_labels) * 0.7)
+        fig_ic = Figure(figsize=(12.0, altura_dinamica * 2.2), facecolor="#1E1E21")
         
-        fig = Figure(figsize=(12.0, altura_dinamica), facecolor="#1E1E21")
-        ax = fig.add_subplot(111)
-        ax.set_facecolor("#1E1E21")
+        ax_m = fig_ic.add_subplot(211) # Cima
+        ax_t = fig_ic.add_subplot(212) # Baixo
+        ax_m.set_facecolor("#1E1E21")
+        ax_t.set_facecolor("#1E1E21")
 
-        y_positions = np.arange(len(valid_data))
+        y_positions = np.arange(len(valid_labels))
 
-        for i in range(len(valid_data)):
-            ax.errorbar(means[i], y_positions[i], xerr=[[erro_inferior[i]], [erro_superior[i]]],
-                        fmt='o', color=valid_colors[i], ecolor=valid_colors[i], 
-                        elinewidth=3, capsize=6, capthick=2, markersize=8)
-
-        ax.set_yticks(y_positions)
-        ax.set_yticklabels(["" for _ in valid_data])
-
-        ax.set_title(title, color="#FFFFFF", fontsize=12, pad=30, fontweight="bold")
-        ax.set_xlabel(xlabel, color="#DDDDDD", fontsize=10)
-        ax.tick_params(colors="#DDDDDD", labelsize=10)
+        # --- Desenha Makespan (Cima) ---
+        means_m, erro_inf_m, erro_sup_m = [], [], []
+        for d in valid_data_m:
+            m, inf, sup = calcular_bootstrap_ic(d)
+            means_m.append(m); erro_inf_m.append(m - inf); erro_sup_m.append(sup - m)
         
-        ax.grid(axis='x', color='#333333', linestyle='--', linewidth=0.5, alpha=0.7)
-        ax.set_axisbelow(True) 
-        ax.tick_params(axis='y', which='both', length=0)
-        
-        for spine in ax.spines.values():
-            spine.set_color("#444444")
-            spine.set_linewidth(1.0)
+        for i in range(len(valid_labels)):
+            if valid_data_m[i]:
+                ax_m.errorbar(means_m[i], y_positions[i], xerr=[[erro_inf_m[i]], [erro_sup_m[i]]], fmt='o', color=valid_colors[i], ecolor=valid_colors[i], elinewidth=3, capsize=6, capthick=2, markersize=8)
 
-        # --- LEGENDA HORIZONTAL NO TOPO ---
+        # --- Desenha Time to Best (Baixo) ---
+        means_t, erro_inf_t, erro_sup_t = [], [], []
+        for d in valid_data_t:
+            m, inf, sup = calcular_bootstrap_ic(d)
+            means_t.append(m); erro_inf_t.append(m - inf); erro_sup_t.append(sup - m)
+            
+        for i in range(len(valid_labels)):
+            if valid_data_t[i]:
+                ax_t.errorbar(means_t[i], y_positions[i], xerr=[[erro_inf_t[i]], [erro_sup_t[i]]], fmt='o', color=valid_colors[i], ecolor=valid_colors[i], elinewidth=3, capsize=6, capthick=2, markersize=8)
+
+        # --- Estilização ---
+        titulos = ["Makespan 95% CI", "Time to Best 95% CI"]
+        xlabels = ["Mean Makespan", "Mean Seconds (s)"]
+        
+        for ax, titulo, xlabel in zip([ax_m, ax_t], titulos, xlabels):
+            ax.set_yticks(y_positions)
+            ax.set_yticklabels(["" for _ in valid_labels])
+            
+            # --- FIX: O gráfico de cima ganha um pad gigante (45) para empurrar o título para o topo.
+            # O gráfico de baixo continua com pad=15 para o título não voar.
+            pad_val = 45 if ax == ax_m else 15
+            ax.set_title(titulo, color="#FFFFFF", fontsize=12, pad=pad_val, fontweight="bold")
+            
+            ax.set_xlabel(xlabel, color="#DDDDDD", fontsize=10)
+            ax.tick_params(colors="#DDDDDD", labelsize=10)
+            ax.grid(axis='x', color='#333333', linestyle='--', linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.tick_params(axis='y', which='both', length=0)
+            for spine in ax.spines.values():
+                spine.set_color("#444444")
+                spine.set_linewidth(1.0)
+
+        # --- FIX: A legenda desce para a posição (1.08), ficando perfeitamente ensanduichada entre o título e o gráfico!
         legend_patches = [mpatches.Patch(color=c, label=l) for c, l in zip(valid_colors, valid_labels)]
-        n_cols = len(legend_patches) if legend_patches else 1
-        ax.legend(handles=legend_patches, loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=n_cols, frameon=False, labelcolor="#DDDDDD", fontsize=10)
+        ax_m.legend(handles=legend_patches, loc='lower center', bbox_to_anchor=(0.5, 1.08), ncol=max(1, len(legend_patches)), frameon=False, labelcolor="#DDDDDD", fontsize=10)
 
-        fig.tight_layout()
+        # O 'top=0.85' garante que o título lá em cima não é cortado pela borda da imagem
+        fig_ic.subplots_adjust(left=0.08, right=0.95, top=0.85, bottom=0.10, hspace=0.70)
 
-        container_frame = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
-        container_frame.pack(fill="x", pady=(10, 25), padx=10)
-        
-        canvas = FigureCanvasTkAgg(fig, master=container_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill="x", expand=True)
-        
-        toolbar = CustomToolbar(canvas, container_frame)
-        toolbar.update()
-        toolbar.pack(side="bottom", fill="x")
+        figuras_para_exportar.append(fig_ic) 
 
-    criar_ic_plot(data_makespan, "Makespan 95% CI (Bootstrap Method)", "Mean Makespan")
-    criar_ic_plot(data_ttb, "Time to Best 95% CI (Bootstrap Method)", "Mean Seconds (s)")
+        container_ic = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
+        container_ic.pack(fill="x", pady=(10, 25), padx=10)
+        canvas_ic = FigureCanvasTkAgg(fig_ic, master=container_ic)
+        lista_canvases.append(canvas_ic)
+        canvas_ic.draw()
+        canvas_ic.get_tk_widget().pack(fill="x", expand=True)
+        CustomToolbar(canvas_ic, container_ic).update()
 
-
-    # ================== 5. FREQUENCY HISTOGRAMS (BY SET) ==================
+    # ================== 5. FREQUENCY HISTOGRAMS ==================
     lbl_hist = ctk.CTkLabel(frame_tab_content, text=" FREQUENCY HISTOGRAMS", font=("Roboto", 16, "bold"), text_color=CORES["destaque"])
     lbl_hist.pack(anchor="w", pady=(30, 5), padx=10)
 
-    # --- FIX 3: Combobox para regras de distribuição (Sturges, Rice, Scott, FD) ---
     frame_combo_hist = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
     frame_combo_hist.pack(fill="x", padx=10, pady=(0, 10))
-    
     ctk.CTkLabel(frame_combo_hist, text="Binning Rule:", text_color="white", font=("Roboto", 12)).pack(side="left", padx=(0, 10))
     
-    combo_bins = ctk.CTkComboBox(
-        frame_combo_hist, 
-        values=["Sturges' Rule", "Rice's Rule", "Scott's Rule", "Freedman-Diaconis"],
-        state="readonly", width=180,
-        fg_color="#2D2D35", border_color="#444444", text_color="white"
-    )
+    combo_bins = ctk.CTkComboBox(frame_combo_hist, values=["Sturges' Rule", "Rice's Rule", "Scott's Rule", "Freedman-Diaconis"], state="readonly", width=180, fg_color="#2D2D35", border_color="#444444", text_color="white")
     combo_bins.set("Freedman-Diaconis")
     combo_bins.pack(side="left")
 
     container_hist = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
     container_hist.pack(fill="x", pady=(5, 30), padx=10)
-    
-    # --- FIX 2: Figura mais alta para empilhar os gráficos verticalmente ---
     fig_hist = Figure(figsize=(10.0, 9.0), facecolor="#1E1E21")
     canvas_hist = FigureCanvasTkAgg(fig_hist, master=container_hist)
+    lista_canvases.append(canvas_hist)
+    figuras_para_exportar.append(fig_hist) # GUARDA PARA EXPORTAÇÃO
 
-    # Mapeamento do texto da UI para os algoritmos nativos do Numpy
-    mapa_regras = {
-        "Sturges' Rule": "sturges",
-        "Rice's Rule": "rice",
-        "Scott's Rule": "scott",
-        "Freedman-Diaconis": "fd"
-    }
+    mapa_regras = {"Sturges' Rule": "sturges", "Rice's Rule": "rice", "Scott's Rule": "scott", "Freedman-Diaconis": "fd"}
 
     # Função que desenha (e redesenha) o gráfico baseada na regra
     def atualizar_histogramas(escolha_ui):
         regra_np = mapa_regras.get(escolha_ui, "sturges")
         
-        fig_hist.clf() # Limpa a figura
-        fig_hist.patch.set_facecolor('#1E1E21')
-        
-        # Subplots Verticais: 2 Linhas, 1 Coluna
-        ax_m = fig_hist.add_subplot(211)
-        ax_t = fig_hist.add_subplot(212)
-        
-        ax_m.set_facecolor("#1E1E21")
-        ax_t.set_facecolor("#1E1E21")
+        # --- FIX: Lê o estado da checkbox para manter as cores corretas ao atualizar! ---
+        is_light = False
+        try:
+            is_light = var_light_theme.get()
+        except Exception:
+            pass # Se a variável ainda não estiver pronta no momento da criação, assume escuro
+            
+        bg_c = "#FFFFFF" if is_light else "#1E1E21"
+        title_c = "#111111" if is_light else "#FFFFFF"
+        text_c = "#333333" if is_light else "#DDDDDD"
+        spine_c = "#CCCCCC" if is_light else "#444444"
+        grid_c = "#EAEAEA" if is_light else "#333333"
+        # -------------------------------------------------------------------------------
 
+        fig_hist.clf() 
+        fig_hist.patch.set_facecolor(bg_c)
+        
+        ax_m, ax_t = fig_hist.add_subplot(211), fig_hist.add_subplot(212)
+        ax_m.set_facecolor(bg_c); ax_t.set_facecolor(bg_c)
         tem_dados = False
 
         for i in range(len(plot_labels)):
-            cor = plot_colors[i]
-            label = plot_labels[i]
-            m_data = data_makespan[i]
-            t_data = data_ttb[i]
-            
-            # Matplotlib aceita a string da regra direto no parâmetro "bins".
-            # (Adicionamos um set() para não dar erro se todos os dados forem idênticos)
+            m_data, t_data = data_makespan[i], data_ttb[i]
             if m_data:
                 tem_dados = True
-                regra_m = regra_np if len(set(m_data)) > 1 else 1
-                ax_m.hist(m_data, bins=regra_m, alpha=0.6, color=cor, edgecolor="#DDDDDD", linewidth=1.0, label=label)
-            
+                ax_m.hist(m_data, bins=(regra_np if len(set(m_data)) > 1 else 1), alpha=0.6, color=plot_colors[i], edgecolor=title_c, linewidth=1.0, label=plot_labels[i])
             if t_data:
-                regra_t = regra_np if len(set(t_data)) > 1 else 1
-                ax_t.hist(t_data, bins=regra_t, alpha=0.6, color=cor, edgecolor="#DDDDDD", linewidth=1.0, label=label)
+                ax_t.hist(t_data, bins=(regra_np if len(set(t_data)) > 1 else 1), alpha=0.6, color=plot_colors[i], edgecolor=title_c, linewidth=1.0, label=plot_labels[i])
 
-        # Estilização Makespan (Cima)
-        ax_m.set_title("Makespan Frequency", color="#FFFFFF", fontsize=12, pad=40, fontweight="bold")
-        ax_m.set_xlabel("Makespan Value", color="#DDDDDD", fontsize=10)
-        ax_m.set_ylabel("Frequency", color="#DDDDDD", fontsize=10)
-        ax_m.tick_params(colors="#DDDDDD", labelsize=10)
-        ax_m.grid(axis='y', color='#333333', linestyle='--', linewidth=0.5, alpha=0.7)
+        # --- Aplicação das cores dinâmicas no Makespan (Cima) ---
+        ax_m.set_title("Makespan Frequency", color=title_c, fontsize=12, pad=40, fontweight="bold")
+        ax_m.set_xlabel("Makespan Value", color=text_c, fontsize=10)
+        ax_m.set_ylabel("Frequency", color=text_c, fontsize=10)
+        ax_m.tick_params(colors=text_c, labelsize=10)
+        ax_m.grid(axis='y', color=grid_c, linestyle='--', linewidth=0.5, alpha=0.7)
         ax_m.set_axisbelow(True)
-        for spine in ax_m.spines.values():
-            spine.set_color("#444444"); spine.set_linewidth(1.0)
+        for spine in ax_m.spines.values(): 
+            spine.set_color(spine_c)
+            spine.set_linewidth(1.0)
 
-        # Estilização Time to Best (Baixo)
-        ax_t.set_title("Time to Best Frequency", color="#FFFFFF", fontsize=12, pad=40, fontweight="bold")
-        ax_t.set_xlabel("Seconds (s)", color="#DDDDDD", fontsize=10)
-        ax_t.set_ylabel("Frequency", color="#DDDDDD", fontsize=10)
-        ax_t.tick_params(colors="#DDDDDD", labelsize=10)
-        ax_t.grid(axis='y', color='#333333', linestyle='--', linewidth=0.5, alpha=0.7)
+        # --- Aplicação das cores dinâmicas no Time to Best (Baixo) ---
+        ax_t.set_title("Time to Best Frequency", color=title_c, fontsize=12, pad=40, fontweight="bold")
+        ax_t.set_xlabel("Seconds (s)", color=text_c, fontsize=10)
+        ax_t.set_ylabel("Frequency", color=text_c, fontsize=10)
+        ax_t.tick_params(colors=text_c, labelsize=10)
+        ax_t.grid(axis='y', color=grid_c, linestyle='--', linewidth=0.5, alpha=0.7)
         ax_t.set_axisbelow(True)
-        for spine in ax_t.spines.values():
-            spine.set_color("#444444"); spine.set_linewidth(1.0)
+        for spine in ax_t.spines.values(): 
+            spine.set_color(spine_c)
+            spine.set_linewidth(1.0)
 
-        # Legendas
         if tem_dados:
             legend_patches = [mpatches.Patch(color=c, label=l) for c, l in zip(plot_colors, plot_labels)]
-            n_cols = len(legend_patches) if legend_patches else 1
-            ax_m.legend(handles=legend_patches, loc='lower center', bbox_to_anchor=(0.5, 1.05), ncol=n_cols, frameon=False, labelcolor="#DDDDDD", fontsize=10)
-            ax_t.legend(handles=legend_patches, loc='lower center', bbox_to_anchor=(0.5, 1.05), ncol=n_cols, frameon=False, labelcolor="#DDDDDD", fontsize=10)
-        else:
-            ax_m.text(0.5, 0.5, "NO DATA", color="white", ha="center", va="center", transform=ax_m.transAxes)
-            ax_t.text(0.5, 0.5, "NO DATA", color="white", ha="center", va="center", transform=ax_t.transAxes)
-
-        # Espaçamento generoso entre o gráfico de cima e o de baixo
-        fig_hist.tight_layout(pad=3.0)
+            ax_m.legend(handles=legend_patches, loc='lower center', bbox_to_anchor=(0.5, 1.05), ncol=max(1, len(legend_patches)), frameon=False, labelcolor=text_c, fontsize=10)
+            ax_t.legend(handles=legend_patches, loc='lower center', bbox_to_anchor=(0.5, 1.05), ncol=max(1, len(legend_patches)), frameon=False, labelcolor=text_c, fontsize=10)
+        
+        fig_hist.subplots_adjust(left=0.08, right=0.95, top=0.88, bottom=0.12, hspace=0.6)
         canvas_hist.draw_idle()
 
-    # Acopla a função ao botão e desenha o estado inicial
     combo_bins.configure(command=atualizar_histogramas)
     atualizar_histogramas("Freedman-Diaconis")
 
     canvas_hist.get_tk_widget().pack(fill="x", expand=True)
+    CustomToolbar(canvas_hist, container_hist).update()
 
-    toolbar_hist = CustomToolbar(canvas_hist, container_hist)
-    toolbar_hist.update()
-    toolbar_hist.pack(side="bottom", fill="x")
-
-    tabs_obj[nome_analise] = {
-        "btn_frame": tab_btn,
-        "content": frame_tab_content
-    }
-
+    tabs_obj[nome_analise] = {"btn_frame": tab_btn, "content": frame_tab_content}
     selecionar_aba(nome_analise)
     FUNCAO_SHOW_TAB_GLOBAL(ABA_ANALISE_GLOBAL)
 
@@ -2382,7 +2651,7 @@ def configurar_aba_agentes(aba):
     ctk.CTkLabel(area_rolagem, text="AGENTS PARAMETERS", font=FONTES["titulo"], text_color=CORES["destaque"]).grid(row=0, column=0, columnspan=3, sticky="ew", padx=12, pady=(8,12))
     
     configuracao_agentes = {
-        "BRKGA": {"linha": 1, "coluna": 0, "titulo": "BIASED RANDOM KEY GENETIC ALGORITHM (BRKGA)", "campos": [("Population", "100"), ("Elite set %", "0.20"), ("Mutant set %", "0.10"), ("Inheritance Prob", "0.70")]},
+        "BRKGA": {"linha": 1, "coluna": 0, "titulo": "BIASED RANDOM KEY GENETIC ALGORITHM (BRKGA)", "campos": [("Population", "100"), ("Elite set", "0.20"), ("Mutant set", "0.10"), ("Inheritance Prob", "0.70")]},
         "SA":    {"linha": 1, "coluna": 1, "titulo": "SIMULATED ANNEALING (SA)", "campos": [("Iterations", "50"), ("alphaSA", "0.99"), ("betaMin", "0.05"), ("betaMax", "0.25"), ("Initial Temperature", "10000")]},
         "PSO":   {"linha": 2, "coluna": 0, "titulo": "PARTICLE SWARM OPTIMIZATION (PSO)", "campos": [("PSize", "100"), ("c1", "2.05"), ("c2", "2.05"), ("w", "0.73")]},
         "GA":    {"linha": 2, "coluna": 1, "titulo": "GENETIC ALGORITHM (GA)", "campos": [("Population", "100"), ("CrosProb", "0.98"), ("MutProb", "0.005")]},
