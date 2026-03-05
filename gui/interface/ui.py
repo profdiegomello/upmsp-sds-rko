@@ -13,6 +13,16 @@ import json
 import threading
 import pickle 
 import matplotlib
+import math
+import statistics
+import numpy as np
+import io
+import base64
+import tempfile
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from matplotlib import ticker
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -1081,13 +1091,7 @@ def pedir_nome_analise():
 
 def gerar_nova_analise(nome_analise, comentario=""):
     """Cria uma aba na Análise com gráfico de convergência, tabelas, boxplots, IC 95% e Histograma com bordas."""
-    import math
-    import statistics
-    import numpy as np
-    from matplotlib.figure import Figure
-    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
+    
     
     global ABA_ANALISE_GLOBAL, FUNCAO_SHOW_TAB_GLOBAL, INSTANCIAS_OCULTAS
     if not ABA_ANALISE_GLOBAL or not FUNCAO_SHOW_TAB_GLOBAL: return
@@ -1122,6 +1126,14 @@ def gerar_nova_analise(nome_analise, comentario=""):
         ABA_ANALISE_GLOBAL.current_active_tab = [None]
         ABA_ANALISE_GLOBAL.placeholder_label = None 
         ABA_ANALISE_GLOBAL.is_setup = True
+
+    # Calcula a largura da tela do usuário dinamicamente 
+    largura_tela_pixels = ABA_ANALISE_GLOBAL.winfo_width()
+    if largura_tela_pixels < 100: 
+        largura_tela_pixels = 1200 # Medida de segurança caso a tela não tenha carregado
+        
+    # Desconta as margens laterais e converte para polegadas (DPI padrão do matplotlib é 100)
+    largura_dinamica = (largura_tela_pixels - 150) / 100.0
 
     tab_bar = ABA_ANALISE_GLOBAL.tab_bar_container
     content_area = ABA_ANALISE_GLOBAL.content_area
@@ -1285,16 +1297,11 @@ def gerar_nova_analise(nome_analise, comentario=""):
     figuras_para_exportar = []
     lista_canvases = []
     colunas = ("INSTANCE", "MACHINES", "JOBS", "SETUP", "POLICY", "MAKESPAN", "RUNTIME", "TIME TO BEST", "PARAMETERS", "AGENTS CONFIGS")
+    estatisticas_por_grupo = {}
 
     # ================== BOTÃO DE EXPORTAÇÃO COMPLETA ==================
     def acao_exportar_tudo():
-        import tkinter as tk
-        from tkinter import filedialog, messagebox
-        import os
-        import io
-        import base64
-        import tempfile
-        from datetime import datetime 
+        
 
         try:
             import pandas as pd
@@ -1356,7 +1363,22 @@ def gerar_nova_analise(nome_analise, comentario=""):
                     param_long = " | ".join(raw_ag).replace('%', '')
 
                     linhas_do_grupo.append([inst, machines, jobs, setup_rng, policy, str(mksp), runtime, time_to_best, param_short, param_long])
+                       
+                stats_ui = estatisticas_por_grupo[cor_set]
                 
+                for m in ["Min", "Mean", "Median", "P95", "Max", "Stdev", "Variance", "Count", "CV (%)"]:
+                    linhas_do_grupo.append([
+                        m, 
+                        stats_ui["mac"][m], 
+                        stats_ui["job"][m], 
+                        "-", "-", 
+                        stats_ui["mksp"][m], 
+                        stats_ui["rt"][m], 
+                        stats_ui["ttb"][m], 
+                        "-", "-"
+                    ])
+
+                # Salva o dataframe já com os dados + estatísticas embutidas!
                 dfs_por_grupo[nome_set] = {"cor": cor_set, "desc": desc_set, "df": pd.DataFrame(linhas_do_grupo, columns=colunas)}
 
             # 2. Gerar Markdown (Usa a variável titulo_principal)
@@ -1415,22 +1437,40 @@ def gerar_nova_analise(nome_analise, comentario=""):
             latex_str += "\\end{document}"
             with open(caminho_base + ".tex", "w", encoding="utf-8") as f:
                 f.write(latex_str)
-            # 4. Processar Imagens
+           
+           # 4. Processar Imagens (100% Vetorial e Terminal Limpo)
+            import matplotlib as mpl
+            
+            # Força o Matplotlib a transformar todos os textos em curvas/paths.
+            mpl.rcParams['svg.fonttype'] = 'path'
+            
             imagens_html = ""
             imagens_temporarias_pdf = []
             
             for fig in figuras_para_exportar:
                 if fig:
-                    buf = io.BytesIO()
-                    fig.savefig(buf, format='png', bbox_inches='tight', dpi=150, facecolor=fig.get_facecolor())
-                    buf.seek(0)
-                    img_b64 = base64.b64encode(buf.read()).decode('utf-8')
-                    imagens_html += f'<div style="text-align: center; margin-top: 40px;"><img src="data:image/png;base64,{img_b64}" style="max-width: 100%; border-radius: 8px;"/></div>'
+                    # 1. Salva o SVG na memória RAM
+                    buf_svg = io.BytesIO()
+                    fig.savefig(buf_svg, format='svg', bbox_inches='tight', facecolor=fig.get_facecolor())
+                    buf_svg.seek(0)
                     
-                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-                    fig.savefig(tmp.name, format="png", bbox_inches="tight", dpi=200, facecolor=fig.get_facecolor())
+                    # Lemos o código SVG puro
+                    svg_texto = buf_svg.read().decode('utf-8')
+                    
+                    # 2. Geração para o HTML
+                    svg_b64 = base64.b64encode(svg_texto.encode('utf-8')).decode('utf-8')
+                    imagens_html += f'<div style="text-align: center; margin-top: 40px;"><img src="data:image/svg+xml;base64,{svg_b64}" style="max-width: 100%; border-radius: 8px;"/></div>'
+                    
+                    # 3. Limpeza do SVG para o FPDF2 (Remove os avisos do terminal!)
+                    # Apaga o bloco <metadata>...</metadata> que irrita o gerador de PDF
+                    svg_limpo = re.sub(r'<metadata>.*?</metadata>', '', svg_texto, flags=re.DOTALL)
+                    
+                    # Salva num arquivo temporário em modo texto ('w') para o FPDF2 ler
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".svg", mode="w", encoding="utf-8")
+                    tmp.write(svg_limpo)
+                    tmp.close() # É importante fechar para o FPDF conseguir abrir depois
+                    
                     imagens_temporarias_pdf.append(tmp.name)
-
             # 5. Gerar HTML Espaçado e Colorido (Usa a variável titulo_principal)
             estilo = "<style> body { font-family: Helvetica, sans-serif; margin: 30px; background-color: #f4f4f9;} table { border-collapse: collapse; width: 100%; font-size: 12px; background-color: white; margin-bottom: 40px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);} th, td { border: 1px solid #ddd; padding: 10px; text-align: center; } th { background-color: #2D2D35; color: white; } </style>"
             
@@ -1603,7 +1643,6 @@ def gerar_nova_analise(nome_analise, comentario=""):
     except: pass
 
     # --- LÓGICA DE CARREGAMENTO DA IMAGEM ---
-    import os
     from PIL import Image
     
     icon_export = None
@@ -1661,12 +1700,8 @@ def gerar_nova_analise(nome_analise, comentario=""):
         widget.bind("<Enter>", on_enter, add="+")
         widget.bind("<Leave>", on_leave, add="+")
     
-
     try: adicionar_tooltip(btn_export, "Export the current session to PDF, HTML, TEX, and MD formats.")
     except: pass
-    # --- LÓGICA DE CARREGAMENTO DA IMAGEM ---
-    import os
-    from PIL import Image
     
     icon_export = None
     try:
@@ -1679,12 +1714,11 @@ def gerar_nova_analise(nome_analise, comentario=""):
     except Exception as e:
         print(f"Aviso: Não foi possível carregar a imagem export.png. Erro: {e}")
 
-    
     # ================== 0. GRÁFICO DE CONVERGÊNCIA ==================
     lbl_conv = ctk.CTkLabel(frame_tab_content, text=" CONVERGENCE EVOLUTION ", font=("Roboto", 16, "bold"), text_color=CORES["destaque"])
     lbl_conv.pack(anchor="w", pady=(20, 5), padx=10)
 
-    fig_conv = Figure(figsize=(10.0, 4.5), facecolor="#1E1E21")
+    fig_conv = Figure(figsize=(largura_dinamica, 4.5), facecolor="#1E1E21")
     ax_conv = fig_conv.add_subplot(111)
     ax_conv.set_facecolor("#1E1E21")
 
@@ -1717,8 +1751,8 @@ def gerar_nova_analise(nome_analise, comentario=""):
     container_conv.pack(fill="x", pady=(5, 30), padx=10)
     canvas_conv = FigureCanvasTkAgg(fig_conv, master=container_conv)
     lista_canvases.append(canvas_conv)
-    canvas_conv.draw()
-    canvas_conv.get_tk_widget().pack(fill="x", expand=True)
+    canvas_conv.draw_idle()
+    canvas_conv.get_tk_widget().pack(fill="x", expand=False, pady=10)
     toolbar_conv = CustomToolbar(canvas_conv, container_conv)
     toolbar_conv.update(); toolbar_conv.pack(side="bottom", fill="x")
 
@@ -1857,6 +1891,11 @@ def gerar_nova_analise(nome_analise, comentario=""):
         stats_rt = calcular_estatisticas_coluna([p["valores"][6] for p in linhas_para_inserir])
         stats_ttb = calcular_estatisticas_coluna([p["valores"][7] for p in linhas_para_inserir])
 
+        estatisticas_por_grupo[cor_set] = {
+            "mac": stats_mac, "job": stats_job, "mksp": stats_mksp, 
+            "rt": stats_rt, "ttb": stats_ttb
+        }
+
         linhas_para_inserir.append({"valores": tuple("" for _ in colunas), "nota": "", "tag": "separator"})
 
         for m in ["Min", "Mean", "Median", "P95", "Max", "Stdev", "Variance", "Count", "CV (%)"]:
@@ -1902,28 +1941,38 @@ def gerar_nova_analise(nome_analise, comentario=""):
             if d: valid_data.append(d); valid_colors.append(c); valid_labels.append(l) 
         if not valid_data: return
         
-        fig = Figure(figsize=(12.0, max(5.0, len(valid_data) * 1.5)), facecolor="#1E1E21")
+        fig = Figure(figsize=(largura_dinamica, max(5.0, len(valid_data) * 1.5)), facecolor="#1E1E21")
         ax = fig.add_subplot(111); ax.set_facecolor("#1E1E21")
         
-        # 1. Desenha o Boxplot base
-        bplot = ax.boxplot(valid_data, vert=False, patch_artist=True, labels=["" for _ in valid_data],
-                           boxprops=dict(color="#DDDDDD", linewidth=1.5), capprops=dict(color="#DDDDDD", linewidth=1.5),
-                           whiskerprops=dict(color="#DDDDDD", linewidth=1.5), flierprops=dict(markerfacecolor="#FFFFFF", markeredgecolor="#FFFFFF", marker='o', markersize=5),
-                           medianprops=dict(color="#FFFFFF", linewidth=2.0))
-                           
-        for patch, color in zip(bplot['boxes'], valid_colors): 
-            patch.set_facecolor(color)
-            if with_strip:
-                # Se for ter stripplot, o boxplot fica translúcido para os pontos ganharem destaque
-                patch.set_alpha(0.25) 
-            
-        # 2. Desenha o Stripplot por cima
+        # 1. Desenha o Stripplot  (zorder=1)
         if with_strip:
             for i, (d, color) in enumerate(zip(valid_data, valid_colors)):
-                # O np.random.uniform cria um 'jitter' (espalhamento) de -0.15 a 0.15 no eixo Y
-                # para que os pontos não fiquem todos colados na mesma linha reta.
                 y_jitter = (i + 1) + np.random.uniform(-0.15, 0.15, size=len(d))
-                ax.scatter(d, y_jitter, alpha=0.9, color=color, edgecolors='#FFFFFF', linewidth=0.6, s=35, zorder=3)
+                # As bolinhas ficam sólidas, mas jogadas para trás
+                ax.scatter(d, y_jitter, alpha=0.85, color=color, edgecolors='#FFFFFF', linewidth=0.6, s=35, zorder=1)
+
+        # 2. Desenha o Boxplot POR CIMA
+        bplot = ax.boxplot(valid_data, vert=False, patch_artist=True, labels=["" for _ in valid_data],
+                           boxprops=dict(color="#DDDDDD", linewidth=1.5), 
+                           capprops=dict(color="#DDDDDD", linewidth=1.5),
+                           whiskerprops=dict(color="#DDDDDD", linewidth=1.5), 
+                           flierprops=dict(markerfacecolor="#FFFFFF", markeredgecolor="#FFFFFF", marker='o', markersize=5),
+                           medianprops=dict(color="#FFFFFF", linewidth=2.0))
+                           
+        # Ajusta a opacidade (alpha) e traz a caixa para a frente (zorder=3)
+        for patch, color in zip(bplot['boxes'], valid_colors): 
+            patch.set_facecolor(color)
+            patch.set_zorder(3) 
+            if with_strip:
+                patch.set_alpha(0.6) # Efeito "vidro": permite ver as bolinhas atrás
+            else:
+                patch.set_alpha(1.0)
+                
+        # Traz as linhas do boxplot (mediana, bigodes, etc.) para a primeiríssima camada (zorder=4)
+        for line in bplot['medians']: line.set_zorder(4)
+        for line in bplot['whiskers']: line.set_zorder(4)
+        for line in bplot['caps']: line.set_zorder(4)
+        for line in bplot['fliers']: line.set_zorder(4)
 
         # 3. Estilização Geral
         ax.set_title(title, color="#FFFFFF", fontsize=12, pad=30, fontweight="bold")
@@ -1937,18 +1986,16 @@ def gerar_nova_analise(nome_analise, comentario=""):
         ax.legend(handles=legend_patches, loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=max(1, len(legend_patches)), frameon=False, labelcolor="#DDDDDD", fontsize=10)
         fig.tight_layout()
         
-        # A MÁGICA: O exportador de PDF/HTML puxa as imagens daqui! 
         figuras_para_exportar.append(fig)
         
         container_frame = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
         container_frame.pack(fill="x", pady=(10, 25), padx=10)
         canvas = FigureCanvasTkAgg(fig, master=container_frame)
         lista_canvases.append(canvas)
-        canvas.draw(); canvas.get_tk_widget().pack(fill="x", expand=True)
+        canvas.draw_idle()
+        canvas.get_tk_widget().pack(fill="x", expand=False, pady=10)
         CustomToolbar(canvas, container_frame).update()
 
-    # --- Sequência solicitada pelo usuário (Boxplot Normal seguido de Boxplot + Stripplot) ---
-    
     # MAKESPAN
     criar_boxplot(data_makespan, "Makespan", "Makespan Value", with_strip=False)
     criar_boxplot(data_makespan, "Makespan (Boxplot + Stripplot)", "Makespan Value", with_strip=True)
@@ -1984,7 +2031,7 @@ def gerar_nova_analise(nome_analise, comentario=""):
 
         # --- FIX: Aumentamos ligeiramente a proporção da altura para compensar o novo espaçamento ---
         altura_dinamica = max(3.0, len(valid_labels) * 0.7)
-        fig_ic = Figure(figsize=(12.0, altura_dinamica * 2.2), facecolor="#1E1E21")
+        fig_ic = Figure(figsize=(largura_dinamica, altura_dinamica * 2.2), facecolor="#1E1E21")
         
         ax_m = fig_ic.add_subplot(211) # Cima
         ax_t = fig_ic.add_subplot(212) # Baixo
@@ -2048,8 +2095,8 @@ def gerar_nova_analise(nome_analise, comentario=""):
         container_ic.pack(fill="x", pady=(10, 25), padx=10)
         canvas_ic = FigureCanvasTkAgg(fig_ic, master=container_ic)
         lista_canvases.append(canvas_ic)
-        canvas_ic.draw()
-        canvas_ic.get_tk_widget().pack(fill="x", expand=True)
+        canvas_ic.draw_idle()
+        canvas_ic.get_tk_widget().pack(fill="x", expand=False, pady=10)
         CustomToolbar(canvas_ic, container_ic).update()
 
     # ================== 5. FREQUENCY HISTOGRAMS ==================
@@ -2066,7 +2113,7 @@ def gerar_nova_analise(nome_analise, comentario=""):
 
     container_hist = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
     container_hist.pack(fill="x", pady=(5, 30), padx=10)
-    fig_hist = Figure(figsize=(10.0, 9.0), facecolor="#1E1E21")
+    fig_hist = Figure(figsize=(largura_dinamica, 9.0), facecolor="#1E1E21")
     canvas_hist = FigureCanvasTkAgg(fig_hist, master=container_hist)
     lista_canvases.append(canvas_hist)
     figuras_para_exportar.append(fig_hist) # GUARDA PARA EXPORTAÇÃO
@@ -2139,7 +2186,7 @@ def gerar_nova_analise(nome_analise, comentario=""):
     combo_bins.configure(command=atualizar_histogramas)
     atualizar_histogramas("Freedman-Diaconis")
 
-    canvas_hist.get_tk_widget().pack(fill="x", expand=True)
+    canvas_hist.get_tk_widget().pack(fill="x", expand=False, pady=10)
     CustomToolbar(canvas_hist, container_hist).update()
 
     tabs_obj[nome_analise] = {"btn_frame": tab_btn, "content": frame_tab_content}
