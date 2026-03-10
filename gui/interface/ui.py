@@ -1301,7 +1301,7 @@ def gerar_nova_analise(nome_analise, comentario=""):
 
     # ================== BOTÃO DE EXPORTAÇÃO COMPLETA ==================
     def acao_exportar_tudo():
-        
+       
 
         try:
             import pandas as pd
@@ -1378,46 +1378,161 @@ def gerar_nova_analise(nome_analise, comentario=""):
                         "-", "-"
                     ])
 
-                # Salva o dataframe já com os dados + estatísticas embutidas!
                 dfs_por_grupo[nome_set] = {"cor": cor_set, "desc": desc_set, "df": pd.DataFrame(linhas_do_grupo, columns=colunas)}
 
-            # 2. Gerar Markdown (Usa a variável titulo_principal)
+            # --- 2. CÁLCULO DAS 3 MATRIZES ESTATÍSTICAS (MOVIDO PARA CIMA!) ---
+            matrizes_exportacao = []
+            try:
+                import scipy.stats as stats
+                import scikit_posthocs as sp
+                import numpy as np
+
+                def obter_ast(p_val):
+                    if p_val < 0.001: return f"{p_val:.4f} ***"
+                    elif p_val < 0.01: return f"{p_val:.4f} **"
+                    elif p_val < 0.05: return f"{p_val:.4f} *"
+                    else: return f"{p_val:.4f} ns"
+
+                for metrica_loop in ["Makespan", "Time to Best", "Runtime"]:
+                    dados_pareados = {}
+                    nomes_grupos = []
+                    
+                    for cor_set in sorted(grupos.keys()):
+                        nome_g = grupos[cor_set]["nome"]
+                        if nome_g in nomes_grupos: nome_g = f"{nome_g} ({cor_set})"
+                        nomes_grupos.append(nome_g)
+                        
+                        dict_inst = {}
+                        contagem_nomes = {} 
+                        for exp in grupos[cor_set]["exp"]:
+                            nome_bruto = str(exp.get("meta_nome", "Inst")).strip()
+                            inst_base = os.path.basename(nome_bruto)
+                            if not inst_base or inst_base == "-": inst_base = "Inst"
+                            
+                            contagem_nomes[inst_base] = contagem_nomes.get(inst_base, 0) + 1
+                            inst_id = f"{inst_base}_run{contagem_nomes[inst_base]}"
+                            
+                            val = None
+                            if metrica_loop == "Makespan" and exp.get('y'): val = min(exp['y'])
+                            elif metrica_loop == "Time to Best" and exp.get('x') and exp.get('y'): val = exp['x'][exp['y'].index(min(exp['y']))]
+                            elif metrica_loop == "Runtime" and exp.get('x'): val = exp['x'][-1]
+                            
+                            if val is not None: dict_inst[inst_id] = val
+                        dados_pareados[nome_g] = dict_inst
+
+                    if len(nomes_grupos) < 2: continue
+
+                    lista_conjuntos = [set(d.keys()) for d in dados_pareados.values()]
+                    if not lista_conjuntos: continue
+                    insts_comuns = set.intersection(*lista_conjuntos)
+                    
+                    if len(insts_comuns) < 3: continue
+
+                    insts_comuns = sorted(list(insts_comuns))
+                    matriz_dados = np.array([[dados_pareados[g][inst] for inst in insts_comuns] for g in nomes_grupos])
+
+                    if len(nomes_grupos) > 2:
+                        _, p_friedman = stats.friedmanchisquare(*matriz_dados)
+                        texto_friedman = f"Friedman Test p-value: {obter_ast(p_friedman)}"
+                    else:
+                        texto_friedman = "Friedman Test: N/A (Only 2 groups)"
+
+                    n_grupos = len(nomes_grupos)
+                    if n_grupos > 2:
+                        try: matriz_nemenyi = sp.posthoc_nemenyi(matriz_dados.T)
+                        except: matriz_nemenyi = None
+                    else: matriz_nemenyi = None
+
+                    grade_exportacao = []
+                    for i in range(n_grupos):
+                        linha_export = []
+                        for j in range(n_grupos):
+                            texto_celula = "-"
+                            tipo_celula = "diag" 
+                            if i < j: 
+                                tipo_celula = "wilcoxon"
+                                try:
+                                    _, p_val = stats.wilcoxon(matriz_dados[i], matriz_dados[j], zero_method='zsplit')
+                                    texto_celula = obter_ast(p_val)
+                                except ValueError: texto_celula = "Tie"
+                            elif i > j: 
+                                tipo_celula = "nemenyi"
+                                if matriz_nemenyi is not None:
+                                    p_val = matriz_nemenyi.iloc[i, j]
+                                    texto_celula = obter_ast(p_val)
+                                else: texto_celula = "N/A"
+                            linha_export.append({"texto": texto_celula, "tipo": tipo_celula})
+                        grade_exportacao.append(linha_export)
+
+                    matrizes_exportacao.append({
+                        "metrica": metrica_loop,
+                        "nomes": nomes_grupos,
+                        "texto_friedman": texto_friedman,
+                        "grade": grade_exportacao
+                    })
+            except ImportError:
+                pass
+
+            # 3. Gerar Markdown
             with open(caminho_base + ".md", "w", encoding="utf-8") as f:
                 f.write(f"# {titulo_principal}\n\n")
+                
+                # --- Tabelas dos Grupos ---
                 for nome_set, data in dfs_por_grupo.items():
                     titulo_md = f"Group: {nome_set}" + (f" - *{data['desc']}*" if data['desc'] else "")
                     f.write(f"### {titulo_md}\n")
                     f.write(data["df"].to_markdown(index=False) + "\n\n")
-
-            # 3. Gerar LaTeX COMPLETO (Landscape + Wrap de Coluna "Overleaf-Safe")
+                
+                # --- Matrizes Estatísticas em Markdown ---
+                if matrizes_exportacao:
+                    f.write("## Statistical Significance Matrices\n\n")
+                    
+                    for dados_stats in matrizes_exportacao:
+                        f.write(f"### {dados_stats['metrica']}\n")
+                        friedman_esc = dados_stats['texto_friedman'].replace('*', r'\*')
+                        f.write(f"__{friedman_esc}__\n\n")
+                        
+                        # Monta o cabeçalho da tabela Markdown
+                        cabecalho = "| | " + " | ".join(dados_stats['nomes']) + " |"
+                        separador = "|---|" + "|".join(["---" for _ in dados_stats['nomes']]) + "|"
+                        
+                        f.write(cabecalho + "\n")
+                        f.write(separador + "\n")
+                        
+                        # Monta as linhas da matriz
+                        for i, linha in enumerate(dados_stats['grade']):
+                            linha_md = f"| **{dados_stats['nomes'][i]}** | "
+                            # Escapar os asteriscos das células
+                            valores_celulas = [c['texto'].replace('*', r'\*') for c in linha]
+                            linha_md += " | ".join(valores_celulas) + " |"
+                            f.write(linha_md + "\n")
+                        
+                        # Legenda da matriz
+                        f.write("\n_Upper Triangle: Wilcoxon Signed-Rank Test | Lower Triangle: Nemenyi Post-hoc Test_\n")
+                        f.write("_\\*\\*\\* p<0.001, \\*\\* p<0.01, \\* p<0.05, ns: not significant_\n\n")
+            # 4. Gerar LaTeX COMPLETO
             latex_str = "\\documentclass[10pt,a4paper]{article}\n"
             latex_str += "\\usepackage[utf8]{inputenc}\n"
             latex_str += "\\usepackage{geometry}\n"
-            # Margens um pouco maiores (1.5cm) para garantir que a tabela não bate na borda do PDF
             latex_str += "\\geometry{margin=1.5cm, landscape}\n" 
             latex_str += "\\usepackage{booktabs}\n"
             latex_str += "\\usepackage{longtable}\n"
             latex_str += "\\usepackage{array}\n"
             latex_str += "\\begin{document}\n\n"
             latex_str += f"\\section*{{{titulo_tex_str}}}\n\n"
-            
-            # Fonte pequena e margem de célula reduzida
             latex_str += "\\scriptsize\n"
             latex_str += "\\setlength{\\tabcolsep}{3pt}\n" 
             
-            # --- FIX: Larguras super conservadoras. A soma total agora é ~22 cm.
-            # Como a folha A4 tem ~26.7 cm de área útil (com margens de 1.5cm), 
-            # é FISICAMENTE IMPOSSÍVEL a tabela vazar para fora da página no Overleaf agora!
-            col_fmt = ("|>{\\centering\\arraybackslash}p{2.5cm}"   # INSTANCE
-                       "|>{\\centering\\arraybackslash}p{1.2cm}"   # MACHINES
-                       "|>{\\centering\\arraybackslash}p{0.8cm}"   # JOBS
-                       "|>{\\centering\\arraybackslash}p{1.2cm}"   # SETUP
-                       "|>{\\centering\\arraybackslash}p{1.0cm}"   # POLICY
-                       "|>{\\centering\\arraybackslash}p{1.5cm}"   # MAKESPAN
-                       "|>{\\centering\\arraybackslash}p{1.5cm}"   # RUNTIME
-                       "|>{\\centering\\arraybackslash}p{1.5cm}"   # TIME TO BEST
-                       "|>{\\centering\\arraybackslash}p{1.8cm}"   # PARAMETERS
-                       "|>{\\raggedright\\arraybackslash}p{9.0cm}|") # AGENTS CONFIGS
+            col_fmt = ("|>{\\centering\\arraybackslash}p{2.5cm}"   
+                       "|>{\\centering\\arraybackslash}p{1.2cm}"   
+                       "|>{\\centering\\arraybackslash}p{0.8cm}"   
+                       "|>{\\centering\\arraybackslash}p{1.2cm}"   
+                       "|>{\\centering\\arraybackslash}p{1.0cm}"   
+                       "|>{\\centering\\arraybackslash}p{1.5cm}"   
+                       "|>{\\centering\\arraybackslash}p{1.5cm}"   
+                       "|>{\\centering\\arraybackslash}p{1.5cm}"   
+                       "|>{\\centering\\arraybackslash}p{1.8cm}"   
+                       "|>{\\raggedright\\arraybackslash}p{9.0cm}|")
             
             for nome_set, data in dfs_por_grupo.items():
                 desc_tex = data['desc'].replace('%', r'\%').replace('_', r'\_').replace('&', r'\&').replace('#', r'\#')
@@ -1433,15 +1548,48 @@ def gerar_nova_analise(nome_analise, comentario=""):
                 latex_str += tex_com_bordas
                 latex_str += "\n\\vspace{1cm}\n"
             
+            # --- ADIÇÃO DAS 3 MATRIZES NO LATEX ---
+            if matrizes_exportacao:
+                latex_str += "\\newpage\n"
+                latex_str += "\\section*{Statistical Significance Matrices}\n\n"
+                
+                for dados_stats in matrizes_exportacao:
+                    latex_str += f"\\subsection*{{{dados_stats['metrica']}}}\n"
+                    latex_str += f"\\noindent\\textbf{{{dados_stats['texto_friedman']}}}\\\\[0.3cm]\n"
+                    
+                    n_cols = len(dados_stats['nomes'])
+                    col_format = "l" + "c" * n_cols
+                    
+                    latex_str += f"\\begin{{center}}\n"
+                    latex_str += f"\\begin{{tabular}}{{{col_format}}}\n"
+                    latex_str += "\\toprule\n"
+                    
+                    # Nomes escapados para evitar erros com underscore_
+                    nomes_escapados = [n.replace('_', r'\_').replace('%', r'\%') for n in dados_stats['nomes']]
+                    latex_str += " & " + " & ".join(nomes_escapados) + " \\\\\n"
+                    latex_str += "\\midrule\n"
+                    
+                    for i, linha in enumerate(dados_stats['grade']):
+                        nome_linha = nomes_escapados[i]
+                        # Substitui > e < pelo formato matemático do LaTeX para evitar erros
+                        valores_celulas = [c['texto'].replace('<', '$<$').replace('>', '$>$') for c in linha]
+                        latex_str += f"{nome_linha} & " + " & ".join(valores_celulas) + " \\\\\n"
+                        
+                    latex_str += "\\bottomrule\n"
+                    latex_str += "\\end{tabular}\n"
+                    latex_str += "\\end{center}\n"
+                    
+                    latex_str += "\\noindent\\scriptsize{Upper Triangle: Wilcoxon Signed-Rank Test $\\vert$ Lower Triangle: Nemenyi Post-hoc Test} \\\\\n"
+                    latex_str += "\\noindent\\scriptsize{*** $p<0.001$, ** $p<0.01$, * $p<0.05$, ns: not significant}\n"
+                    latex_str += "\\vspace{1cm}\n\n"
+
             latex_str += "\\normalsize\n"
             latex_str += "\\end{document}"
             with open(caminho_base + ".tex", "w", encoding="utf-8") as f:
                 f.write(latex_str)
            
-           # 4. Processar Imagens (100% Vetorial e Terminal Limpo)
+            # 5. Processar Imagens
             import matplotlib as mpl
-            
-            # Força o Matplotlib a transformar todos os textos em curvas/paths.
             mpl.rcParams['svg.fonttype'] = 'path'
             
             imagens_html = ""
@@ -1449,29 +1597,20 @@ def gerar_nova_analise(nome_analise, comentario=""):
             
             for fig in figuras_para_exportar:
                 if fig:
-                    # 1. Salva o SVG na memória RAM
                     buf_svg = io.BytesIO()
                     fig.savefig(buf_svg, format='svg', bbox_inches='tight', facecolor=fig.get_facecolor())
                     buf_svg.seek(0)
-                    
-                    # Lemos o código SVG puro
                     svg_texto = buf_svg.read().decode('utf-8')
-                    
-                    # 2. Geração para o HTML
                     svg_b64 = base64.b64encode(svg_texto.encode('utf-8')).decode('utf-8')
                     imagens_html += f'<div style="text-align: center; margin-top: 40px;"><img src="data:image/svg+xml;base64,{svg_b64}" style="max-width: 100%; border-radius: 8px;"/></div>'
                     
-                    # 3. Limpeza do SVG para o FPDF2 (Remove os avisos do terminal!)
-                    # Apaga o bloco <metadata>...</metadata> que irrita o gerador de PDF
                     svg_limpo = re.sub(r'<metadata>.*?</metadata>', '', svg_texto, flags=re.DOTALL)
-                    
-                    # Salva num arquivo temporário em modo texto ('w') para o FPDF2 ler
                     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".svg", mode="w", encoding="utf-8")
                     tmp.write(svg_limpo)
-                    tmp.close() # É importante fechar para o FPDF conseguir abrir depois
-                    
+                    tmp.close()
                     imagens_temporarias_pdf.append(tmp.name)
-            # 5. Gerar HTML Espaçado e Colorido (Usa a variável titulo_principal)
+
+            # 6. Gerar HTML Espaçado e Colorido
             estilo = "<style> body { font-family: Helvetica, sans-serif; margin: 30px; background-color: #f4f4f9;} table { border-collapse: collapse; width: 100%; font-size: 12px; background-color: white; margin-bottom: 40px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);} th, td { border: 1px solid #ddd; padding: 10px; text-align: center; } th { background-color: #2D2D35; color: white; } </style>"
             
             html_tables_content = ""
@@ -1491,17 +1630,46 @@ def gerar_nova_analise(nome_analise, comentario=""):
                 html_tb += "</tbody></table>\n"
                 html_tables_content += html_tb
 
-            html_content = f"<!DOCTYPE html><html><head><meta charset='utf-8'>{estilo}</head><body><h2>{titulo_principal}</h2>{html_tables_content}{imagens_html}</body></html>"
+            # --- LAÇO PARA IMPRIMIR AS 3 MATRIZES NO HTML ---
+            html_todas_matrizes = ""
+            for dados_stats in matrizes_exportacao:
+                html_matriz = f"<div style='margin-top: 50px; page-break-before: always;'>"
+                html_matriz += f"<h3 style='color: #2c3e50; border-bottom: 2px solid #2c3e50; padding-bottom: 5px;'>Statistical Significance Matrix ({dados_stats['metrica']})</h3>"
+                html_matriz += f"<p style='font-size: 14px; font-weight: bold; color: #27ae60;'>{dados_stats['texto_friedman']}</p>"
+                
+                html_matriz += "<table><thead><tr><th style='background-color: #f8f9fa; border: 1px solid #dee2e6;'></th>"
+                for nome in dados_stats['nomes']:
+                    html_matriz += f"<th style='background-color: #e9ecef; color: #333; border: 1px solid #dee2e6;'>{nome}</th>"
+                html_matriz += "</tr></thead><tbody>"
+                
+                for i, linha in enumerate(dados_stats['grade']):
+                    html_matriz += f"<tr><td style='background-color: #e9ecef; color: #333; font-weight: bold; border: 1px solid #dee2e6;'>{dados_stats['nomes'][i]}</td>"
+                    for celula in linha:
+                        bg_color = "#ffffff"
+                        if celula['tipo'] == "diag": bg_color = "#f8f9fa" 
+                        elif celula['tipo'] == "wilcoxon": bg_color = "#e3f2fd" 
+                        elif celula['tipo'] == "nemenyi": bg_color = "#fff9c4" 
+                        
+                        html_matriz += f"<td style='background-color: {bg_color}; color: #212529; border: 1px solid #dee2e6;'>{celula['texto']}</td>"
+                    html_matriz += "</tr>"
+                html_matriz += "</tbody></table>"
+                
+                html_matriz += "<p style='font-size: 11px; color: #6c757d;'><b>Upper Triangle (Blue):</b> Wilcoxon Signed-Rank Test | <b>Lower Triangle (Yellow):</b> Nemenyi Post-hoc Test<br>*** p<0.001 &nbsp; ** p<0.01 &nbsp; * p<0.05 &nbsp; ns: not significant</p>"
+                html_matriz += "</div>"
+                
+                html_todas_matrizes += html_matriz
+                
+            html_content = f"<!DOCTYPE html><html><head><meta charset='utf-8'>{estilo}</head><body><h2>{titulo_principal}</h2>{html_tables_content}{html_todas_matrizes}{imagens_html}</body></html>"
+
             with open(caminho_base + ".html", "w", encoding="utf-8") as f: 
                 f.write(html_content)
 
-            # 6. Gerar PDF Acadêmico (Usa a variável titulo_principal)
+            # 7. Gerar PDF Acadêmico
             pdf = FPDF(orientation="L", format="A4")
             pdf.set_auto_page_break(auto=True, margin=15)
             pdf.add_page()
             
             pdf.set_font("helvetica", "B", 16)
-            # Imprime o título com a data/hora logo no topo do PDF
             pdf.cell(0, 10, titulo_principal, new_x="LMARGIN", new_y="NEXT", align="C")
             pdf.ln(5)
 
@@ -1537,6 +1705,39 @@ def gerar_nova_analise(nome_analise, comentario=""):
                             data_row.cell(str(val))
                 pdf.ln(10)
 
+            # --- LAÇO PARA IMPRIMIR AS 3 MATRIZES NO PDF ---
+            for dados_stats in matrizes_exportacao:
+                pdf.add_page()
+                pdf.set_font("helvetica", "B", 14)
+                pdf.set_text_color(0, 0, 0)
+                pdf.cell(0, 10, f"Statistical Significance Matrix ({dados_stats['metrica']})", new_x="LMARGIN", new_y="NEXT", align="L")
+                
+                pdf.set_font("helvetica", "BI", 11)
+                pdf.set_text_color(0, 0, 0) # Cor preta para o Friedman
+                pdf.cell(0, 8, dados_stats['texto_friedman'], new_x="LMARGIN", new_y="NEXT", align="L")
+                pdf.ln(5)
+
+                pdf.set_font("helvetica", "", 10)
+                pdf.set_text_color(0, 0, 0)
+                
+                with pdf.table(text_align="CENTER", borders_layout="ALL") as table:
+                    header_row = table.row()
+                    header_row.cell("") 
+                    for nome in dados_stats["nomes"]:
+                        header_row.cell(nome)
+                        
+                    for i, row_data in enumerate(dados_stats["grade"]):
+                        pdf_row = table.row()
+                        pdf_row.cell(dados_stats["nomes"][i]) 
+                        for celula in row_data:
+                            pdf_row.cell(celula["texto"])
+                            
+                pdf.ln(5)
+                pdf.set_font("helvetica", "I", 8)
+                pdf.set_text_color(100, 100, 100)
+                pdf.cell(0, 5, "Upper Triangle: Wilcoxon Signed-Rank Test  |  Lower Triangle: Nemenyi Post-hoc Test", new_x="LMARGIN", new_y="NEXT")
+                pdf.cell(0, 5, "*** p<0.001   ** p<0.01   * p<0.05   ns: not significant", new_x="LMARGIN", new_y="NEXT")
+
             for img_path in imagens_temporarias_pdf:
                 pdf.add_page()
                 pdf.image(img_path, x="C", y=10, w=285, h=190, keep_aspect_ratio=True)
@@ -1547,7 +1748,7 @@ def gerar_nova_analise(nome_analise, comentario=""):
 
         except Exception as e:
             tk.messagebox.showerror("Export Error", f"An error occurred during export:\n{str(e)}", parent=ABA_ANALISE_GLOBAL)
-    
+
     # AÇÕES DO TOPO: CHECKBOX DE TEMA E BOTÃO DE EXPORTAÇÃO
     frame_actions = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
     frame_actions.pack(fill="x", pady=(10, 0), padx=10)
@@ -1627,6 +1828,9 @@ def gerar_nova_analise(nome_analise, comentario=""):
         # Manda as telas piscarem e atualizarem na hora!
         for canvas in lista_canvases:
             canvas.draw_idle()
+        
+        metrica_atual = combo_metric_stats.get()
+        atualizar_matriz_estatistica(metrica_atual)
 
     # --- RENDERIZAÇÃO DA CHECKBOX ---
     chk_theme = ctk.CTkCheckBox(
@@ -1656,8 +1860,8 @@ def gerar_nova_analise(nome_analise, comentario=""):
 
     # --- RENDERIZAÇÃO DO BOTÃO EXPORT ---
     btn_export = ctk.CTkButton(
-        frame_actions, text="", image=icon_export, compound="left", font=("Roboto", 12, "bold"), 
-        fg_color="#0284c7", hover_color="#0ea5e9", width=40, command=acao_exportar_tudo
+        frame_actions, text=" Export", image=icon_export, compound="left", font=("Roboto", 12, "bold"), 
+        fg_color="#0284c7", hover_color="#0ea5e9", width=90, command=acao_exportar_tudo
     )
     btn_export.pack(side="right")
     
@@ -2188,6 +2392,241 @@ def gerar_nova_analise(nome_analise, comentario=""):
 
     canvas_hist.get_tk_widget().pack(fill="x", expand=False, pady=10)
     CustomToolbar(canvas_hist, container_hist).update()
+
+
+    # ================== 6. TESTES ESTATÍSTICOS (FRIEDMAN, WILCOXON, NEMENYI) ==================
+    lbl_stats = ctk.CTkLabel(frame_tab_content, text=" STATISTICAL SIGNIFICANCE TESTS ", font=("Roboto", 16, "bold"), text_color=CORES["destaque"])
+    lbl_stats.pack(anchor="w", pady=(30, 5), padx=10)
+
+    frame_controles_stats = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
+    frame_controles_stats.pack(fill="x", padx=10, pady=(0, 10))
+
+    ctk.CTkLabel(frame_controles_stats, text="Select Metric:", text_color="white", font=("Roboto", 12)).pack(side="left", padx=(0, 10))
+    combo_metric_stats = ctk.CTkComboBox(frame_controles_stats, values=["Makespan", "Time to Best", "Runtime"], state="readonly", width=150, fg_color="#2D2D35", border_color="#444444", text_color="white")
+    combo_metric_stats.set("Makespan")
+    combo_metric_stats.pack(side="left")
+
+    container_matriz = ctk.CTkFrame(frame_tab_content, fg_color="transparent")
+    container_matriz.pack(fill="x", pady=(10, 30), padx=10)
+
+    def obter_asteriscos(p_val):
+        if p_val < 0.001: return f"{p_val:.4f} ***"
+        elif p_val < 0.01: return f"{p_val:.4f} **"
+        elif p_val < 0.05: return f"{p_val:.4f} *"
+        else: return f"{p_val:.4f} ns"
+
+    def atualizar_matriz_estatistica(escolha_metrica):
+        for widget in container_matriz.winfo_children():
+            widget.destroy()
+
+        try:
+            import scipy.stats as stats
+            import scikit_posthocs as sp
+            import numpy as np
+            import os # Adicionado para corrigir caminhos de instâncias
+        except ImportError:
+            ctk.CTkLabel(container_matriz, text="⚠️ Install required libraries to use this feature:\npip install scipy scikit-posthocs", text_color="#E74C3C").pack(pady=20)
+            return
+
+        # 1. Extrair os dados pareados (COM CORREÇÃO DE REPETIÇÕES E CAMINHOS)
+        dados_pareados = {}
+        nomes_grupos = []
+        
+        for cor_set in sorted(grupos.keys()):
+            nome_g = grupos[cor_set]["nome"]
+            if nome_g in nomes_grupos: 
+                nome_g = f"{nome_g} ({cor_set})"
+            nomes_grupos.append(nome_g)
+            
+            dict_inst = {}
+            contagem_nomes = {} 
+            
+            for exp in grupos[cor_set]["exp"]:
+                nome_bruto = str(exp.get("meta_nome", "Inst")).strip()
+                inst_base = os.path.basename(nome_bruto)
+                
+                if not inst_base or inst_base == "-": 
+                    inst_base = "Inst"
+                
+                contagem_nomes[inst_base] = contagem_nomes.get(inst_base, 0) + 1
+                inst_id = f"{inst_base}_run{contagem_nomes[inst_base]}"
+                
+                val = None
+                if escolha_metrica == "Makespan" and exp.get('y'):
+                    val = min(exp['y'])
+                elif escolha_metrica == "Time to Best" and exp.get('x') and exp.get('y'):
+                    val = exp['x'][exp['y'].index(min(exp['y']))]
+                elif escolha_metrica == "Runtime" and exp.get('x'):
+                    val = exp['x'][-1]
+                
+                if val is not None:
+                    dict_inst[inst_id] = val
+                    
+            dados_pareados[nome_g] = dict_inst
+
+        if len(nomes_grupos) < 2:
+            ctk.CTkLabel(container_matriz, text="⚠️ Not enough groups to run statistical tests (minimum 2).", text_color="gray").pack(pady=20)
+            return
+
+        # Intersecção de instâncias em comum
+        lista_conjuntos = [set(d.keys()) for d in dados_pareados.values()]
+        if not lista_conjuntos: return
+        insts_comuns = set.intersection(*lista_conjuntos)
+        
+        # Sistema de Debug Inteligente
+        if len(insts_comuns) < 3:
+            msg = f"⚠️ Estatística Impossível: Foram encontradas apenas {len(insts_comuns)} amostras pareadas em comum.\n\n"
+            msg += "Regra Matemática: Testes não-paramétricos exigem no MÍNIMO 3 execuções em comum.\n"
+            if len(insts_comuns) == 0:
+                msg += "\n💡 DICA DE DEBUG: Veja como a interface leu os nomes das suas instâncias:\n"
+                for g, d in dados_pareados.items():
+                    exemplos = list(d.keys())[:3]
+                    msg += f"   ➤ {g}: {exemplos}\n"
+
+            lbl_erro = ctk.CTkLabel(container_matriz, text=msg, text_color="#E74C3C", font=("Roboto", 13), justify="left")
+            lbl_erro.grid(row=0, column=0, padx=10, pady=20, sticky="w")
+            return
+
+        insts_comuns = sorted(list(insts_comuns))
+        matriz_dados = np.array([[dados_pareados[g][inst] for inst in insts_comuns] for g in nomes_grupos])
+
+        # 2. Teste de Friedman (Global)
+        if len(nomes_grupos) > 2:
+            stat_f, p_friedman = stats.friedmanchisquare(*matriz_dados)
+            texto_friedman = f"Friedman Test p-value: {obter_asteriscos(p_friedman)}"
+        else:
+            p_friedman = 0.0
+            texto_friedman = "Friedman Test: N/A (Only 2 groups)"
+
+        cor_f = "#2ECC71" 
+        ctk.CTkLabel(container_matriz, text=texto_friedman, font=("Roboto", 14, "bold"), text_color=cor_f).grid(row=0, column=0, columnspan=len(nomes_grupos)+1, pady=(0, 5), sticky="w")
+
+        # 3. Testes Post-Hoc (Wilcoxon e Nemenyi)
+        n_grupos = len(nomes_grupos)
+        
+        if n_grupos > 2:
+            try:
+                matriz_nemenyi = sp.posthoc_nemenyi(matriz_dados.T)
+            except:
+                matriz_nemenyi = None
+        else: matriz_nemenyi = None
+
+        # ==========================================================
+        # VERIFICA O TEMA ATUAL PARA APLICAR A PALETA DE CORES CORRETA
+        # ==========================================================
+        modo_light = var_light_theme.get() == 1
+        
+        if modo_light:
+            cor_bg_matriz = "#FFFFFF"     # Fundo branco
+            cor_bg_cabecalho = "#F0F0F0"  # Cinza bem claro
+            cor_txt_cabecalho = "#333333" # Texto escuro
+            
+            cor_bg_diag = "#F8F9FA"       # Quase branco
+            cor_txt_diag = "#888888"
+            
+            cor_bg_wilcoxon = "#E3F2FD"   # Azul pastel
+            cor_txt_wilcoxon_sig = "#0D47A1" # Azul forte (Significativo)
+            cor_txt_wilcoxon_ns = "#666666"  # Cinza (Não Significativo)
+            
+            cor_bg_nemenyi = "#FFF9C4"    # Amarelo pastel
+            cor_txt_nemenyi_sig = "#F57F17"  # Laranja/Mostarda forte (Significativo)
+            cor_txt_nemenyi_ns = "#666666"   # Cinza (Não Significativo)
+            
+            cor_txt_legenda_base = "#FFFFFF" # Texto da legenda escuro para leitura no fundo claro
+        else:
+            cor_bg_matriz = "transparent"
+            cor_bg_cabecalho = "#2D2D35"
+            cor_txt_cabecalho = "#FFFFFF"
+            
+            cor_bg_diag = "#1A1A1E"
+            cor_txt_diag = "#444444"
+            
+            cor_bg_wilcoxon = "#1C3A5A"
+            cor_txt_wilcoxon_sig = "#64B5F6"
+            cor_txt_wilcoxon_ns = "#90CAF9"
+            
+            cor_bg_nemenyi = "#524A15"
+            cor_txt_nemenyi_sig = "#FFD54F"
+            cor_txt_nemenyi_ns = "#FFE082"
+            
+            cor_txt_legenda_base = "white"
+
+        # --- LEGENDA ÚNICA NO TOPO COM COR DINÂMICA ---
+        legenda = ctk.CTkFrame(container_matriz, fg_color="transparent")
+        legenda.grid(row=1, column=0, columnspan=n_grupos+1, pady=(0, 20), sticky="w")
+        
+        ctk.CTkLabel(legenda, text="Upper Triangle (Blue): ", font=("Roboto", 12, "bold"), text_color="#64B5F6" if not modo_light else "#1976D2").pack(side="left")
+        ctk.CTkLabel(legenda, text="Wilcoxon Signed-Rank Test   |   ", font=("Roboto", 12), text_color=cor_txt_legenda_base).pack(side="left")
+        
+        ctk.CTkLabel(legenda, text="Lower Triangle (Yellow): ", font=("Roboto", 12, "bold"), text_color="#FFD54F" if not modo_light else "#F57F17").pack(side="left")
+        ctk.CTkLabel(legenda, text="Nemenyi Post-hoc Test   |   ", font=("Roboto", 12), text_color=cor_txt_legenda_base).pack(side="left")
+        
+        ctk.CTkLabel(legenda, text="*** p<0.001   ** p<0.01   * p<0.05   ns: not significant", font=("Roboto", 12, "italic"), text_color="#AAAAAA").pack(side="left")
+
+        # 4. Desenhar a Matriz Customizada (Expandida) e Salvar para Exportação
+        for col in range(n_grupos + 1):
+            container_matriz.grid_columnconfigure(col, weight=1)
+
+        ctk.CTkFrame(container_matriz, fg_color=cor_bg_matriz, height=50).grid(row=2, column=0, padx=2, pady=2, sticky="nsew")
+        
+        for i, nome in enumerate(nomes_grupos):
+            lbl_top = ctk.CTkLabel(container_matriz, text=nome, font=("Roboto", 13, "bold"), fg_color=cor_bg_cabecalho, text_color=cor_txt_cabecalho, height=50, corner_radius=6)
+            lbl_top.grid(row=2, column=i+1, padx=2, pady=2, sticky="nsew")
+            lbl_left = ctk.CTkLabel(container_matriz, text=nome, font=("Roboto", 13, "bold"), fg_color=cor_bg_cabecalho, text_color=cor_txt_cabecalho, height=50, corner_radius=6)
+            lbl_left.grid(row=i+3, column=0, padx=2, pady=2, sticky="nsew")
+            container_matriz.grid_rowconfigure(i+3, weight=1)
+
+        # --- VARIÁVEL QUE VAI GUARDAR OS DADOS PARA O EXPORTADOR ---
+        grade_exportacao = []
+
+        for i in range(n_grupos):
+            linha_export = []
+            for j in range(n_grupos):
+                texto_celula = "-"
+                cor_fundo = cor_bg_diag 
+                cor_texto = cor_txt_diag
+                tipo_celula = "diag" 
+
+                if i < j: 
+                    cor_fundo = cor_bg_wilcoxon 
+                    tipo_celula = "wilcoxon"
+                    try:
+                        _, p_val = stats.wilcoxon(matriz_dados[i], matriz_dados[j], zero_method='zsplit')
+                        texto_celula = obter_asteriscos(p_val)
+                        cor_texto = cor_txt_wilcoxon_sig if p_val < 0.05 else cor_txt_wilcoxon_ns
+                    except ValueError:
+                        texto_celula = "Tie"
+                
+                elif i > j: 
+                    cor_fundo = cor_bg_nemenyi 
+                    tipo_celula = "nemenyi"
+                    if matriz_nemenyi is not None:
+                        p_val = matriz_nemenyi.iloc[i, j]
+                        texto_celula = obter_asteriscos(p_val)
+                        cor_texto = cor_txt_nemenyi_sig if p_val < 0.05 else cor_txt_nemenyi_ns
+                    else:
+                        texto_celula = "N/A"
+
+                frm = ctk.CTkFrame(container_matriz, fg_color=cor_fundo, corner_radius=6, height=50)
+                frm.grid(row=i+3, column=j+1, padx=2, pady=2, sticky="nsew")
+                frm.grid_propagate(False)
+                frm.columnconfigure(0, weight=1)
+                frm.rowconfigure(0, weight=1)
+                ctk.CTkLabel(frm, text=texto_celula, font=("Roboto", 13, "bold" if "ns" not in texto_celula else "normal"), text_color=cor_texto).grid(row=0, column=0, sticky="nsew")
+                
+                # Guarda a informação limpa desta célula para o PDF/HTML
+                linha_export.append({"texto": texto_celula, "tipo": tipo_celula})
+            grade_exportacao.append(linha_export)
+
+        # Guarda na memória global da aba para o botão de exportar conseguir ler
+        ABA_ANALISE_GLOBAL.dados_stats_export = {
+            "metrica": escolha_metrica,
+            "nomes": nomes_grupos,
+            "texto_friedman": texto_friedman,
+            "grade": grade_exportacao
+        }
+    combo_metric_stats.configure(command=atualizar_matriz_estatistica)
+    atualizar_matriz_estatistica("Makespan")
 
     tabs_obj[nome_analise] = {"btn_frame": tab_btn, "content": frame_tab_content}
     selecionar_aba(nome_analise)

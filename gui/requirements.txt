@@ -13,3 +13,5 @@ tksheet
 pandas  
 tabulate
 fpdf2
+scipy 
+scikit-posthocs
