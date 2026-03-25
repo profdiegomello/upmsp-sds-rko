@@ -16,6 +16,7 @@ import matplotlib
 import math
 import statistics
 import numpy as np
+import pandas as pd
 import io
 import base64
 import tempfile
@@ -1299,12 +1300,9 @@ def gerar_nova_analise(nome_analise, comentario=""):
     colunas = ("INSTANCE", "MACHINES", "JOBS", "SETUP", "POLICY", "MAKESPAN", "RUNTIME", "TIME TO BEST", "PARAMETERS", "AGENTS CONFIGS")
     estatisticas_por_grupo = {}
 
-    # ================== BOTÃO DE EXPORTAÇÃO COMPLETA ==================
+    # BOTÃO DE EXPORTAÇÃO 
     def acao_exportar_tudo():
-       
-
         try:
-            import pandas as pd
             from fpdf import FPDF
         except ImportError:
             tk.messagebox.showerror(
@@ -2662,7 +2660,7 @@ def configurar_aba_historico(aba, largura_total=1280, altura_total=810):
     
     ctk.CTkLabel(frame_filtros, text="Filter by Decoder:", font=("Roboto", 10)).pack(anchor="w", padx=5)
     VAR_FILTRO_DECODER = ctk.StringVar(value="all")
-    combo_dec = ctk.CTkComboBox(frame_filtros, variable=VAR_FILTRO_DECODER, values=["all", "CHEAPEST", "M3LAW", "ECT", "INCREMENTAL", "KSTS"], state="readonly", height=22, font=("Roboto", 11), command=aplicar_filtros_historico)
+    combo_dec = ctk.CTkComboBox(frame_filtros, variable=VAR_FILTRO_DECODER, values=["all", "CHEAPEST", "M3LAW", "ECT", "INCREMENTAL", "KSTS", "2N"], state="readonly", height=22, font=("Roboto", 11), command=aplicar_filtros_historico)
     combo_dec.pack(fill="x", padx=5, pady=(0, 5))
 
     ctk.CTkLabel(frame_filtros, text="Sort by:", font=("Roboto", 10)).pack(anchor="w", padx=5)
@@ -2995,7 +2993,7 @@ def configurar_aba_parametros(aba):
     aba.grid_columnconfigure(1, weight=0)
     aba.grid_columnconfigure(2, weight=0)
     aba.grid_columnconfigure(3, weight=0)
-    aba.grid_columnconfigure(4, weight=0)   # --- NOVA COLUNA DUMP ---
+    aba.grid_columnconfigure(4, weight=0)   
     aba.grid_columnconfigure(5, weight=1)
 
     rotulo_titulo = ctk.CTkLabel(aba, text="HYPER-PARAMETERS", text_color=CORES["destaque"], font=FONTES["titulo"])
@@ -3004,7 +3002,7 @@ def configurar_aba_parametros(aba):
     rotulo_decoder = ctk.CTkLabel(aba, text="SELECT DECODER", font=FONTES["subtitulo"], text_color=CORES["texto"])
     rotulo_decoder.grid(row=1, column=1, sticky="w", padx=0, pady=(0, 2))
     combo_decoder = ctk.CTkComboBox(
-        aba, values=["CHEAPEST", "M3LAW", "ECT", "INCREMENTAL", "KSTS"], 
+        aba, values=["CHEAPEST", "M3LAW", "ECT", "INCREMENTAL", "KSTS", "2N"], 
         border_color=CORES["primaria"], border_width=2, corner_radius=0, width=180,
         dropdown_fg_color="lavender", dropdown_text_color=CORES["texto_escuro"], dropdown_hover_color=CORES["destaque"]
     )

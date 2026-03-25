@@ -373,6 +373,68 @@ class UPMSPSDSProblem:
         final_makespan = max(cargas_finais.values()) if cargas_finais else 0.0
         return {"schedule": schedule_list, "makespan": float(final_makespan)}
 
+    def _decode_2n(self, keys: np.ndarray) -> dict:
+        num_jobs = len(self.dados["N"])
+        num_machines = len(self.dados["M"])
+
+        # Garante que o vetor tem o tamanho correto (2N)
+        if len(keys) < 2 * num_jobs:
+            keys = np.resize(keys, 2 * num_jobs)
+
+        # Fatiamento do Cromossomo
+        genes_roteamento = keys[:num_jobs]         # Primeira metade: Escolha da máquina
+        genes_sequenciamento = keys[num_jobs:2*num_jobs] # Segunda metade: Ordem de execução
+
+        # Dicionário para agrupar os jobs por máquina: {1: [], 2: [], ...}
+        maquinas_jobs = {m: [] for m in self.dados["M"]}
+
+        # --- 1. FASE DE ROTEAMENTO (Atribuição) ---
+        for i in range(num_jobs):
+            job = i + 1
+            val_roteamento = float(genes_roteamento[i])
+            val_sequenciamento = float(genes_sequenciamento[i])
+
+            # Fatiamento do intervalo [0, 1) em 'num_machines' pedaços
+            maquina_idx = int(val_roteamento * num_machines)
+            
+            # Proteção: se a chave gerada for exatamente 1.0, colocamos na última máquina
+            if maquina_idx >= num_machines:
+                maquina_idx = num_machines - 1
+                
+            maquina_real = maquina_idx + 1 # Os índices do dicionário começam em 1
+            
+            # Guarda o job e a sua "chave de prioridade" na máquina sorteada
+            maquinas_jobs[maquina_real].append((job, val_sequenciamento))
+
+        # --- 2. FASE DE SEQUENCIAMENTO E CÁLCULO ---
+        machine_schedules = [[] for _ in range(num_machines)]
+        makespan_por_maquina = np.zeros(num_machines)
+
+        for m_idx in range(num_machines):
+            maquina_real = m_idx + 1
+            
+            # Ordena os jobs desta máquina especificamente pela 2ª metade das chaves (crescente)
+            jobs_ordenados = sorted(maquinas_jobs[maquina_real], key=lambda x: x[1])
+            
+            tempo_atual = 0.0
+            anterior = 0
+            
+            for job, _ in jobs_ordenados:
+                machine_schedules[m_idx].append(job)
+                
+                # Soma o Setup Time e o Processing Time
+                setup = self.dados["S"].get((maquina_real, anterior, job), 0)
+                proc = self.dados["p"].get((maquina_real, job), 0)
+                
+                tempo_atual += setup + proc
+                anterior = job
+                
+            makespan_por_maquina[m_idx] = tempo_atual
+
+        makespan_final = float(np.max(makespan_por_maquina)) if makespan_por_maquina.size > 0 else 0.0
+
+        return {"schedule": machine_schedules, "makespan": makespan_final}
+
     def decoder(self, keys: np.ndarray) -> dict:
         dec = self.decoder_name.lower()
         dispatch = {
@@ -381,6 +443,7 @@ class UPMSPSDSProblem:
             "m3law": self._decoder_m3law,
             "incremental": self._decode_incremental,
             "cheapest": self._decode_cheapest_insertion,
+            "2n": self._decode_2n
         }
         func = dispatch.get(dec, self._decode_ect)
         return func(keys)
@@ -414,6 +477,7 @@ class UPMSPSDSProblem:
                     pass
 
         return makespan
+    
     def convert_schedule_to_gantt_format(self, decoded_solution: dict):
         schedule = decoded_solution["schedule"]
         X = {}
