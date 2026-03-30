@@ -223,7 +223,6 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
         if log_queue is not None:
             stop_event.set()
             
-        # --- FIX 2: EXTERMINADOR DE ZUMBIS ---
         # Mata qualquer PoolWorker que tenha travado antes de desligar o Manager
         for child in multiprocessing.active_children():
             if "PoolWorker" in child.name:
@@ -243,6 +242,28 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
         raw_gantt_data = {"M": M, "p": p, "X": X, "C": C}
     except Exception: pass
 
+    #jja
+    # Descobre o número do 'run' olhando para os diretórios configurados
+    run_idx = 1
+    pastas_para_checar = []
+    
+    if save_path:
+        path_limpo = save_path.strip()
+        pastas_para_checar.append(path_limpo if (os.path.isdir(path_limpo) or not os.path.splitext(path_limpo)[1]) else os.path.dirname(path_limpo))
+    if gantt_path:
+        pastas_para_checar.append(gantt_path)
+
+    # Verifica em todas as pastas ativas qual é o próximo número livre
+    for pasta in pastas_para_checar:
+        if os.path.exists(pasta):
+            while True:
+                curva_teste = os.path.join(pasta, f"{env.instance_name}_run{run_idx}_timeXmksp.txt")
+                gantt_teste = os.path.join(pasta, f"gantt_{env.instance_name}_run{run_idx}.html")
+                if not os.path.exists(curva_teste) and not os.path.exists(gantt_teste):
+                    break # Achou um número livre!
+                run_idx += 1
+    # -------------------------------------------
+
     if save_path:
         try:
             path_limpo = save_path.strip()
@@ -255,7 +276,7 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
                 base_dir = os.path.dirname(path_limpo)
                 csv_filename = path_limpo
             
-            nome_arq_curva = f"{env.instance_name}_timeXmksp.txt"
+            nome_arq_curva = f"{env.instance_name}_run{run_idx}_timeXmksp.txt"
             with open(os.path.join(base_dir, nome_arq_curva), "w") as f_curva:
                 f_curva.write("TEMPO\tMAKESPAN\n")
                 for t, mksp in stdout_execution_history:
@@ -275,7 +296,8 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
             if not os.path.exists(gantt_path): os.makedirs(gantt_path, exist_ok=True)
             output_writer.gantt_chart(
                 M=raw_gantt_data["M"], N=env.dados["N"], N0=[0]+list(env.dados["N"]), p=raw_gantt_data["p"], s=env.dados["S"], 
-                X=raw_gantt_data["X"], C=raw_gantt_data["C"], arq_gantt=os.path.join(gantt_path, f"gantt_{env.instance_name}"), 
+                X=raw_gantt_data["X"], C=raw_gantt_data["C"], 
+                arq_gantt=os.path.join(gantt_path, f"gantt_{env.instance_name}_run{run_idx}"), 
                 instancia=env.instance_name, makespan=final_cost, str_metodo=f"RKO-{env.decoder_name.upper()}"
             )
         except Exception: pass
