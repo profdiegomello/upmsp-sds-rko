@@ -1,15 +1,32 @@
+import argparse
 import time
 import sys
 import os
+
+# Pega a pasta atual (rko_dependencies)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Volta uma pasta (backend)
+backend_dir = os.path.abspath(os.path.join(current_dir, '..'))
+# Volta duas pastas (gui / raiz)
+root_dir = os.path.abspath(os.path.join(current_dir, '..', '..'))
+
+# Adiciona a raiz e o backend no "radar" do Python
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
 import threading
 import multiprocessing
 from queue import Empty
 from typing import Callable, Optional
 from multiprocessing import Manager
 
+# Agora o Python já sabe onde procurar estas pastas!
 from backend.rko_dependencies.rkolib.RKO import RKO
 from backend.rko_dependencies.problem_upmspsds import UPMSPSDSProblem
 import backend.rko_dependencies.input_output.output_writer as output_writer
+
 
 class StdoutProxy:
     def __init__(self, callback: Callable[[dict], None], old_stdout, min_interval: float = 0.05):
@@ -79,11 +96,9 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
     stdout_execution_history = [] 
     env = UPMSPSDSProblem(instance_path=instance_path, decoder=decoder, time_limit=time_limit)
     
-    # --- FIX 1: QUARENTENA DA UI ---
     # Nunca enviamos o callback da interface para o problema, 
     # evitando que o proxy do Manager seja corrompido pelos trabalhadores.
     env.ui_callback = None 
-    # -------------------------------
     
     clean_agents = {}
     valid_agents = ["BRKGA", "SA", "ILS", "VNS", "PSO", "GA", "LNS"]
@@ -122,9 +137,27 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
             total_w += w
             
     if total_w == 0:
-        if callback: callback({"status": "log", "message": "[SYSTEM FIX] Missing or invalid Agent config. Forcing BRKGA=1 to avoid crash."})
-        clean_agents["BRKGA"] = {"workers": 1}
+        erro_msg = "Nenhum agente configurado. Por favor, informe pelo menos um agente (ex: --brkga-workers 1)."
         
+        # Envia o erro para a UI (se estiver aberta) ou imprime direto no Terminal
+        if callback: 
+            callback({"status": "error", "message": erro_msg})
+            callback({"status": "log", "message": erro_msg})
+        else:
+            print(f"\n{erro_msg}\n")
+            
+        # Aborta a execução retornando 'infinito' imediatamente
+        return {
+            "makespan": float('inf'), 
+            "schedule": {}, 
+            "time_to_best": 0, 
+            "runtime": 0, 
+            "instance": env.instance_name, 
+            "decoder": env.decoder_name,
+            "history_data": [], 
+            "gantt_data": None,
+            "setup_range": "N/A" 
+        }
     env.agent_config = clean_agents
 
     old_stdout = sys.stdout
@@ -242,7 +275,13 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
         raw_gantt_data = {"M": M, "p": p, "X": X, "C": C}
     except Exception: pass
 
-    #jja
+    PASTA_RAIZ_RESULTADOS = os.path.abspath(os.path.join(os.getcwd(), "resultados_experimentos"))
+    
+    # Força os caminhos de salvamento
+    #Colocar gantt_path = None; para evitar salvar
+    save_path = os.path.join(PASTA_RAIZ_RESULTADOS, "tabelas_e_curvas")
+    gantt_path = os.path.join(PASTA_RAIZ_RESULTADOS, "graficos_gantt")
+
     # Descobre o número do 'run' olhando para os diretórios configurados
     run_idx = 1
     pastas_para_checar = []
@@ -262,7 +301,6 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
                 if not os.path.exists(curva_teste) and not os.path.exists(gantt_teste):
                     break # Achou um número livre!
                 run_idx += 1
-    # -------------------------------------------
 
     if save_path:
         try:
@@ -275,12 +313,6 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
                 os.makedirs(os.path.dirname(path_limpo), exist_ok=True)
                 base_dir = os.path.dirname(path_limpo)
                 csv_filename = path_limpo
-            
-            nome_arq_curva = f"{env.instance_name}_run{run_idx}_timeXmksp.txt"
-            with open(os.path.join(base_dir, nome_arq_curva), "w") as f_curva:
-                f_curva.write("TEMPO\tMAKESPAN\n")
-                for t, mksp in stdout_execution_history:
-                    f_curva.write(f"{t:.2f}\t{mksp:.4f}\n")
             
             model_name = f"RKO-{env.decoder_name.upper()}"
             output_writer.salvar_resultado(
@@ -334,3 +366,85 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
         "gantt_data": raw_gantt_data,
         "setup_range": setup_range_str 
     }
+
+# INTEGRAÇÃO DE TERMINAL (CLI) PARA O IRACE
+def parse_irace_args():
+    parser = argparse.ArgumentParser(description="Otimizador RKO via IRace")
+    
+    parser.add_argument("--instance", type=str, required=True, help="Caminho da instância")
+    parser.add_argument("--decoder", type=str, default="ect", help="Decoder a ser utilizado")
+    parser.add_argument("--time_limit", type=int, default=60, help="Tempo limite em segundos")
+    parser.add_argument("--output_path", type=str, default=None, help="Pasta para resultados.txt")
+    parser.add_argument("--gantt_path", type=str, default=None, help="Pasta para HTML do Gantt")
+    parser.add_argument("--irace", action="store_true", help="Imprime apenas o custo final")
+
+    args, unknown = parser.parse_known_args()
+    
+    agents_dict = {
+        "BRKGA": {}, "SA": {}, "ILS": {}, "VNS": {}, 
+        "PSO": {}, "GA": {}, "LNS": {}
+    }
+    
+    i = 0
+    while i < len(unknown):
+        arg = unknown[i]
+        # --- MUDANÇA AQUI: Agora procura pelo ponto (ex: --ga.workers) ---
+        if arg.startswith("--") and "." in arg[2:]:
+            partes = arg[2:].split(".", 1)
+            prefixo = partes[0].upper()
+            param = partes[1]
+        # ------------------------------------------------------------------
+            
+            if i + 1 < len(unknown):
+                valor_str = unknown[i+1]
+                try:
+                    valor = float(valor_str) if '.' in valor_str else int(valor_str)
+                    if prefixo in agents_dict:
+                        agents_dict[prefixo][param] = valor
+                    i += 2
+                except ValueError:
+                    i += 1 
+            else:
+                i += 1
+        else:
+            i += 1
+
+    # Liga os agentes automaticamente se receberam parâmetros
+    for prefixo, params in agents_dict.items():
+        if params and "workers" not in params:
+            params["workers"] = 1
+
+    return args, agents_dict
+if __name__ == "__main__":
+    # Quando o script for rodado pelo terminal (IRace), este bloco é ativado
+    try:
+        args, agentes_configurados = parse_irace_args()
+        
+        # Desliga prints nativos do RKO se o modo silencioso estiver ativo
+        if args.irace:
+            sys.stdout = open(os.devnull, 'w')
+            
+        resultado = run_rko(
+            instance_path=args.instance,
+            decoder=args.decoder,
+            time_limit=args.time_limit,
+            agents=agentes_configurados,
+            callback=None,  # Sem interface gráfica
+            save_path=args.output_path,
+            gantt_path=args.gantt_path
+        )
+        
+        # Restaura a saída padrão para imprimir apenas o valor para o IRace
+        if args.irace:
+            sys.stdout = sys.__stdout__
+            print(resultado["makespan"])
+        else:
+            print(f"\nMakespan Final: {resultado['makespan']}")
+            
+    except Exception as e:
+        # Se algo falhar catastroficamente, devolve 'inf' para o IRace penalizar
+        sys.stdout = sys.__stdout__
+        if "--irace" in sys.argv:
+            print("inf")
+        else:
+            print(f"Erro fatal de execução: {e}")
