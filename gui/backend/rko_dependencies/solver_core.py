@@ -169,16 +169,15 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
     stop_event = threading.Event()
     start_time_global = time.time()
 
-    if callback:
-        try:
-            queue_manager = Manager()
-            log_queue = queue_manager.Queue() 
-            reader_thread = threading.Thread(target=_queue_reader, args=(log_queue, callback, stdout_execution_history, start_time_global, stop_event), daemon=True)
-            reader_thread.start()
-        except Exception as e: 
-            print(f"Erro ao criar fila: {e}")
-            log_queue = None
-            queue_manager = None
+    try:
+        queue_manager = Manager()
+        log_queue = queue_manager.Queue() 
+        reader_thread = threading.Thread(target=_queue_reader, args=(log_queue, callback, stdout_execution_history, start_time_global, stop_event), daemon=True)
+        reader_thread.start()
+    except Exception as e: 
+        print(f"Erro ao criar fila: {e}")
+        log_queue = None
+        queue_manager = None
 
     final_cost = float('inf'); final_schedule = {}; raw_gantt_data = None; runtime = 0; final_time_to_best = 0
 
@@ -313,6 +312,12 @@ def run_rko(instance_path: str, decoder: str, time_limit: int, agents: dict, cal
                 os.makedirs(os.path.dirname(path_limpo), exist_ok=True)
                 base_dir = os.path.dirname(path_limpo)
                 csv_filename = path_limpo
+
+            nome_arq_curva = f"{env.instance_name}_run{run_idx}_timeXmksp.txt"
+            with open(os.path.join(base_dir, nome_arq_curva), "w") as f_curva:
+                f_curva.write("TEMPO\tMAKESPAN\n")
+                for t, mksp in stdout_execution_history:
+                    f_curva.write(f"{t:.2f}\t{mksp:.4f}\n")
             
             model_name = f"RKO-{env.decoder_name.upper()}"
             output_writer.salvar_resultado(
