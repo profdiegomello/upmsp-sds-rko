@@ -693,17 +693,20 @@ def aplicar_filtros_historico(evento=None):
 
     def abrir_gerenciador_sets(k, widget_origem=None):
         from tkinter.colorchooser import askcolor
+        from tkinter import messagebox # Garantindo que a caixa de diálogo funcione
+        
         root = FRAME_LISTA_HISTORICO.winfo_toplevel()
         top = ctk.CTkToplevel(root)
         top.title("")
-        top.geometry("450x400") 
+        # Aumentei um pouquinho a largura (de 450 para 480) para o botão "ALL" caber folgado
+        top.geometry("480x400") 
         top.resizable(False, False)
         
         global SETS_DESCRICOES
         if 'SETS_DESCRICOES' not in globals(): SETS_DESCRICOES = {}
         
         if widget_origem:
-            try: top.geometry(f"+{widget_origem.winfo_rootx() - 380}+{widget_origem.winfo_rooty()}")
+            try: top.geometry(f"+{widget_origem.winfo_rootx() - 400}+{widget_origem.winfo_rooty()}")
             except: pass
         
         top.transient(root)
@@ -729,6 +732,32 @@ def aplicar_filtros_historico(evento=None):
             HISTORICO_DATA[k]["set_color"] = cor_hex
             top.destroy()
             aplicar_filtros_historico()
+
+        # ==========================================================
+        # NOVA FUNÇÃO: ATRIBUIR SET A TODOS OS EXPERIMENTOS
+        # ==========================================================
+        def atribuir_set_a_todos(cor_alvo):
+            total = len(HISTORICO_DATA)
+            nome_set = SETS_CRIADOS.get(cor_alvo, "este set")
+            
+            # Trava de segurança para evitar cliques acidentais
+            resp = messagebox.askyesno(
+                "Assign to ALL", 
+                f"Você está prestes a rotular TODOS os {total} experimentos como '{nome_set}'.\n\n"
+                "Isso vai sobrescrever as cores de qualquer outro set que eles já possuam.\n\n"
+                "Tem certeza?", 
+                parent=top
+            )
+            
+            if not resp: return
+            
+            # Varre o banco de dados inteiro e pinta tudo
+            for dados in HISTORICO_DATA.values():
+                dados["set_color"] = cor_alvo
+                
+            top.destroy()
+            aplicar_filtros_historico()
+        # ==========================================================
 
         def remover_do_set():
             if "set_color" in HISTORICO_DATA[k]:
@@ -759,26 +788,21 @@ def aplicar_filtros_historico(evento=None):
         def atualizar_nome_set(cor_alvo, novo_nome):
             SETS_CRIADOS[cor_alvo] = novo_nome
 
-        # --- FIX: POP-UP AUMENTADO PARA TEXTBOX DE 250 CARACTERES ---
         def abrir_editor_descricao(cor_alvo, btn_ref):
             top_desc = ctk.CTkToplevel(top)
             top_desc.title("Set Description")
-            # Pop-up maior para caber as 3-4 linhas de texto
             top_desc.geometry("350x250")
             top_desc.resizable(False, False)
             top_desc.transient(top)
             top_desc.attributes("-topmost", True)
             
-            try:
-                # Ajusta a posição para não sair da tela com o tamanho maior
-                top_desc.geometry(f"+{btn_ref.winfo_rootx() - 150}+{btn_ref.winfo_rooty() - 100}")
+            try: top_desc.geometry(f"+{btn_ref.winfo_rootx() - 150}+{btn_ref.winfo_rooty() - 100}")
             except: pass
             
             top_desc.focus_force()
             
             ctk.CTkLabel(top_desc, text="Description (Max 250 chars):", font=("Roboto", 11, "bold")).pack(pady=(10,5))
             
-            # Textbox permite visão multilinhas
             txt_desc = ctk.CTkTextbox(top_desc, width=310, height=100, border_width=1, fg_color="#2b2b2b")
             txt_desc.pack(pady=0)
             txt_desc.insert("0.0", SETS_DESCRICOES.get(cor_alvo, ""))
@@ -796,7 +820,7 @@ def aplicar_filtros_historico(evento=None):
                 lbl_contador.configure(text=f"{tamanho}/250")
                 
             txt_desc.bind("<KeyRelease>", atualizar_contador)
-            atualizar_contador() # Inicializa o contador com o texto existente
+            atualizar_contador() 
             
             def salvar_desc():
                 val = txt_desc.get("0.0", "end-1c").strip()
@@ -805,7 +829,6 @@ def aplicar_filtros_historico(evento=None):
                 top_desc.destroy()
                 
             ctk.CTkButton(top_desc, text="Save", height=28, command=salvar_desc, fg_color=CORES["primaria"]).pack(pady=(5, 10))
-        # -------------------------------------------------------------
 
         def renderizar_lista_sets():
             for w in scroll.winfo_children(): w.destroy()
@@ -828,28 +851,42 @@ def aplicar_filtros_historico(evento=None):
                 row_frame.pack(fill="x", pady=2)
                 cor_hover = ajustar_cor_hover(cor)
                 
+                # Botão de Atribuir ao Card Atual
                 btn_select = ctk.CTkButton(row_frame, text="", width=25, height=25, corner_radius=4,
                                            fg_color=cor, hover_color=cor_hover,
                                            command=lambda c=cor: atribuir_set(c))
                 btn_select.pack(side="left", padx=(0, 5))
 
+                # Caixa de Texto do Nome
                 ent_nome = ctk.CTkEntry(row_frame, height=25, border_width=0, fg_color="#2b2b2b")
                 ent_nome.insert(0, nome_atual)
                 ent_nome.pack(side="left", fill="x", expand=True, padx=(0, 5))
                 ent_nome.bind("<KeyRelease>", lambda e, c=cor, ent=ent_nome: atualizar_nome_set(c, ent.get()))
 
+                # Botão Deletar
                 btn_del = ctk.CTkButton(row_frame, text="", image=ICONES_UI["cheese"], width=25, height=25,
                                         fg_color="transparent", hover_color="#8B0000",
                                         command=lambda c=cor: deletar_set_globalmente(c))
                 btn_del.pack(side="right")
                 
+                # Botão Descrição
                 btn_desc = ctk.CTkButton(row_frame, text="", image=ICONES_UI["write"], width=25, height=25,
                                         fg_color="transparent", hover_color="#555555",
                                         command=lambda c=cor, b=btn_del: abrir_editor_descricao(c, b))
                 btn_desc.pack(side="right", padx=(0, 2))
 
+                # =======================================================
+                # NOVO BOTÃO: "ALL"
+                # =======================================================
+                btn_all = ctk.CTkButton(
+                    row_frame, text="ALL", width=35, height=25, corner_radius=4,
+                    font=("Roboto", 10, "bold"), fg_color="#333333", text_color="#DDDDDD", hover_color=cor,
+                    command=lambda c=cor: atribuir_set_a_todos(c)
+                )
+                btn_all.pack(side="right", padx=(0, 5))
+                # =======================================================
+
         renderizar_lista_sets()
-    # -------------------------------------------------------
 
     estado_hover_global = [] 
     
@@ -1093,9 +1130,14 @@ def pedir_nome_analise():
 def gerar_nova_analise(nome_analise, comentario=""):
     """Cria uma aba na Análise com gráfico de convergência, tabelas, boxplots, IC 95% e Histograma com bordas."""
     
-    
-    global ABA_ANALISE_GLOBAL, FUNCAO_SHOW_TAB_GLOBAL, INSTANCIAS_OCULTAS
+    global ABA_ANALISE_GLOBAL, FUNCAO_SHOW_TAB_GLOBAL, INSTANCIAS_OCULTAS, ABA_PARAMETROS_GLOBAL
     if not ABA_ANALISE_GLOBAL or not FUNCAO_SHOW_TAB_GLOBAL: return
+
+   # try:
+    tempo_limite_ui = float(ABA_PARAMETROS_GLOBAL.widgets_armazenados["time_limit"].get())
+   # except Exception:
+        #tempo_limite_ui = 60.0 # Fallback caso a caixa esteja vazia ou com letras
+    # ====================================================================
 
     grupos = {}
     for chave, dados in HISTORICO_DATA.items():
@@ -1107,9 +1149,41 @@ def gerar_nova_analise(nome_analise, comentario=""):
             if cor not in grupos:
                 nome_set = SETS_CRIADOS.get(cor, f"Set {cor}")
                 grupos[cor] = {"nome": nome_set, "exp": []}
-            grupos[cor]["exp"].append(dados)
+            
+            # ====================================================================
+            # FILTRO DE CORTE FORÇADO PELO TEMPO DIGITADO NO APP
+            # ====================================================================
+            dados_filtrados = dados.copy() 
+            
+            if "x" in dados_filtrados and "y" in dados_filtrados:
+                x_corte = []
+                y_corte = []
+                
+                # Varre o histórico e corta tudo que passar do tempo limite do UI
+                for x_val, y_val in zip(dados["x"], dados["y"]):
+                    if x_val <= tempo_limite_ui:
+                        x_corte.append(x_val)
+                        y_corte.append(y_val)
+                    else:
+                        break 
+                
+                if x_corte:
+                    # Se o algoritmo extrapolou o tempo limite real (ex: foi até 140s)
+                    if dados["x"][-1] > tempo_limite_ui:
+                        # Adiciona um último ponto EXATAMENTE no tempo limite 
+                        # mantendo o melhor makespan alcançado até ali.
+                        if x_corte[-1] < tempo_limite_ui:
+                            x_corte.append(tempo_limite_ui)
+                            y_corte.append(y_corte[-1])
+                    
+                    dados_filtrados["x"] = x_corte
+                    dados_filtrados["y"] = y_corte
+            # ====================================================================
+
+            grupos[cor]["exp"].append(dados_filtrados)
 
     if not grupos: return
+
 
     if not hasattr(ABA_ANALISE_GLOBAL, 'is_setup'):
         for widget in ABA_ANALISE_GLOBAL.winfo_children():
@@ -1741,8 +1815,42 @@ def gerar_nova_analise(nome_analise, comentario=""):
                 pdf.image(img_path, x="C", y=10, w=285, h=190, keep_aspect_ratio=True)
                 os.remove(img_path) 
 
+            # Fechamento do PDF
             pdf.output(caminho_base + ".pdf")
+
+            # =================================================================
+            # 8. GERAR O ARQUIVO TXT CONSOLIDADO (TABELA BRUTA)
+            # =================================================================
+            lista_dfs_limpos = []
+            colunas_txt = ["INSTANCE", "MACHINES", "JOBS", "SETUP", "POLICY", "MAKESPAN", "RUNTIME", "TIMETOBEST", "PARAMETERS", "AGENTCONFIGS"]
+            
+            for nome_set, data in dfs_por_grupo.items():
+                df = data["df"].copy()
+                
+                # Filtra as linhas de rodapé (Estatísticas e espaços vazios) para ter um banco de dados limpo
+                linhas_lixo = ["Min", "Mean", "Median", "P95", "Max", "Stdev", "Variance", "Count", "CV (%)", ""]
+                df = df[~df["INSTANCE"].isin(linhas_lixo)].copy()
+                
+                # Renomeia as colunas para o padrão sem espaços solicitado
+                df.rename(columns={"TIME TO BEST": "TIMETOBEST", "AGENTS CONFIGS": "AGENTCONFIGS"}, inplace=True)
+                
+                # Força a ordem exata das colunas
+                df = df[colunas_txt]
+                lista_dfs_limpos.append(df)
+            
+            if lista_dfs_limpos:
+                df_consolidado = pd.concat(lista_dfs_limpos, ignore_index=True)
+                
+                with open(caminho_base + ".txt", "w", encoding="utf-8") as f:
+                    f.write(df_consolidado.to_string(index=False))
+            # =================================================================
+
+            # MENSAGEM FINAL DE SUCESSO (Apenas UMA vez)
             tk.messagebox.showinfo("Export Successful", f"All formats were successfully created at:\n\n{caminho_base}", parent=ABA_ANALISE_GLOBAL)
+
+        except Exception as e:
+            tk.messagebox.showerror("Export Error", f"An error occurred during export:\n{str(e)}", parent=ABA_ANALISE_GLOBAL)
+    
 
         except Exception as e:
             tk.messagebox.showerror("Export Error", f"An error occurred during export:\n{str(e)}", parent=ABA_ANALISE_GLOBAL)
@@ -3688,7 +3796,7 @@ def configurar_aba_analise(aba):
     ctk.CTkLabel(aba, text="(To be developed...)", font=("Roboto", 14), text_color="gray").pack()
 
 def configurar_interface(janela):
-    global ABA_ANALISE_GLOBAL, FUNCAO_SHOW_TAB_GLOBAL # <--- ADICIONE ISTO
+    global ABA_ANALISE_GLOBAL, FUNCAO_SHOW_TAB_GLOBAL, ABA_PARAMETROS_GLOBAL
     
     # 1. Configuração do Grid Principal da Janela
     for i in range(10): 
@@ -3717,6 +3825,7 @@ def configurar_interface(janela):
     # --- SALVA REFERÊNCIAS GLOBAIS ---
     ABA_ANALISE_GLOBAL = aba_ana
     FUNCAO_SHOW_TAB_GLOBAL = show
+    ABA_PARAMETROS_GLOBAL = aba_p
     # ---------------------------------
 
     # 5. Configuração do Conteúdo
