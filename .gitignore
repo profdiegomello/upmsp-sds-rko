@@ -1,11 +1,3 @@
-# Ignorar arquivos temporários
-#*.log
-*.tmp
-*.py[cod]
-gantt-*.png
-gantt.png-*.png
-cronograma-*.png
-
 # Ignorar diretórios
 __pycache__/
 bench/
@@ -14,13 +6,21 @@ bench/
 # Evita TOKENS pessoais vazem pelo github
 .config/kaggle 
 
+# Ignorar arquivos temporários
+*.tmp
+*.py[cod]
+gantt-*.png
+gantt.png-*.png
+cronograma-*.png
+#*.log
+# *.pkl 
+gui/backend/temp_io_paths.txt
+
 # Ignorar arquivos específicos
 bench/rsdstruiz-upmsp-sds.zip
 .DS_Store
 token.txt
 .env
-
-gui/backend/temp_io_paths.txt
 
 # Ignorar plots do rko-tsp
 Synthetic-solution.png
@@ -33,3 +33,6 @@ src/original/analysis_rko-tsp/*/*.log
 # Ignorar plots do exp/results
 exp/results/graficos/*.png
 exp/results/graficos/*.eps
+
+# Ignorar dumps automáticos gerados pela GUI (arquivo incrementais)
+gui/backend/dumps/
