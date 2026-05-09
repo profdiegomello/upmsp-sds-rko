@@ -100,7 +100,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Baseline Randomico para UPMSP-SDS")
     parser.add_argument("-i", "--input", required=True, help="Caminho para o arquivo da instancia ou pasta contendo instancias.")
     parser.add_argument("-o", "--output", required=True, help="Caminho para o arquivo de saida (ex: resultados.txt).")
-    parser.add_argument("-t", "--time", type=int, default=60, help="Tempo limite de execucao por instancia em segundos (padrao: 60).")
+    parser.add_argument("-t", "--time", type=int, default=120, help="Tempo limite de execucao por instancia em segundos (padrao: 60).")
     parser.add_argument("-d", "--decoder", type=str, default="2n", help="Decodificador utilizado (padrao: 2n).")
     
     args = parser.parse_args()
